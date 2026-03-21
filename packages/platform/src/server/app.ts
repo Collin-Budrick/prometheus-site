@@ -1,8 +1,8 @@
-import { Elysia, type AnyElysia } from 'elysia'
+import { Elysia, t, type AnyElysia } from 'elysia'
 import { createFragmentService } from '@core/fragment/service'
 import { defaultFragmentLang, type FragmentLang, type FragmentTranslator } from '@core/fragment/i18n'
-import { createAuthFeature } from '@features/auth/server'
-import { PromptBodyError, readPromptBody, sendServerOnlinePush } from '@features/messaging'
+import { createAuthFeature, type ValidateSessionHandler } from '@features/auth/server'
+import { sendServerOnlinePush } from '@features/messaging'
 import type { TemplateFeatureMap } from '@prometheus/template-config'
 import type { CacheClient } from '../cache'
 import { platformConfig } from '../config'
@@ -14,6 +14,11 @@ import { createPlatformServer, type PlatformServerContext } from './bun'
 import { createFragmentUpdateBroadcaster } from './fragment-updates'
 import { createFragmentRoutes, createFragmentStore, warmFragmentRouteArtifacts } from './fragments'
 import { createHomeCollabRoutes } from './home-collab'
+import {
+  readPromptBodyFromJson,
+  registerStarterMessagingRoutes,
+  registerStarterStoreRoutes
+} from './showcase-routes'
 import { createStoreMutationRoutes } from './store-mutations'
 
 type FeatureFlags = Pick<TemplateFeatureMap, 'auth' | 'messaging' | 'realtime' | 'store'>
@@ -27,6 +32,8 @@ export type ApiServerOptions = {
     cache?: CacheClient
     rateLimiter?: RateLimiter
     spacetime?: PlatformServerContext['spacetime']
+    host?: string
+    port?: number
   }
 }
 
@@ -196,12 +203,24 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
     })
 
     let app = new Elysia().use(fragmentRoutes).decorate('valkey', valkey)
+    let validateSession: ValidateSessionHandler | undefined
+
+    rateLimiter.setCleanupInterval(rateLimitWindowMs)
+
+    const checkRateLimit = (route: string, clientIp: string) =>
+      rateLimiter.checkQuota(`${route}:${clientIp}`, rateLimitMaxRequests, rateLimitWindowMs)
 
     if (featureFlags.realtime) {
       app = createHomeCollabRoutes(app, { cache })
     }
 
     if (featureFlags.store) {
+      app = registerStarterStoreRoutes(app, {
+        cache,
+        getClientIp,
+        checkRateLimit,
+        jsonError
+      })
       app = createStoreMutationRoutes(app)
     }
 
@@ -209,17 +228,23 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
       applyDevCors(app)
     }
 
-    rateLimiter.setCleanupInterval(rateLimitWindowMs)
-
-    const checkRateLimit = (route: string, clientIp: string) =>
-      rateLimiter.checkQuota(`${route}:${clientIp}`, rateLimitMaxRequests, rateLimitWindowMs)
-
     if (featureFlags.auth && platformConfig.auth) {
       const authFeature = createAuthFeature({
         authConfig: platformConfig.auth,
         spacetime: platformConfig.spacetime
       })
+      validateSession = authFeature.validateSession
       app.use(authFeature.authRoutes)
+    }
+
+    if (featureFlags.messaging) {
+      app = registerStarterMessagingRoutes(app, {
+        cache,
+        validateSession,
+        getClientIp,
+        checkRateLimit,
+        jsonError
+      })
     }
 
     app.get('/health', async () => {
@@ -269,43 +294,50 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
       })
     })
 
-    app.post('/ai/echo', async ({ request }) => {
-      const clientIp = getClientIp(request)
-      const rateLimit = await checkRateLimit('/ai/echo', clientIp)
+    app.post(
+      '/ai/echo',
+      async ({ body, request }) => {
+        const clientIp = getClientIp(request)
+        const rateLimit = await checkRateLimit('/ai/echo', clientIp)
 
-      if (!rateLimit.allowed) {
-        return jsonError(429, `Rate limit exceeded. Try again in ${rateLimit.retryAfter}s`, {
-          retryAfter: rateLimit.retryAfter
-        })
-      }
-
-      const earlyLimit = await checkEarlyLimit(cache, `/ai/echo:${clientIp}`, 5, 5000)
-      if (!earlyLimit.allowed) {
-        return jsonError(429, 'Slow down')
-      }
-
-      let prompt: string
-      try {
-        prompt = await readPromptBody(request)
-      } catch (error) {
-        if (error instanceof PromptBodyError) {
-          return jsonError(error.status, error.message, error.meta)
+        if (!rateLimit.allowed) {
+          return jsonError(429, `Rate limit exceeded. Try again in ${rateLimit.retryAfter}s`, {
+            retryAfter: rateLimit.retryAfter
+          })
         }
-        logger.warn('Prompt body parsing failed', { error })
-        return jsonError(400, 'Invalid request body')
-      }
 
-      const startedAt = performance.now()
-      const payload = { echo: `You said: ${prompt}` }
-      void recordLatencySample(cache, 'ai:echo', performance.now() - startedAt)
-      return payload
-    })
+        const earlyLimit = await checkEarlyLimit(cache, `/ai/echo:${clientIp}`, 5, 5000)
+        if (!earlyLimit.allowed) {
+          return jsonError(429, 'Slow down')
+        }
+
+        const promptResult = readPromptBodyFromJson(body, request)
+        if (!('prompt' in promptResult)) {
+          return jsonError(promptResult.status, promptResult.error, promptResult.meta)
+        }
+
+        const startedAt = performance.now()
+        const payload = { echo: `You said: ${promptResult.prompt}` }
+        void recordLatencySample(cache, 'ai:echo', performance.now() - startedAt)
+        return payload
+      },
+      {
+        body: t.Any()
+      }
+    )
 
     return app
   }
 
   const server = createPlatformServer({
-    config: platformConfig,
+    config: {
+      ...platformConfig,
+      server: {
+        ...platformConfig.server,
+        ...(typeof options.server?.host === 'string' ? { host: options.server.host } : {}),
+        ...(typeof options.server?.port === 'number' ? { port: options.server.port } : {})
+      }
+    },
     logger,
     cache: options.server?.cache,
     rateLimiter: options.server?.rateLimiter,

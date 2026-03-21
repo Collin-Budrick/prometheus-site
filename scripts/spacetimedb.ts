@@ -3,10 +3,11 @@ import { generateKeyPairSync } from 'node:crypto'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { templateBranding } from '../packages/template-config/src/index.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const defaultImage = 'clockworklabs/spacetime:v2.0.4'
-const defaultModuleName = process.env.SPACETIMEDB_MODULE?.trim() || 'prometheus-site-local'
+const defaultModuleName = process.env.SPACETIMEDB_MODULE?.trim() || templateBranding.ids.spacetimeModule
 const defaultServerUri = process.env.SPACETIMEDB_URI?.trim() || 'http://127.0.0.1:3000'
 const keysDir = path.join(root, 'infra', 'spacetimedb', 'keys')
 const cliConfigDir = path.join(root, 'infra', 'spacetimedb', 'config')

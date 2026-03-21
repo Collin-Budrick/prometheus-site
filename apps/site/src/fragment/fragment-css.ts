@@ -15,7 +15,7 @@ const normalizePath = (path: string) => path.replace(/^\/+/, '')
 
 export const getFragmentCssHref = (id: string) => {
   if (isDev) return null
-  const entry = fragmentCssManifest[id]
+  const entry = (fragmentCssManifest as Record<string, { path: string } | undefined>)[id]
   if (!entry) return null
   const base = normalizeBase(typeof env.BASE_URL === 'string' ? env.BASE_URL : '/')
   return `${base}${normalizePath(entry.path)}`

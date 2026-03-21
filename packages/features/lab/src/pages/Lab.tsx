@@ -1,7 +1,7 @@
 import type { DocumentHead } from '@builder.io/qwik-city'
-import { LabRoute, LabSkeleton, type LabCopy } from '../lab-route'
+import { LabRoute, LabSkeleton, type LabCopy, type LabStarterCard } from '../lab-route'
 
-export type { LabCopy }
+export type { LabCopy, LabStarterCard }
 export { LabRoute, LabSkeleton }
 
 export const head: DocumentHead = {

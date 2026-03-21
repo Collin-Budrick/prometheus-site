@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Elysia } from 'elysia'
 import { t } from 'elysia'
+import { templateBranding } from '@prometheus/template-config'
 import {
   buildDeviceKey,
   buildMailboxIndexKey,
@@ -573,7 +574,7 @@ export const registerP2pRoutes = <App extends Elysia>(app: App, ctx: P2pRoutesCo
           if (entries.length) {
             const payload = {
               title: 'New message',
-              body: 'Open Fragment Prime to sync.',
+              body: templateBranding.notifications.syncBody,
               url: '/chat'
             }
             await Promise.allSettled(entries.map((entry) => sendPushNotification(entry, payload, options)))

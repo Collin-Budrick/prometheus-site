@@ -1,11 +1,11 @@
 import { InChatLines, InDashboard, InFlask, InHomeSimple, InSettings, InShop, InUser, InUserCircle } from '@qwikest/icons/iconoir'
-import type { JSXNode } from '@builder.io/qwik'
+import type { JSXNode, QwikIntrinsicElements } from '@builder.io/qwik'
 import type { Lang, UiCopy } from '../lang'
 import { siteBrand, type NavLabelKey } from '../config'
 import { AUTH_NAV_ITEMS, TOPBAR_NAV_ITEMS } from '../shared/nav-order'
 import { toCanonicalStaticShellHref } from './constants'
 
-type DockIconComponent = (props: { class?: string; 'aria-hidden'?: string | boolean }) => JSXNode
+type DockIconComponent = (props: QwikIntrinsicElements['svg']) => JSXNode
 
 type StaticDockMarkupProps = {
   lang: Lang

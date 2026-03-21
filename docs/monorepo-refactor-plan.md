@@ -1,83 +1,99 @@
-# Monorepo refactor blueprint
+# Template Guide
 
-This document captures the target state for restructuring the repository into a template-ready monorepo with clean boundaries, optional features, and a replaceable design system. It translates the requested plan into a concise, file-scoped checklist.
+This repo now ships as a reusable showcase template. The default branch is meant to stay usable as a polished demo, while `full` and `core` presets let you strip the runtime down without deleting reusable routes, stories, or fragments.
 
-## Goals
+## Start Here
 
-- Hard separation between the core fragment engine, platform/runtime glue, design system, feature modules, and the site composition layer.
-- Keep the core binary fragment pipeline zero-hydration by default and free of app-specific content.
-- Make features add/removeable without touching core or other features.
-- Centralize environment/infra concerns in a platform layer.
-- Allow a site instance to provide branding, navigation, and content without embedding business logic.
+1. Pick a preset.
+   `full` keeps the whole showcase. `core` keeps the lean shell with auth, account, and starter-safe home demos.
+2. Initialize branding.
+   Run `bun run template:init --dry-run` first, then rerun it with your project name, package scope, hosts, module id, auth client id, and bundle id.
+3. Sync generated template files.
+   Run `bun run template:sync` after any manifest or branding change.
+4. Validate the template surface.
+   Run `bun run check:template`, then the preset-specific build, typecheck, and test scripts you intend to ship.
 
-## Target directory layout
+## Template Control Plane
 
-```
-packages/
-  core/        # Fragment engine, routing/streaming, binary codecs, plan cache, generic i18n hooks
-  platform/    # Env/config resolution, logging, cache + DB clients, Bun/Elysia server bootstrapping
-  ui/          # Design system: global styles and presentational components
-  features/    # Optional modules (auth, store, messaging, lab, etc.)
-apps/
-  site/        # Thin composition layer selecting features, branding, navigation, and copy
-  webtransport/# Existing Go HTTP/3 adapter (unchanged)
-infra/         # Infra configs (Docker, Caddy, etc.)
-scripts/       # Tooling scripts
-```
+- `packages/template-config/src/index.ts`
+  Owns branding defaults, preset descriptors, bundle manifests, starter data ownership, story ownership, test ownership, static-shell ownership, and API registration metadata.
+- `docs/template-reference.md`
+  Generated from the manifest. Use this as the authoritative list of presets, bundles, env keys, generated artifacts, and starter data.
+- `scripts/template-init.ts`
+  Rewrites branding defaults across the repo in one pass.
+- `scripts/template-sync.ts`
+  Regenerates env examples, the web manifest, and the template reference doc from the shared config.
 
-## Package-by-package moves and changes
+## Presets
 
-### packages/core
+- `full`
+  Default showcase preset. Enables the complete reusable surface, including store, lab, messaging, realtime, PWA, analytics, and the optional demo bundles.
+- `core`
+  Lean starter preset. Keeps the shell, auth/account routes, and the starter home composition without the broader showcase surface.
 
-- **Fragment types/codec:** Merge fragment types and binary encode/decode into `packages/core/src/fragment/types.ts` and `packages/core/src/fragment/binary.ts` (from `apps/site/src/fragment/types.ts`, legacy API fragment types, and binary helpers).
-- **Planner:** Move the legacy API fragment planner to `packages/core/src/fragment/planner.ts`; remove hard-coded homepage fragments and let external plan maps supply entries. Core only handles dependency resolution/sorting.
-- **Definitions:** Strip app-specific fragment definitions; provide stubs or registration hooks so the site (or a feature) injects actual fragment renderers.
-- **Service/store:** Move generic fragment read/plan fetch/cache logic (`service.ts`, `store.ts`) and make cache access pluggable (no direct Garnet/DB calls). Keep in-memory memoization/locking.
-- **Client orchestration:** Move client fragment orchestration (`apps/site/src/fragment/client.ts`, `plan-cache.ts`) under `packages/core/src/fragment/`, parameterizing API/WebTransport bases and feature flags instead of reading env directly.
-- **Server handlers:** Provide framework-agnostic handlers (e.g., `getFragmentPlanResponse`, `getFragmentPayloadResponse`) under `src/server/` and optional router factory sugar.
-- **i18n:** Keep only language normalization + translator helpers in `src/i18n/`; move actual copy/phrases out of core.
-- **Utilities:** Host speculation/prefetch utilities in `src/util/`, keeping them flag-driven but env-agnostic.
+Preset selection is controlled by `PROMETHEUS_TEMPLATE_PRESET`, `TEMPLATE_PRESET`, or `VITE_TEMPLATE_PRESET`. Feature-level overrides use the matching `*_TEMPLATE_FEATURES` and `*_TEMPLATE_DISABLE_FEATURES` env vars.
 
-### packages/platform
+## Branding Workflow
 
-- **Env/config:** Centralize env + feature flags (`src/env.ts`, `src/runtime-flags.ts`), exposing a config object for core/features instead of direct `import.meta.env` reads.
-- **Logging/telemetry:** Move error reporting hooks and any analytics beacons here.
-- **Cache/DB:** Wrap Garnet/Redis and Drizzle setup (`src/cache.ts`, `src/db.ts`), including connection lifecycle and optional pub/sub helpers.
-- **Server bootstrap:** Rehome Bun/Elysia server startup, migrations, rate limits, and WebSocket/webtransport toggles into `src/server/bun.ts` (or similar), composing routes from core + features.
-- **Framework adapters:** Provide Elysia wrappers for fragment/auth/store/chat routes as thin shims over core/feature logic.
+`templateBranding` is the single source of truth for:
 
-### packages/ui
+- project and package names
+- compose project name
+- default web and database hosts
+- SpaceTimeDB module ids
+- auth client ids
+- manifest ids
+- cache prefixes
+- notification copy and contact email
 
-- **Styles:** Move global CSS (Tailwind + Lightning CSS) to `packages/ui/src/global.css`; site imports via `useStyles$`.
-- **Components:** Move presentational components: Dock (+ DockIcon), FragmentCard, StaticRouteTemplate, LanguageToggle, ThemeToggle, RouteMotion, and theme store utilities. Keep them data-agnostic; accept props for labels/nav items instead of hard-coding.
-- **Copy:** No baked-in site copy; components read labels from provided context/props to stay themeable.
+Use `bun run template:init` to rewrite the defaults repo-wide, then commit the generated follow-up changes from `bun run template:sync`.
 
-### packages/features
+## Bundle Workflow
 
-- **Auth:** Move Better Auth integration (server routes + helpers) and the login page into `features/auth/`. Expose `validateSession` (public API) for other features.
-- **Store:** Move store API (`/store/items`), cache key helpers, DB queries, cache invalidation, and optional realtime hooks into `features/store/`, plus the Store page UI.
-- **Messaging:** Move chat history + AI echo routes, prompt validation, WS registration, chat cache invalidation, and any pub/sub bridging into `features/messaging/`.
-- **Lab:** Move the Lab static page and any experimental/demo hooks into `features/lab/`.
-- **Home/demo fragments:** Keep homepage fragment definitions/plan outside core (either as a feature or injected by the site). Provide translations alongside those definitions.
+Each detachable feature belongs to a `FeatureBundleManifest`. A bundle owns:
 
-### apps/site
+- routes and route guards
+- dock/topbar navigation
+- env keys
+- compose profiles
+- Storybook story globs
+- test globs
+- static-shell entrypoints
+- API registrations
+- demo section ids
+- starter data keys
+- dependency, visibility, and placement metadata
 
-- **Root/layout:** Keep Qwik root and layout as a composition layer only; import providers/components from packages. Route files should re-export feature pages (login, store, lab) and keep the homepage fragment loader wiring.
-- **Branding/navigation:** Define site branding, nav items, supported languages, and copy here. Pass copy data into the language provider instead of hard-coding inside components.
-- **Homepage fragments:** Register fragment definitions and path plans for `/` (or other pages) from site config/feature, not from core.
+Route files stay in place, but optional routes must gate themselves with the shared feature helpers so disabled bundles disappear cleanly and return `404`.
 
-## Performance and correctness guardrails
+## Demo And Starter Data
 
-- Preserve zero-hydration fragment streaming by default; client extras (prefetch, analytics) remain flag-gated.
-- Keep fragment caching behavior (etag-aware plan cache + fragment cache); Platform provides the concrete cache client.
-- Maintain rate-limit and payload-limit enforcement via Platform utilities.
-- Enforce import boundaries with lint/path-alias rules (core has no deps on platform/ui/features; site carries no feature logic).
+Home demo copy now lives in `apps/site/src/template-demos.ts`. Starter-safe sample data lives in `apps/site/src/template-starter-data.ts`. Keep reusable demos here so new forks can edit content without modifying the underlying route or fragment plumbing.
 
-## Migration checklist
+Use the `starter` home mode when you want the shell plus a small number of safe demos without the full showcase composition.
 
-1. Create packages (`core`, `platform`, `ui`, `features/...`) and move files per sections above, updating imports to scoped path aliases.
-2. Introduce registration/injection points for fragment definitions, plan overrides, cache adapters, and copy/i18n data.
-3. Update site routes/layout to consume UI + core providers and to define branding/nav/copy locally.
-4. Relocate env/flag resolution to Platform and thread config into core/client/server entry points.
-5. Preserve existing behaviors (streaming, caching, rate limits, WebTransport toggles) while removing app-specific content from core.
-6. Add lint/TS config to prevent cross-boundary imports and document how to add/remove features or swap the design system.
+## Infra Defaults
+
+- The `realtime` compose profile belongs to the `realtime` bundle.
+- `bun run dev` defaults to the `full` preset.
+- `bun run dev:core` gives you the lean runtime without removing reusable files.
+- `bun run preview`, `bun run build`, `bun run typecheck`, and `bun run test` all have preset-specific wrappers at the repo root.
+
+## Required Checks
+
+- `bun run check:template`
+- `bun run build:full`
+- `bun run build:core`
+- `bun run typecheck:full`
+- `bun run typecheck:core`
+- `bun run test:full`
+- `bun run test:core`
+- `bun run test:browser:full`
+- `bun run test:browser:core`
+
+When a change affects the running site, rebuild and restart the containers before testing `https://prometheus.prod/`.
+
+## Related Docs
+
+- `docs/template-reference.md` for generated preset and bundle metadata
+- `docs/add-a-bundle.md` for the bundle contract

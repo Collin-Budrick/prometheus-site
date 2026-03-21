@@ -65,7 +65,7 @@ const buildHomeSharedRuntimeKey = ({ path, lang }: Pick<HomeSharedRuntimeConfig,
 export const ensureHomeSharedRuntimeAssetPreloads = ({
   doc = typeof document !== 'undefined' ? document : null
 }: {
-  doc?: Parameters<typeof ensureFragmentRuntimeAssetPreloads>[0]['doc']
+  doc?: NonNullable<Parameters<typeof ensureFragmentRuntimeAssetPreloads>[0]>['doc']
 } = {}) => ensureFragmentRuntimeAssetPreloads({ doc })
 
 export const ensureHomeSharedRuntime = ({

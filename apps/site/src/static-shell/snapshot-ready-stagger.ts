@@ -64,8 +64,14 @@ export const replayStaticSnapshotReadyStagger = ({
       typeof win.requestAnimationFrame === 'function' ? win.requestAnimationFrame.bind(win) : undefined,
     cancelFrame:
       typeof win.cancelAnimationFrame === 'function' ? win.cancelAnimationFrame.bind(win) : undefined,
-    setTimer: typeof win.setTimeout === 'function' ? win.setTimeout.bind(win) : undefined,
-    clearTimer: typeof win.clearTimeout === 'function' ? win.clearTimeout.bind(win) : undefined,
+    setTimer:
+      typeof win.setTimeout === 'function'
+        ? (handler, timeout) => win.setTimeout(handler, timeout)
+        : undefined,
+    clearTimer:
+      typeof win.clearTimeout === 'function'
+        ? (handle) => win.clearTimeout(handle as number)
+        : undefined,
     onReady: () => {
       pendingSnapshotReadyCleanup = null
       releaseReadyStagger({

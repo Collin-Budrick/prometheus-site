@@ -1,4 +1,5 @@
 import {
+  type FragmentHeightLayout,
   getFragmentHeightViewport,
   normalizeFragmentHeight,
   parseFragmentHeightLayout,

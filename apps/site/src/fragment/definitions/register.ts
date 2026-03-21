@@ -8,7 +8,7 @@ import { registerChatFragmentDefinitions } from './chat'
 import { registerHomeServerFragmentDefinitions } from './home.server'
 import { registerStoreFragmentDefinitions } from './store'
 
-type TemplateSelection = Pick<ResolvedTemplateFeatures, 'features'>
+type TemplateSelection = Pick<ResolvedTemplateFeatures, 'features' | 'homeMode'>
 
 export const registerSiteFragmentBundles = (options: { template?: TemplateSelection } = {}) => {
   const template = options.template

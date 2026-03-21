@@ -9,6 +9,13 @@ export type LabCopy = {
   closeLabel: string
 }
 
+export type LabStarterCard = {
+  id: string
+  title: string
+  description: string
+  status: string
+}
+
 const defaultLabCopy: LabCopy = {
   metaLine: 'Labs',
   title: 'Lab',
@@ -17,7 +24,10 @@ const defaultLabCopy: LabCopy = {
   closeLabel: 'Close'
 }
 
-export const LabRoute = component$<{ copy?: Partial<LabCopy> }>(({ copy }) => {
+export const LabRoute = component$<{
+  copy?: Partial<LabCopy>
+  starterCards?: readonly LabStarterCard[]
+}>(({ copy, starterCards }) => {
   const resolvedCopy = { ...defaultLabCopy, ...copy }
 
   return (
@@ -27,7 +37,19 @@ export const LabRoute = component$<{ copy?: Partial<LabCopy> }>(({ copy }) => {
       description={resolvedCopy.description}
       actionLabel={resolvedCopy.actionLabel}
       closeLabel={resolvedCopy.closeLabel}
-    />
+    >
+      {starterCards?.length ? (
+        <div class="lab-starter-grid" data-lab-starter-grid>
+          {starterCards.map((card) => (
+            <article key={card.id} class="lab-starter-card" data-lab-starter-card>
+              <span class="lab-starter-status">{card.status}</span>
+              <h2>{card.title}</h2>
+              <p>{card.description}</p>
+            </article>
+          ))}
+        </div>
+      ) : null}
+    </StaticRouteTemplate>
   )
 })
 

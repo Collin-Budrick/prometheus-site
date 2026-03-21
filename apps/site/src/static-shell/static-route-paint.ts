@@ -1,16 +1,21 @@
 type StaticRoutePaintRoot = ParentNode | Element | null
+type StaticRoutePaintFrameRequest = (callback: FrameRequestCallback) => number
+type StaticRoutePaintFrameCancel = (handle: number) => void
+type StaticRoutePaintTimerHandle = number | ReturnType<typeof globalThis.setTimeout>
+type StaticRoutePaintSetTimer = (handler: () => void, timeout?: number) => StaticRoutePaintTimerHandle
+type StaticRoutePaintClearTimer = (handle: StaticRoutePaintTimerHandle) => void
 
 type ScheduleStaticRoutePaintReadyOptions = {
   root?: StaticRoutePaintRoot
   readyAttr: string
-  requestFrame?: typeof requestAnimationFrame
-  cancelFrame?: typeof cancelAnimationFrame
-  setTimer?: typeof setTimeout
-  clearTimer?: typeof clearTimeout
+  requestFrame?: StaticRoutePaintFrameRequest
+  cancelFrame?: StaticRoutePaintFrameCancel
+  setTimer?: StaticRoutePaintSetTimer
+  clearTimer?: StaticRoutePaintClearTimer
   onReady?: () => void
 }
 
-const resolveElementRoot = (root: StaticRoutePaintRoot) => {
+const resolveElementRoot = (root?: StaticRoutePaintRoot) => {
   if (
     !root ||
     typeof (root as Element).getAttribute !== 'function' ||
@@ -21,13 +26,17 @@ const resolveElementRoot = (root: StaticRoutePaintRoot) => {
   return root as Element
 }
 
+const isTimerHandle = (
+  value: StaticRoutePaintTimerHandle | 0
+): value is StaticRoutePaintTimerHandle => value !== 0
+
 export const scheduleStaticRoutePaintReady = ({
   root,
   readyAttr,
-  requestFrame = globalThis.requestAnimationFrame?.bind(globalThis),
-  cancelFrame = globalThis.cancelAnimationFrame?.bind(globalThis),
-  setTimer = globalThis.setTimeout?.bind(globalThis),
-  clearTimer = globalThis.clearTimeout?.bind(globalThis),
+  requestFrame = globalThis.requestAnimationFrame?.bind(globalThis) as StaticRoutePaintFrameRequest | undefined,
+  cancelFrame = globalThis.cancelAnimationFrame?.bind(globalThis) as StaticRoutePaintFrameCancel | undefined,
+  setTimer = globalThis.setTimeout?.bind(globalThis) as StaticRoutePaintSetTimer | undefined,
+  clearTimer = globalThis.clearTimeout?.bind(globalThis) as StaticRoutePaintClearTimer | undefined,
   onReady
 }: ScheduleStaticRoutePaintReadyOptions) => {
   const staticRoot = resolveElementRoot(root)
@@ -44,7 +53,7 @@ export const scheduleStaticRoutePaintReady = ({
   }
 
   let frameHandle = 0
-  let fallbackTimer: ReturnType<typeof setTimeout> | 0 = 0
+  let fallbackTimer: StaticRoutePaintTimerHandle | 0 = 0
   let cancelled = false
 
   const markReady = () => {
@@ -66,7 +75,7 @@ export const scheduleStaticRoutePaintReady = ({
     if (typeof cancelFrame === 'function') {
       if (frameHandle) cancelFrame(frameHandle)
     }
-    if (fallbackTimer && typeof clearTimer === 'function') {
+    if (isTimerHandle(fallbackTimer) && typeof clearTimer === 'function') {
       clearTimer(fallbackTimer)
     }
   }

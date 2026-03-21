@@ -2,6 +2,7 @@ import { createEnv as arkenvParse } from 'arkenv'
 import type { LogLevel } from '@logtape/logtape'
 import {
   hasTemplateFeature,
+  templateBranding,
   resolveTemplateFeatures,
   type ResolvedTemplateFeatures
 } from '@prometheus/template-config'
@@ -258,7 +259,7 @@ const resolveSpacetimeDbUri = (value: string | undefined) => {
 }
 
 const resolveSpacetimeModuleName = (value: string | undefined) => {
-  const resolved = (value ?? 'prometheus-site-local').trim()
+  const resolved = (value ?? templateBranding.ids.spacetimeModule).trim()
   if (!resolved) {
     throw new Error('SPACETIMEDB_MODULE is required')
   }
@@ -295,7 +296,7 @@ const parseAuthConfig = (env: Env, allowDevDefaults: boolean): AuthConfig => {
   const jwksUri = normalizeUrl(env.SPACETIMEAUTH_JWKS_URI) ?? jwksFallback
   const clientId = resolveSpacetimeAuthString(
     normalizeOptionalString(env.SPACETIMEAUTH_CLIENT_ID),
-    'prometheus-site-dev',
+    templateBranding.ids.authClientId,
     'SPACETIMEAUTH_CLIENT_ID',
     allowDevDefaults
   )

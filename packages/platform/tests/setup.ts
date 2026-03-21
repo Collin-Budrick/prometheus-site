@@ -1,30 +1,20 @@
 import { mock } from 'bun:test'
 import { Elysia } from 'elysia'
 import { createRateLimiter } from '@platform/rate-limit'
+import {
+  resetStarterShowcaseData,
+  starterChatMessages as chatMessagesData,
+  starterStoreItems as storeItemsData
+} from '@platform/server/starter-data'
+
+export { chatMessagesData, storeItemsData }
 
 type AuthSession = { id: string; userId: string }
-
-const defaultStoreItems = Array.from({ length: 15 }, (_, index) => ({
-  id: index + 1,
-  name: `Item ${index + 1}`,
-  price: Number(((index + 1) * 3).toFixed(2)),
-  quantity: index + 1,
-  createdAt: new Date(2024, 0, index + 1)
-}))
-
-const defaultChatMessages = [
-  { id: 1, author: 'alice', body: 'Hello from Alice', createdAt: new Date('2024-01-01T00:00:00Z') },
-  { id: 2, author: 'bob', body: 'Reply from Bob', createdAt: new Date('2024-01-02T00:00:00Z') }
-]
-
-export const storeItemsData = structuredClone(defaultStoreItems)
-export const chatMessagesData = structuredClone(defaultChatMessages)
 export const authUsersData = [
   { id: 'user-1', email: 'existing@example.com', name: 'Existing User' }
 ]
 export const authSessionsData: AuthSession[] = []
 
-let nextChatId = chatMessagesData.length + 1
 let nextSessionId = 1
 
 const cacheStorage = new Map<string, string>()
@@ -106,8 +96,7 @@ const fakeDb = {
         if (isChatMessagesTable(table)) {
           const payloads = Array.isArray(rows) ? rows : [rows]
           payloads.forEach((row) => {
-            chatMessagesData.push({ id: nextChatId, createdAt: new Date(), ...row })
-            nextChatId += 1
+            chatMessagesData.push({ id: chatMessagesData.length + 1, createdAt: new Date(), ...row })
           })
         }
       }
@@ -479,11 +468,9 @@ export const apiUrl = `http://127.0.0.1:${apiPort}`
 let startPromise: Promise<void> | null = null
 
 export const resetTestState = () => {
-  storeItemsData.splice(0, storeItemsData.length, ...structuredClone(defaultStoreItems))
-  chatMessagesData.splice(0, chatMessagesData.length, ...structuredClone(defaultChatMessages))
+  resetStarterShowcaseData()
   authUsersData.splice(0, authUsersData.length, { id: 'user-1', email: 'existing@example.com', name: 'Existing User' })
   authSessionsData.splice(0, authSessionsData.length)
-  nextChatId = chatMessagesData.length + 1
   nextSessionId = 1
   cacheStorage.clear()
   valkeyCounters.clear()
@@ -501,7 +488,9 @@ export const ensureApiReady = async () => {
     ;(globalThis as typeof globalThis & { __PROM_API_TEST__?: unknown }).__PROM_API_TEST__ = {
       cache: cacheClient,
       database: databaseClient,
-      rateLimiter
+      rateLimiter,
+      host: '127.0.0.1',
+      port: apiPort
     }
     startPromise = import('../src/entrypoints/api.ts').then(() => new Promise((resolve) => setTimeout(resolve, 50)))
   }

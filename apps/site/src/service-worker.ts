@@ -6,15 +6,17 @@ import {
   Serwist,
   StaleWhileRevalidate
 } from 'serwist'
+import { templateBranding } from '@prometheus/template-config'
 
 declare const self: ServiceWorkerGlobalScope & {
   __SW_MANIFEST: (string | { url: string; revision?: string | null })[]
 }
 
-const CACHE_NAME = 'fragment-prime-shell-v6'
-const DATA_CACHE_NAME = 'fragment-prime-data-v1'
-const FRAGMENT_PLAN_CACHE_NAME = 'fragment-prime-fragment-plan-v1'
-const FRAGMENT_BATCH_CACHE_NAME = 'fragment-prime-fragment-batch-v1'
+const CACHE_PREFIX = templateBranding.ids.cachePrefix
+const CACHE_NAME = `${CACHE_PREFIX}-shell-v6`
+const DATA_CACHE_NAME = `${CACHE_PREFIX}-data-v1`
+const FRAGMENT_PLAN_CACHE_NAME = `${CACHE_PREFIX}-fragment-plan-v1`
+const FRAGMENT_BATCH_CACHE_NAME = `${CACHE_PREFIX}-fragment-batch-v1`
 const FRAGMENT_BATCH_TTL_SECONDS = 30
 const scopeUrl = new URL(self.registration.scope)
 const scopePath = scopeUrl.pathname.endsWith('/') ? scopeUrl.pathname : `${scopeUrl.pathname}/`
@@ -231,11 +233,11 @@ const broadcastMessage = async (message: Record<string, unknown>) => {
 const clearRuntimeCaches = async () => {
   const keys = await caches.keys()
   const targets = keys.filter(
-    (key) =>
-      key.startsWith('fragment-prime-shell') ||
-      key.startsWith('fragment-prime-data') ||
-      key.startsWith('fragment-prime-fragment-plan') ||
-      key.startsWith('fragment-prime-fragment-batch')
+      (key) =>
+      key.startsWith(`${CACHE_PREFIX}-shell`) ||
+      key.startsWith(`${CACHE_PREFIX}-data`) ||
+      key.startsWith(`${CACHE_PREFIX}-fragment-plan`) ||
+      key.startsWith(`${CACHE_PREFIX}-fragment-batch`)
   )
   await Promise.all(targets.map((key) => caches.delete(key)))
 }
@@ -397,8 +399,10 @@ self.addEventListener('push', (event: PushEvent) => {
           return windowClient.focused || windowClient.visibilityState === 'visible'
         })
         if (clients.length && hasVisibleClient) return
-        const title = typeof data?.title === 'string' ? data.title : 'Fragment Prime is back online'
-        const body = typeof data?.body === 'string' ? data.body : 'Open Fragment Prime to reconnect.'
+        const title =
+          typeof data?.title === 'string' ? data.title : templateBranding.notifications.onlineTitle
+        const body =
+          typeof data?.body === 'string' ? data.body : templateBranding.notifications.onlineBody
         const url = typeof data?.url === 'string' ? data.url : '/'
         await self.registration.showNotification(title, {
           body,
@@ -411,7 +415,7 @@ self.addEventListener('push', (event: PushEvent) => {
     return
   }
   const title = typeof data?.title === 'string' ? data.title : 'New message'
-  const body = typeof data?.body === 'string' ? data.body : 'Open Fragment Prime to sync.'
+  const body = typeof data?.body === 'string' ? data.body : templateBranding.notifications.syncBody
   const url = typeof data?.url === 'string' ? data.url : '/'
   event.waitUntil(
     Promise.all([

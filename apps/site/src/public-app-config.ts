@@ -75,6 +75,12 @@ const publicEnv =
     : undefined
 
 const resolveTemplateEnv = (): PublicEnv | undefined => {
+  if (publicEnv && typeof process !== 'undefined' && typeof process.env === 'object') {
+    return {
+      ...(process.env as PublicEnv),
+      ...publicEnv
+    }
+  }
   if (publicEnv) return publicEnv
   if (typeof process !== 'undefined' && typeof process.env === 'object') {
     return process.env as PublicEnv

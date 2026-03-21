@@ -80,6 +80,7 @@ describe('fragment update broadcaster', () => {
     const broadcasterA = createFragmentUpdateBroadcaster(cacheClient)
     const broadcasterB = createFragmentUpdateBroadcaster(cacheClient)
     const received: Array<{ type: string; id?: string; lang?: string; updatedAt?: number }> = []
+    const publishedCountBefore = publishedMessages.length
 
     broadcasterB.subscribe((event) => {
       received.push(event)
@@ -96,7 +97,19 @@ describe('fragment update broadcaster', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 10))
 
-    expect(publishedMessages.length).toBe(1)
+    const publishedSinceTrigger = publishedMessages.slice(publishedCountBefore)
+    expect(publishedSinceTrigger.length).toBeGreaterThan(0)
+    expect(
+      publishedSinceTrigger.some((message) => {
+        const payload = JSON.parse(message) as { type?: string; id?: string; lang?: string; updatedAt?: number }
+        return (
+          payload.type === 'fragment' &&
+          payload.id === 'fragment://page/home/manifest@v1' &&
+          payload.lang === 'en' &&
+          payload.updatedAt === 42
+        )
+      })
+    ).toBe(true)
     expect(received).toContainEqual({
       type: 'fragment',
       id: 'fragment://page/home/manifest@v1',

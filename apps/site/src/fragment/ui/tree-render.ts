@@ -9,6 +9,6 @@ const TREE_RENDER_ONLY_TAGS: Record<string, true> = {
 
 export const requiresTreeRenderer = (node: RenderNode | null | undefined): boolean => {
   if (!node || node.type !== 'element') return false
-  if (TREE_RENDER_ONLY_TAGS[node.tag]) return true
+  if (typeof node.tag === 'string' && TREE_RENDER_ONLY_TAGS[node.tag]) return true
   return node.children?.some((child) => requiresTreeRenderer(child)) ?? false
 }

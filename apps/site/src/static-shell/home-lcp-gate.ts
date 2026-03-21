@@ -15,6 +15,8 @@ type HomeLcpGateWindow = Pick<Window, 'addEventListener' | 'removeEventListener'
   __PROM_STATIC_HOME_LCP_RELEASED__?: boolean
 }
 
+type HomeTimerHandle = ReturnType<HomeLcpGateWindow['setTimeout']>
+
 export type HomeFirstLcpGate = {
   wait: Promise<void>
   cleanup: () => void
@@ -54,7 +56,7 @@ export const createHomeFirstLcpGate = ({
   }
 
   let resolved = false
-  let timeoutId: ReturnType<typeof setTimeout> | null = null
+  let timeoutId: HomeTimerHandle | null = null
   let observer: HomeLcpObserver | null = null
 
   let resolveWait!: () => void

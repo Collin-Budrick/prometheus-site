@@ -1,10 +1,12 @@
 import type { Preview } from 'storybook-framework-qwik'
-import { resolveTemplateFeatures } from '@prometheus/template-config'
+import type { ResolvedTemplateFeatures } from '@prometheus/template-config'
 import type { PublicAppConfig } from '../src/public-app-config'
 import { defaultLanguage, getLanguagePack } from '../src/lang'
 import { seedLanguageResources } from '../src/lang/client'
 import { LangProvider } from '../src/shared/lang-bridge'
 import '@prometheus/ui/global.css'
+
+declare const __STORYBOOK_TEMPLATE__: ResolvedTemplateFeatures
 
 type StorybookGlobalTarget = typeof globalThis & {
   __PUBLIC_APP_CONFIG__?: PublicAppConfig | undefined
@@ -43,7 +45,7 @@ const storybookAppConfig: PublicAppConfig = {
   p2pWakuRelays: [],
   p2pCrdtSignaling: [],
   p2pIceServers: [],
-  template: resolveTemplateFeatures({})
+  template: __STORYBOOK_TEMPLATE__
 }
 
 ;(globalThis as StorybookGlobalTarget).__PUBLIC_APP_CONFIG__ = storybookAppConfig

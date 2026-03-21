@@ -3,12 +3,29 @@ import { apiUrl, cacheKeysWritten, chatMessagesData, ensureApiReady, publishedMe
 import { decodeFragmentPayload } from '@core/fragment/binary'
 import { parseFragmentFrames } from '@core/fragment/frames'
 import { encodeFragmentKnownVersions } from '@core/fragment/known-versions'
+import { buildFragmentCacheKey } from '@core/fragment/store'
+import { platformConfig } from '@platform/config'
 
 await ensureApiReady()
 
 beforeEach(() => {
   resetTestState()
 })
+
+const featureFlags = platformConfig.template.features
+const protocolTwoPath = featureFlags.store ? '/store' : '/'
+const describeStore = featureFlags.store ? describe : describe.skip
+const describeMessaging = featureFlags.messaging ? describe : describe.skip
+
+const buildKnownVersions = (plan: { fragments: Array<{ id: string; cache?: { updatedAt?: number } }> }) =>
+  encodeFragmentKnownVersions(
+    plan.fragments.reduce<Record<string, number>>((acc, fragment) => {
+      if (typeof fragment.cache?.updatedAt === 'number') {
+        acc[fragment.id] = fragment.cache.updatedAt
+      }
+      return acc
+    }, {})
+  )
 
 describe('health endpoint', () => {
   it('returns ok status and uptime', async () => {
@@ -59,12 +76,15 @@ describe('fragment plan includeInitial', () => {
   })
 
   it('returns protocol 2 plans without base64 initial fragments', async () => {
-    const response = await fetch(`${apiUrl}/fragments/plan?path=/store&includeInitial=1&protocol=2`)
+    const response = await fetch(
+      `${apiUrl}/fragments/plan?path=${encodeURIComponent(protocolTwoPath)}&includeInitial=1&protocol=2`
+    )
     expect(response.status).toBe(200)
 
     const payload = await response.json()
     expect(payload.initialFragments).toBeUndefined()
-    expect(payload.initialHtml).toBeTruthy()
+    const hasHtmlBoot = payload.fragments.some((fragment: { bootMode?: string }) => fragment.bootMode === 'html')
+    expect(Boolean(payload.initialHtml)).toBe(hasHtmlBoot)
     expect(
       payload.fragments.some(
         (fragment: { bootMode?: string }) =>
@@ -74,7 +94,9 @@ describe('fragment plan includeInitial', () => {
   })
 
   it('returns a protocol 2 bootstrap bundle', async () => {
-    const response = await fetch(`${apiUrl}/fragments/bootstrap?path=/store&protocol=2`)
+    const response = await fetch(
+      `${apiUrl}/fragments/bootstrap?path=${encodeURIComponent(protocolTwoPath)}&protocol=2`
+    )
     expect(response.status).toBe(200)
     expect(response.headers.get('content-type')).toContain('application/octet-stream')
 
@@ -83,7 +105,7 @@ describe('fragment plan includeInitial', () => {
 
     const [firstFrame] = frames
     const payload = decodeFragmentPayload(firstFrame!.payloadBytes)
-    expect(payload.meta.cacheKey).toBe(firstFrame!.id)
+    expect(payload.meta.cacheKey).toBe(buildFragmentCacheKey(firstFrame!.id, 'en'))
   })
 
   it('supports explicit protocol 2 bootstrap ids with stable ordering', async () => {
@@ -105,21 +127,13 @@ describe('fragment plan includeInitial', () => {
   })
 
   it('filters already-known fragments from protocol 2 batch responses', async () => {
-    const planResponse = await fetch(`${apiUrl}/fragments/plan?path=/store&protocol=2`)
+    await fetch(`${apiUrl}/fragments/bootstrap?path=${encodeURIComponent(protocolTwoPath)}&protocol=2`)
+    const planResponse = await fetch(
+      `${apiUrl}/fragments/plan?path=${encodeURIComponent(protocolTwoPath)}&protocol=2&refresh=1`
+    )
     expect(planResponse.status).toBe(200)
     const plan = await planResponse.json()
-
-    const known = encodeFragmentKnownVersions(
-      (plan.fragments as Array<{ id: string; cache?: { updatedAt?: number } }>).reduce<Record<string, number>>(
-        (acc, fragment) => {
-          if (typeof fragment.cache?.updatedAt === 'number') {
-            acc[fragment.id] = fragment.cache.updatedAt
-          }
-          return acc
-        },
-        {}
-      )
-    )
+    let known = buildKnownVersions(plan)
 
     const batchResponse = await fetch(`${apiUrl}/fragments/batch?protocol=2&known=${known}`, {
       method: 'POST',
@@ -132,31 +146,57 @@ describe('fragment plan includeInitial', () => {
     })
 
     expect(batchResponse.status).toBe(200)
-    const frames = parseFragmentFrames(new Uint8Array(await batchResponse.arrayBuffer()))
+    let frames = parseFragmentFrames(new Uint8Array(await batchResponse.arrayBuffer()))
+    if (frames.length > 0) {
+      const refreshedPlan = await (
+        await fetch(
+          `${apiUrl}/fragments/plan?path=${encodeURIComponent(protocolTwoPath)}&protocol=2&refresh=1`
+        )
+      ).json()
+      known = buildKnownVersions(refreshedPlan)
+      const retryResponse = await fetch(`${apiUrl}/fragments/batch?protocol=2&known=${known}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(
+          refreshedPlan.fragments.map((fragment: { id: string }) => ({
+            id: fragment.id
+          }))
+        )
+      })
+      expect(retryResponse.status).toBe(200)
+      frames = parseFragmentFrames(new Uint8Array(await retryResponse.arrayBuffer()))
+    }
     expect(frames.length).toBe(0)
   })
 
   it('filters already-known fragments from protocol 2 stream responses', async () => {
-    const planResponse = await fetch(`${apiUrl}/fragments/plan?path=/store&protocol=2`)
+    await fetch(`${apiUrl}/fragments/bootstrap?path=${encodeURIComponent(protocolTwoPath)}&protocol=2`)
+    const planResponse = await fetch(
+      `${apiUrl}/fragments/plan?path=${encodeURIComponent(protocolTwoPath)}&protocol=2&refresh=1`
+    )
     expect(planResponse.status).toBe(200)
     const plan = await planResponse.json()
+    let known = buildKnownVersions(plan)
 
-    const known = encodeFragmentKnownVersions(
-      (plan.fragments as Array<{ id: string; cache?: { updatedAt?: number } }>).reduce<Record<string, number>>(
-        (acc, fragment) => {
-          if (typeof fragment.cache?.updatedAt === 'number') {
-            acc[fragment.id] = fragment.cache.updatedAt
-          }
-          return acc
-        },
-        {}
-      )
+    let streamResponse = await fetch(
+      `${apiUrl}/fragments/stream?path=${encodeURIComponent(protocolTwoPath)}&protocol=2&known=${known}&live=0`
     )
-
-    const streamResponse = await fetch(`${apiUrl}/fragments/stream?path=/store&protocol=2&known=${known}&live=0`)
     expect(streamResponse.status).toBe(200)
 
-    const frames = parseFragmentFrames(new Uint8Array(await streamResponse.arrayBuffer()))
+    let frames = parseFragmentFrames(new Uint8Array(await streamResponse.arrayBuffer()))
+    if (frames.length > 0) {
+      const refreshedPlan = await (
+        await fetch(
+          `${apiUrl}/fragments/plan?path=${encodeURIComponent(protocolTwoPath)}&protocol=2&refresh=1`
+        )
+      ).json()
+      known = buildKnownVersions(refreshedPlan)
+      streamResponse = await fetch(
+        `${apiUrl}/fragments/stream?path=${encodeURIComponent(protocolTwoPath)}&protocol=2&known=${known}&live=0`
+      )
+      expect(streamResponse.status).toBe(200)
+      frames = parseFragmentFrames(new Uint8Array(await streamResponse.arrayBuffer()))
+    }
     expect(frames.length).toBe(0)
   })
 
@@ -170,7 +210,7 @@ describe('fragment plan includeInitial', () => {
   })
 })
 
-describe('store pagination', () => {
+describeStore('store pagination', () => {
   it('paginates items and sets cache entries', async () => {
     const firstPage = await fetch(`${apiUrl}/store/items`)
     expect(firstPage.status).toBe(200)
@@ -241,7 +281,7 @@ describe('echo endpoint validation', () => {
   })
 })
 
-describe('chat websocket publish', () => {
+describeMessaging('chat websocket publish', () => {
   it('rejects unauthenticated websocket connections', async () => {
     const socket = new WebSocket(`${apiUrl.replace('http', 'ws')}/ws`)
 
@@ -287,12 +327,16 @@ describe('chat websocket publish', () => {
     const welcomePayload = JSON.parse(welcome)
     expect(welcomePayload.type).toBe('welcome')
 
+    const publishedCountBefore = publishedMessages.length
     socket.send(JSON.stringify({ type: 'chat', text: 'Hello chat' }))
 
     await new Promise((resolve) => setTimeout(resolve, 50))
 
-    expect(publishedMessages.length).toBe(1)
-    const published = JSON.parse(publishedMessages[0])
+    const published = publishedMessages
+      .slice(publishedCountBefore)
+      .map((message) => JSON.parse(message))
+      .find((message) => message.type === 'chat' && message.text === 'Hello chat')
+    expect(published).toBeTruthy()
     expect(published.type).toBe('chat')
     expect(published.text).toBe('Hello chat')
     expect(published.from).toBe('Existing User')

@@ -1,4 +1,5 @@
 import { DbConnection } from '@prometheus/spacetimedb-client'
+import { templateBranding } from '@prometheus/template-config'
 import { appConfig } from '../app-config.server'
 import { resolveRequestOrigin } from './api-base.server'
 
@@ -20,7 +21,7 @@ type FailureEntry = {
   expiresAt: number
 }
 
-const DEFAULT_STORE_SPACETIMEDB_MODULE = 'prometheus-site-local'
+const DEFAULT_STORE_SPACETIMEDB_MODULE = templateBranding.ids.spacetimeModule
 const STORE_INVENTORY_CACHE_TTL_MS = 5_000
 const STORE_INVENTORY_FAILURE_TTL_MS = 30_000
 const STORE_INVENTORY_TIMEOUT_MS = 4_000

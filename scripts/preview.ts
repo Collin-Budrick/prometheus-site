@@ -4,6 +4,7 @@ import { lookup } from 'node:dns/promises'
 import { existsSync } from 'node:fs'
 import { networkInterfaces } from 'node:os'
 import path from 'node:path'
+import { templateBranding } from '../packages/template-config/src/index.ts'
 import {
   computeFingerprint,
   ensureCaddyConfig,
@@ -284,6 +285,14 @@ const composeEnv = {
   PROMETHEUS_DB_HOST_PROD: runtimeConfig.domains.dbProd,
   PROMETHEUS_WEB_HOST: previewWebHost,
   PROMETHEUS_WEB_HOST_PROD: runtimeConfig.domains.webProd,
+  PROMETHEUS_TEMPLATE_PRESET: runtimeConfig.template.preset,
+  PROMETHEUS_TEMPLATE_HOME_MODE: runtimeConfig.template.homeMode,
+  PROMETHEUS_TEMPLATE_FEATURES: process.env.PROMETHEUS_TEMPLATE_FEATURES?.trim() || '',
+  PROMETHEUS_TEMPLATE_DISABLE_FEATURES: process.env.PROMETHEUS_TEMPLATE_DISABLE_FEATURES?.trim() || '',
+  VITE_TEMPLATE_PRESET: runtimeConfig.template.preset,
+  VITE_TEMPLATE_HOME_MODE: runtimeConfig.template.homeMode,
+  VITE_TEMPLATE_FEATURES: process.env.PROMETHEUS_TEMPLATE_FEATURES?.trim() || '',
+  VITE_TEMPLATE_DISABLE_FEATURES: process.env.PROMETHEUS_TEMPLATE_DISABLE_FEATURES?.trim() || '',
   VITE_SPACETIMEDB_URI: process.env.VITE_SPACETIMEDB_URI?.trim() || previewDbOrigin,
   PROMETHEUS_VITE_API_BASE: '/api',
   PROMETHEUS_VITE_WEBTRANSPORT_BASE: resolvedWebTransportBase,
@@ -310,6 +319,14 @@ const composeEnv = {
 }
 const composeSiteBuildEnv = {
   ...process.env,
+  PROMETHEUS_TEMPLATE_PRESET: composeEnv.PROMETHEUS_TEMPLATE_PRESET,
+  PROMETHEUS_TEMPLATE_HOME_MODE: composeEnv.PROMETHEUS_TEMPLATE_HOME_MODE,
+  PROMETHEUS_TEMPLATE_FEATURES: composeEnv.PROMETHEUS_TEMPLATE_FEATURES,
+  PROMETHEUS_TEMPLATE_DISABLE_FEATURES: composeEnv.PROMETHEUS_TEMPLATE_DISABLE_FEATURES,
+  VITE_TEMPLATE_PRESET: composeEnv.VITE_TEMPLATE_PRESET,
+  VITE_TEMPLATE_HOME_MODE: composeEnv.VITE_TEMPLATE_HOME_MODE,
+  VITE_TEMPLATE_FEATURES: composeEnv.VITE_TEMPLATE_FEATURES,
+  VITE_TEMPLATE_DISABLE_FEATURES: composeEnv.VITE_TEMPLATE_DISABLE_FEATURES,
   VITE_API_BASE: composeEnv.PROMETHEUS_VITE_API_BASE,
   VITE_SPACETIMEDB_URI: composeEnv.VITE_SPACETIMEDB_URI,
   VITE_WEBTRANSPORT_BASE: composeEnv.PROMETHEUS_VITE_WEBTRANSPORT_BASE,
@@ -338,11 +355,11 @@ const composeSiteBuildEnv = {
   VITE_SPACETIMEAUTH_CLIENT_ID:
     process.env.VITE_SPACETIMEAUTH_CLIENT_ID?.trim() ||
     process.env.SPACETIMEAUTH_CLIENT_ID?.trim() ||
-    'prometheus-site-dev',
+    templateBranding.ids.authClientId,
   VITE_SPACETIMEDB_MODULE:
     process.env.VITE_SPACETIMEDB_MODULE?.trim() ||
     process.env.SPACETIMEDB_MODULE?.trim() ||
-    'prometheus-site-local'
+    templateBranding.ids.spacetimeModule
 }
 const composeSiteDistManifestPath = path.join(root, 'apps', 'site', 'dist', 'q-manifest.json')
 
@@ -400,12 +417,20 @@ const buildSiteBundle = async () => {
     PROMETHEUS_HTTPS_PORT: previewHttpsPort,
     PROMETHEUS_WEBTRANSPORT_PORT: previewWebTransportPort,
     PROMETHEUS_API_PORT: previewApiPort,
+    PROMETHEUS_TEMPLATE_PRESET: composeEnv.PROMETHEUS_TEMPLATE_PRESET,
+    PROMETHEUS_TEMPLATE_HOME_MODE: composeEnv.PROMETHEUS_TEMPLATE_HOME_MODE,
+    PROMETHEUS_TEMPLATE_FEATURES: composeEnv.PROMETHEUS_TEMPLATE_FEATURES,
+    PROMETHEUS_TEMPLATE_DISABLE_FEATURES: composeEnv.PROMETHEUS_TEMPLATE_DISABLE_FEATURES,
+    VITE_TEMPLATE_PRESET: composeEnv.VITE_TEMPLATE_PRESET,
+    VITE_TEMPLATE_HOME_MODE: composeEnv.VITE_TEMPLATE_HOME_MODE,
+    VITE_TEMPLATE_FEATURES: composeEnv.VITE_TEMPLATE_FEATURES,
+    VITE_TEMPLATE_DISABLE_FEATURES: composeEnv.VITE_TEMPLATE_DISABLE_FEATURES,
     VITE_API_BASE: previewApiBase,
     VITE_SPACETIMEDB_URI: process.env.VITE_SPACETIMEDB_URI?.trim() || previewDbOrigin,
     VITE_SPACETIMEDB_MODULE:
       process.env.VITE_SPACETIMEDB_MODULE?.trim() ||
       process.env.SPACETIMEDB_MODULE?.trim() ||
-      'prometheus-site-local',
+      templateBranding.ids.spacetimeModule,
     VITE_SPACETIMEAUTH_AUTHORITY:
       process.env.VITE_SPACETIMEAUTH_AUTHORITY?.trim() ||
       process.env.SPACETIMEAUTH_AUTHORITY?.trim() ||
@@ -413,7 +438,7 @@ const buildSiteBundle = async () => {
     VITE_SPACETIMEAUTH_CLIENT_ID:
       process.env.VITE_SPACETIMEAUTH_CLIENT_ID?.trim() ||
       process.env.SPACETIMEAUTH_CLIENT_ID?.trim() ||
-      'prometheus-site-dev',
+      templateBranding.ids.authClientId,
     API_BASE: previewBuildApiBase,
     VITE_WEBTRANSPORT_BASE: previewWebTransportBase,
     WEBTRANSPORT_BASE: previewWebTransportBase,
@@ -442,6 +467,16 @@ const buildSiteBundle = async () => {
       cwd: root,
       env: buildEnv
     })
+  const runSsrBuild = () =>
+    spawnSync(
+      bunBin,
+      ['run', '--cwd', 'apps/site', 'scripts/vite-run.ts', '--', 'build', '--ssr', 'src/entry.preview.tsx'],
+      {
+        stdio: 'inherit',
+        cwd: root,
+        env: buildEnv
+      }
+    )
   const runStaticShellEntryBuild = () =>
     spawnSync(bunBin, ['run', '--cwd', 'apps/site', 'build:static-shell:entries'], {
       stdio: 'inherit',
@@ -472,6 +507,11 @@ const buildSiteBundle = async () => {
     logSpawnFailure('Static shell build', staticShellResult)
     process.exit(staticShellResult.status ?? 1)
   }
+  const ssrResult = runSsrBuild()
+  if (ssrResult.status !== 0) {
+    logSpawnFailure('Vite SSR build', ssrResult)
+    process.exit(ssrResult.status ?? 1)
+  }
 }
 
 const { configChanged } = ensureCaddyConfig('http://web:4173', 'http://web:4173', {
@@ -489,6 +529,7 @@ type BuildTarget = {
 
 const cacheKeyPrefix = 'preview'
 const cache = loadBuildCache()
+const composeRuntimeCacheKey = `${cacheKeyPrefix}:compose-runtime`
 const webBuildInputs = [
   'package.json',
   'bun.lock',
@@ -498,6 +539,14 @@ const webBuildInputs = [
   'packages'
 ]
 const webBuildExtra = {
+  PROMETHEUS_TEMPLATE_PRESET: process.env.PROMETHEUS_TEMPLATE_PRESET?.trim() || '',
+  PROMETHEUS_TEMPLATE_HOME_MODE: process.env.PROMETHEUS_TEMPLATE_HOME_MODE?.trim() || '',
+  PROMETHEUS_TEMPLATE_FEATURES: process.env.PROMETHEUS_TEMPLATE_FEATURES?.trim() || '',
+  PROMETHEUS_TEMPLATE_DISABLE_FEATURES: process.env.PROMETHEUS_TEMPLATE_DISABLE_FEATURES?.trim() || '',
+  VITE_TEMPLATE_PRESET: composeEnv.VITE_TEMPLATE_PRESET,
+  VITE_TEMPLATE_HOME_MODE: composeEnv.VITE_TEMPLATE_HOME_MODE,
+  VITE_TEMPLATE_FEATURES: composeEnv.VITE_TEMPLATE_FEATURES,
+  VITE_TEMPLATE_DISABLE_FEATURES: composeEnv.VITE_TEMPLATE_DISABLE_FEATURES,
   VITE_API_BASE: composeEnv.PROMETHEUS_VITE_API_BASE,
   VITE_SPACETIMEDB_URI: composeEnv.VITE_SPACETIMEDB_URI,
   VITE_WEBTRANSPORT_BASE: composeEnv.PROMETHEUS_VITE_WEBTRANSPORT_BASE,
@@ -525,6 +574,24 @@ const webBuildExtra = {
 }
 const composeSiteDistCacheKey = `${cacheKeyPrefix}:site-dist`
 const composeSiteDistFingerprint = computeFingerprint(webBuildInputs, webBuildExtra)
+const composeRuntimeFingerprint = computeFingerprint(
+  ['docker-compose.yml', 'apps/site/Dockerfile', 'packages/platform/Dockerfile'],
+  {
+    COMPOSE_PROJECT_NAME: composeEnv.COMPOSE_PROJECT_NAME ?? '',
+    COMPOSE_PROFILES: composeEnv.COMPOSE_PROFILES ?? '',
+    PROMETHEUS_TEMPLATE_PRESET: composeEnv.PROMETHEUS_TEMPLATE_PRESET ?? '',
+    PROMETHEUS_TEMPLATE_HOME_MODE: composeEnv.PROMETHEUS_TEMPLATE_HOME_MODE ?? '',
+    PROMETHEUS_TEMPLATE_FEATURES: composeEnv.PROMETHEUS_TEMPLATE_FEATURES ?? '',
+    PROMETHEUS_TEMPLATE_DISABLE_FEATURES: composeEnv.PROMETHEUS_TEMPLATE_DISABLE_FEATURES ?? '',
+    ENABLE_WEBTRANSPORT_FRAGMENTS: composeEnv.ENABLE_WEBTRANSPORT_FRAGMENTS ?? '',
+    WEBTRANSPORT_ENABLE_DATAGRAMS: composeEnv.WEBTRANSPORT_ENABLE_DATAGRAMS ?? '',
+    VITE_DISABLE_SW: composeEnv.VITE_DISABLE_SW ?? '',
+    VITE_ENABLE_ANALYTICS: composeEnv.VITE_ENABLE_ANALYTICS ?? '',
+    VITE_ENABLE_HIGHLIGHT: composeEnv.VITE_ENABLE_HIGHLIGHT ?? '',
+    INCLUDE_REALTIME_SERVICES: includeRealtimeServices ? '1' : '0'
+  }
+)
+const needsComposeRefresh = cache[composeRuntimeCacheKey]?.fingerprint !== composeRuntimeFingerprint
 const needsComposeSiteDistBuild =
   !existsSync(composeSiteDistManifestPath) || cache[composeSiteDistCacheKey]?.fingerprint !== composeSiteDistFingerprint
 if (needsComposeSiteDistBuild) {
@@ -600,10 +667,21 @@ const optionalServices = includeRealtimeServices ? runtimeCompose.services.optio
 const previewServices = [...runtimeCompose.services.core, ...runtimeCompose.services.web, ...optionalServices, 'caddy']
 const running = getRunningServices(command, prefix, composeEnv)
 const allRunning = previewServices.every((service) => running.has(service))
-const needsFullUp = !allRunning
+const needsFullUp = !allRunning || needsComposeRefresh
 
 if (needsFullUp) {
-  const up = runSync(command, [...prefix, 'up', '-d', '--remove-orphans', ...previewServices], composeEnv)
+  const up = runSync(
+    command,
+    [
+      ...prefix,
+      'up',
+      '-d',
+      '--remove-orphans',
+      ...(needsComposeRefresh && allRunning ? ['--force-recreate'] : []),
+      ...previewServices
+    ],
+    composeEnv
+  )
   if (up.status !== 0) process.exit(up.status ?? 1)
 } else if (buildServices.length) {
   const up = runSync(
@@ -624,6 +702,10 @@ for (const target of buildResults) {
 }
 cache[composeSiteDistCacheKey] = {
   fingerprint: composeSiteDistFingerprint,
+  updatedAt: new Date().toISOString()
+}
+cache[composeRuntimeCacheKey] = {
+  fingerprint: composeRuntimeFingerprint,
   updatedAt: new Date().toISOString()
 }
 saveBuildCache(cache)

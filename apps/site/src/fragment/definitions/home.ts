@@ -2,11 +2,9 @@ import { buildFragmentPlan } from '@core/fragment/planner'
 import { registerFragmentDefinitions, setFragmentPlanBuilder } from '@core/fragment/registry'
 import { h, t as textNode } from '@core/fragment/tree'
 import type { FragmentDefinition, FragmentPlanEntry, RenderNode } from '@core/fragment/types'
-import {
-  hasTemplateFeature,
-  type ResolvedTemplateFeatures
-} from '@prometheus/template-config'
+import { type ResolvedTemplateFeatures } from '@prometheus/template-config'
 import { buildFragmentWidgetId, createFragmentWidgetMarkerNode } from '../widget-markup'
+import { getHomeTemplateDemo, resolveEnabledHomeTemplateDemos } from '../../template-demos'
 import { loadWasmAdd } from './wasm'
 
 const baseMeta = {
@@ -14,6 +12,13 @@ const baseMeta = {
   staleTtl: 120,
   runtime: 'edge' as const
 }
+
+const manifestoDemo = getHomeTemplateDemo('home-manifesto')
+const plannerDemo = getHomeTemplateDemo('home-planner')
+const wasmDemo = getHomeTemplateDemo('home-wasm')
+const preactDemo = getHomeTemplateDemo('home-preact')
+const reactDemo = getHomeTemplateDemo('home-react')
+const collabDemo = getHomeTemplateDemo('home-collab')
 
 const makeText = (translate: (value: string, params?: Record<string, string | number>) => string) => {
   return (value: string, params?: Record<string, string | number>) => textNode(translate(value, params))
@@ -86,7 +91,7 @@ const renderHomeWidgetMarker = (
   })
 
 const planner: FragmentDefinition = {
-  id: 'fragment://page/home/planner@v1',
+  id: plannerDemo.fragmentId,
   tags: ['home', 'planner'],
   head: [],
   css: '',
@@ -94,39 +99,34 @@ const planner: FragmentDefinition = {
   render: ({ t }) => {
     const text = makeText(t)
     return h('section', null, [
-      h('div', { class: 'meta-line' }, [text('fragment planner')]),
-      h('h2', null, text('Planner executes before rendering.')),
+      h('div', { class: 'meta-line' }, [text(plannerDemo.metaLine)]),
+      h('h2', null, text(plannerDemo.headline)),
       renderHomeCopyBlock(
         text,
-        'Dependency resolution, cache hit checks, and runtime selection happen up front.',
-        'Rendering only occurs on cache miss; revalidation runs asynchronously.'
+        plannerDemo.lead,
+        plannerDemo.detail
       ),
       renderHomeWidgetMarker(
-        'fragment://page/home/planner@v1',
+        plannerDemo.fragmentId,
         'planner-demo',
         renderHomeDemoCompactShell(
           'planner',
-          text('Planner'),
-          text('Resolve the dependency graph.'),
-          text('Dependencies \u00b7 Cache \u00b7 Runtime')
+          text(plannerDemo.preview?.title ?? plannerDemo.title),
+          text(plannerDemo.preview?.summary ?? plannerDemo.description),
+          text(plannerDemo.preview?.meta ?? plannerDemo.title)
         )
       ),
-      renderHomeMetricChips(text, [
-        'Dependencies resolved',
-        'Parallel cache hits',
-        'Edge or Node runtime',
-        'Async revalidation'
-      ])
+      renderHomeMetricChips(text, plannerDemo.metrics ? [...plannerDemo.metrics] : [])
     ])
   }
 }
 
 const ledger: FragmentDefinition = {
-  id: 'fragment://page/home/ledger@v1',
+  id: wasmDemo.fragmentId,
   tags: ['home', 'wasm'],
   head: [],
   css: '',
-  dependsOn: ['fragment://page/home/planner@v1'],
+  dependsOn: [plannerDemo.fragmentId],
   ...baseMeta,
   render: async ({ t }) => {
     const text = makeText(t)
@@ -135,21 +135,21 @@ const ledger: FragmentDefinition = {
     const burst = add(42, 58)
 
     return h('section', null, [
-      h('div', { class: 'meta-line' }, [text('wasm renderer')]),
-      h('h2', null, text('Hot-path fragments rendered by WASM.')),
+      h('div', { class: 'meta-line' }, [text(wasmDemo.metaLine)]),
+      h('h2', null, text(wasmDemo.headline)),
       renderHomeCopyBlock(
         text,
-        'Critical transforms run inside WebAssembly for deterministic, edge-safe execution.',
-        'Numeric outputs feed fragment composition without touching HTML.'
+        wasmDemo.lead,
+        wasmDemo.detail
       ),
       renderHomeWidgetMarker(
-        'fragment://page/home/ledger@v1',
+        wasmDemo.fragmentId,
         'wasm-renderer-demo',
         renderHomeDemoCompactShell(
           'wasm-renderer',
-          text('Wasm renderer'),
-          text('Binary bytes stay deterministic.'),
-          text('Edge-safe \u00b7 Deterministic \u00b7 HTML untouched')
+          text(wasmDemo.preview?.title ?? wasmDemo.title),
+          text(wasmDemo.preview?.summary ?? wasmDemo.description),
+          text(wasmDemo.preview?.meta ?? wasmDemo.title)
         )
       ),
       renderHomeMetricChips(text, [
@@ -163,7 +163,7 @@ const ledger: FragmentDefinition = {
 }
 
 const island: FragmentDefinition = {
-  id: 'fragment://page/home/island@v1',
+  id: preactDemo.fragmentId,
   tags: ['home', 'island'],
   head: [],
   css: '',
@@ -171,63 +171,63 @@ const island: FragmentDefinition = {
   render: ({ t }) => {
     const text = makeText(t)
     return h('section', null, [
-      h('div', { class: 'meta-line' }, [text('preact island')]),
-      h('h2', null, text('Isolated client islands stay sandboxed.')),
+      h('div', { class: 'meta-line' }, [text(preactDemo.metaLine)]),
+      h('h2', null, text(preactDemo.headline)),
       renderHomeCopyBlock(
         text,
-        'Preact loads only inside the island boundary.',
-        'No shared state, no routing ownership, no global hydration.'
+        preactDemo.lead,
+        preactDemo.detail
       ),
       renderHomeWidgetMarker(
-        'fragment://page/home/island@v1',
+        preactDemo.fragmentId,
         'preact-island',
         renderHomeDemoCompactShell(
           'preact-island',
-          text('Isolated island'),
-          text('Counting down.'),
-          text('Countdown \u00b7 1:00 \u00b7 Ready'),
-          { label: t('Isolated island') }
+          text(preactDemo.preview?.title ?? preactDemo.title),
+          text(preactDemo.preview?.summary ?? preactDemo.description),
+          text(preactDemo.preview?.meta ?? preactDemo.title),
+          preactDemo.preview?.props ? { ...preactDemo.preview.props, label: t(preactDemo.preview.props.label ?? preactDemo.title) } : undefined
         ),
-        { label: t('Isolated island') }
+        preactDemo.preview?.props ? { ...preactDemo.preview.props, label: t(preactDemo.preview.props.label ?? preactDemo.title) } : undefined
       )
     ])
   }
 }
 
 const reactFragment: FragmentDefinition = {
-  id: 'fragment://page/home/react@v1',
+  id: reactDemo.fragmentId,
   tags: ['home', 'react'],
   head: [],
   css: '',
-  dependsOn: ['fragment://page/home/planner@v1'],
+  dependsOn: [plannerDemo.fragmentId],
   ...baseMeta,
   render: ({ t }) => {
     const text = makeText(t)
     return h('section', null, [
-      h('div', { class: 'meta-line' }, [text('react authoring')]),
-      h('h2', null, text('React stays server-only.')),
+      h('div', { class: 'meta-line' }, [text(reactDemo.metaLine)]),
+      h('h2', null, text(reactDemo.headline)),
       renderHomeCopyBlock(
         text,
-        'React fragments compile into binary trees without client hydration.',
-        'The DOM remains owned by Qwik.'
+        reactDemo.lead,
+        reactDemo.detail
       ),
       renderHomeWidgetMarker(
-        'fragment://page/home/react@v1',
+        reactDemo.fragmentId,
         'react-binary-demo',
         renderHomeDemoCompactShell(
           'react-binary',
-          text('React to binary'),
-          text('React nodes collapse into binary frames.'),
-          text('React \u00b7 Hydration skipped \u00b7 Binary stream')
+          text(reactDemo.preview?.title ?? reactDemo.title),
+          text(reactDemo.preview?.summary ?? reactDemo.description),
+          text(reactDemo.preview?.meta ?? reactDemo.title)
         )
       ),
-      h('div', { class: 'badge' }, [text('RSC-ready')])
+      h('div', { class: 'badge' }, [text(reactDemo.badge ?? 'RSC-ready')])
     ])
   }
 }
 
 const dockFragment: FragmentDefinition = {
-  id: 'fragment://page/home/dock@v2',
+  id: collabDemo.fragmentId,
   tags: ['home', 'react', 'dock'],
   head: [],
   css: '',
@@ -235,26 +235,26 @@ const dockFragment: FragmentDefinition = {
   render: ({ t }) => {
     const text = makeText(t)
     return h('section', null, [
-      h('div', { class: 'meta-line' }, [text('live collaborative text')]),
-      h('h2', null, text('Shared text for everyone on the page.')),
+      h('div', { class: 'meta-line' }, [text(collabDemo.metaLine)]),
+      h('h2', null, text(collabDemo.headline)),
       renderHomeCopyBlock(
         text,
-        'Anyone on the page can edit the same text box.',
-        'Loro syncs updates through Garnet in real time.'
+        collabDemo.lead,
+        collabDemo.detail
       ),
       renderHomeWidgetMarker(
-        'fragment://page/home/dock@v2',
+        collabDemo.fragmentId,
         'home-collab',
         h(
           'div',
           {
             class: 'home-collab-root mt-6',
             'data-home-collab-root': 'dock',
-            'data-collab-status-idle': t('Focus to start live sync.'),
-            'data-collab-status-connecting': t('Connecting live sync...'),
-            'data-collab-status-live': t('Live for everyone on this page'),
-            'data-collab-status-reconnecting': t('Reconnecting live sync...'),
-            'data-collab-status-error': t('Realtime unavailable')
+            'data-collab-status-idle': t(collabDemo.collaboration?.idleStatus ?? ''),
+            'data-collab-status-connecting': t(collabDemo.collaboration?.connectingStatus ?? ''),
+            'data-collab-status-live': t(collabDemo.collaboration?.liveStatus ?? ''),
+            'data-collab-status-reconnecting': t(collabDemo.collaboration?.reconnectingStatus ?? ''),
+            'data-collab-status-error': t(collabDemo.collaboration?.errorStatus ?? '')
           },
           [
             h('textarea', {
@@ -264,8 +264,8 @@ const dockFragment: FragmentDefinition = {
             'data-home-collab-input': 'true',
             rows: '5',
             spellcheck: 'false',
-            placeholder: t('Write something. Everyone here sees it live.'),
-              'aria-label': t('Shared collaborative text box'),
+            placeholder: t(collabDemo.collaboration?.placeholder ?? ''),
+              'aria-label': t(collabDemo.collaboration?.ariaLabel ?? ''),
               readonly: 'true',
               'aria-busy': 'false'
             }),
@@ -278,16 +278,16 @@ const dockFragment: FragmentDefinition = {
                   role: 'status',
                   'aria-live': 'polite'
                 },
-                [text('Focus to start live sync.')]
+                [text(collabDemo.collaboration?.idleStatus ?? '')]
               ),
-              h('span', { class: 'home-collab-note' }, [text('Loro + Garnet')])
+              h('span', { class: 'home-collab-note' }, [text(collabDemo.collaboration?.note ?? '')])
             ])
           ]
         ),
         {
           root: 'dock',
-          placeholder: t('Write something. Everyone here sees it live.'),
-          ariaLabel: t('Shared collaborative text box')
+          placeholder: t(collabDemo.collaboration?.placeholder ?? ''),
+          ariaLabel: t(collabDemo.collaboration?.ariaLabel ?? '')
         },
         'critical'
       )
@@ -296,7 +296,7 @@ const dockFragment: FragmentDefinition = {
 }
 
 const manifesto: FragmentDefinition = {
-  id: 'fragment://page/home/manifest@v1',
+  id: manifestoDemo.fragmentId,
   tags: ['home', 'manifest'],
   head: [],
   css: '',
@@ -304,197 +304,142 @@ const manifesto: FragmentDefinition = {
   render: ({ t }) => {
     const text = makeText(t)
     return h('section', null, [
-      h('div', { class: 'meta-line' }, [text('fragment manifesto')]),
-      h('h2', null, text('The render tree is the artifact.')),
+      h('div', { class: 'meta-line' }, [text(manifestoDemo.metaLine)]),
+      h('h2', null, text(manifestoDemo.headline)),
       renderManifestoCopyBlock(
         text,
-        'HTML remains the fallback surface.',
-        'Deterministic binary fragments handle replay, caching, and instant patching.'
+        manifestoDemo.lead,
+        manifestoDemo.detail ?? ''
       ),
       h('ul', { class: 'home-manifest-pills' }, [
-        h('li', { class: 'home-manifest-pill' }, [text('Resumable by default')]),
-        h('li', { class: 'home-manifest-pill' }, [text('Fragment caching with async revalidation')]),
-        h('li', { class: 'home-manifest-pill' }, [text('Deterministic binary DOM replay')])
+        ...(manifestoDemo.pills ?? []).map((pill) =>
+          h('li', { class: 'home-manifest-pill' }, [text(pill)])
+        )
       ])
     ])
   }
 }
 
-type HomeTemplateFeatures = Pick<ResolvedTemplateFeatures, 'features'>
+type HomeTemplateFeatures = Pick<ResolvedTemplateFeatures, 'features' | 'homeMode'>
 
-const isHomeFeatureEnabled = (
-  template: HomeTemplateFeatures | undefined,
-  featureId: 'demo-home' | 'demo-react' | 'demo-preact' | 'demo-wasm' | 'realtime'
-) => (template ? hasTemplateFeature(template, featureId) : true)
-
-const resolveHomeFragmentDefinitions = (
-  template?: HomeTemplateFeatures
-): FragmentDefinition[] => {
-  const definitions: FragmentDefinition[] = []
-
-  if (isHomeFeatureEnabled(template, 'demo-home')) {
-    definitions.push(manifesto, planner)
-  }
-  if (isHomeFeatureEnabled(template, 'demo-wasm')) {
-    definitions.push(ledger)
-  }
-  if (isHomeFeatureEnabled(template, 'demo-preact')) {
-    definitions.push(island)
-  }
-  if (isHomeFeatureEnabled(template, 'demo-react')) {
-    definitions.push(reactFragment)
-  }
-  if (isHomeFeatureEnabled(template, 'realtime')) {
-    definitions.push(dockFragment)
-  }
-
-  return definitions
+const homeDefinitionByFragmentId: Record<string, FragmentDefinition> = {
+  [manifestoDemo.fragmentId]: manifesto,
+  [plannerDemo.fragmentId]: planner,
+  [wasmDemo.fragmentId]: ledger,
+  [preactDemo.fragmentId]: island,
+  [reactDemo.fragmentId]: reactFragment,
+  [collabDemo.fragmentId]: dockFragment
 }
 
-const resolveHomeFragments = (template?: HomeTemplateFeatures): FragmentPlanEntry[] => {
-  const fragments: FragmentPlanEntry[] = []
-
-  if (isHomeFeatureEnabled(template, 'demo-home')) {
-    fragments.push(
-      {
-        id: 'fragment://page/home/manifest@v1',
-        critical: true,
-        layout: {
-          column: 'span 12',
-          size: 'small',
-          minHeight: 489,
-          heightHint: { desktop: 489, mobile: 489 },
-          heightProfile: {
-            desktop: [{ maxWidth: 1440, height: 489 }],
-            mobile: [{ maxWidth: 768, height: 489 }]
-          }
-        }
-      },
-      {
-        id: 'fragment://page/home/planner@v1',
-        critical: false,
-        layout: {
-          column: 'span 5',
-          size: 'big',
-          minHeight: 640,
-          heightHint: { desktop: 1054, mobile: 986 },
-          heightProfile: {
-            desktop: [
-              { maxWidth: 560, height: 1128 },
-              { maxWidth: 760, height: 1054 }
-            ],
-            mobile: [
-              { maxWidth: 480, height: 1048 },
-              { maxWidth: 768, height: 986 }
-            ]
-          }
-        }
-      }
-    )
+const homeLayoutByFragmentId: Record<string, FragmentPlanEntry['layout']> = {
+  [manifestoDemo.fragmentId]: {
+    column: 'span 12',
+    size: 'small',
+    minHeight: 489,
+    heightHint: { desktop: 489, mobile: 489 },
+    heightProfile: {
+      desktop: [{ maxWidth: 1440, height: 489 }],
+      mobile: [{ maxWidth: 768, height: 489 }]
+    }
+  },
+  [plannerDemo.fragmentId]: {
+    column: 'span 5',
+    size: 'big',
+    minHeight: 640,
+    heightHint: { desktop: 1054, mobile: 986 },
+    heightProfile: {
+      desktop: [
+        { maxWidth: 560, height: 1128 },
+        { maxWidth: 760, height: 1054 }
+      ],
+      mobile: [
+        { maxWidth: 480, height: 1048 },
+        { maxWidth: 768, height: 986 }
+      ]
+    }
+  },
+  [wasmDemo.fragmentId]: {
+    column: 'span 7',
+    size: 'tall',
+    minHeight: 904,
+    heightHint: { desktop: 1023, mobile: 904 },
+    heightProfile: {
+      desktop: [
+        { maxWidth: 720, height: 1104 },
+        { maxWidth: 980, height: 1023 }
+      ],
+      mobile: [{ maxWidth: 768, height: 904 }]
+    }
+  },
+  [preactDemo.fragmentId]: {
+    column: 'span 5',
+    minHeight: 489,
+    heightHint: { desktop: 489, mobile: 389 },
+    heightProfile: {
+      desktop: [
+        { maxWidth: 560, height: 544 },
+        { maxWidth: 760, height: 489 }
+      ],
+      mobile: [
+        { maxWidth: 480, height: 428 },
+        { maxWidth: 768, height: 389 }
+      ]
+    }
+  },
+  [reactDemo.fragmentId]: {
+    column: 'span 12',
+    size: 'small',
+    minHeight: 489,
+    heightHint: { desktop: 596, mobile: 489 },
+    heightProfile: {
+      desktop: [
+        { maxWidth: 880, height: 648 },
+        { maxWidth: 1440, height: 596 }
+      ],
+      mobile: [{ maxWidth: 768, height: 489 }]
+    }
+  },
+  [collabDemo.fragmentId]: {
+    column: 'span 12',
+    size: 'small',
+    minHeight: 420,
+    heightHint: { desktop: 420, mobile: 420 },
+    heightProfile: {
+      desktop: [{ maxWidth: 1440, height: 420 }],
+      mobile: [{ maxWidth: 768, height: 420 }]
+    }
   }
-
-  if (isHomeFeatureEnabled(template, 'demo-wasm')) {
-    fragments.push({
-      id: 'fragment://page/home/ledger@v1',
-      critical: false,
-      layout: {
-        column: 'span 7',
-        size: 'tall',
-        minHeight: 904,
-        heightHint: { desktop: 1023, mobile: 904 },
-        heightProfile: {
-          desktop: [
-            { maxWidth: 720, height: 1104 },
-            { maxWidth: 980, height: 1023 }
-          ],
-          mobile: [{ maxWidth: 768, height: 904 }]
-        }
-      }
-    })
-  }
-
-  if (isHomeFeatureEnabled(template, 'demo-preact')) {
-    fragments.push({
-      id: 'fragment://page/home/island@v1',
-      critical: false,
-      layout: {
-        column: 'span 5',
-        minHeight: 489,
-        heightHint: { desktop: 489, mobile: 389 },
-        heightProfile: {
-          desktop: [
-            { maxWidth: 560, height: 544 },
-            { maxWidth: 760, height: 489 }
-          ],
-          mobile: [
-            { maxWidth: 480, height: 428 },
-            { maxWidth: 768, height: 389 }
-          ]
-        }
-      }
-    })
-  }
-
-  if (isHomeFeatureEnabled(template, 'demo-react')) {
-    fragments.push({
-      id: 'fragment://page/home/react@v1',
-      critical: false,
-      layout: {
-        column: 'span 12',
-        size: 'small',
-        minHeight: 489,
-        heightHint: { desktop: 596, mobile: 489 },
-        heightProfile: {
-          desktop: [
-            { maxWidth: 880, height: 648 },
-            { maxWidth: 1440, height: 596 }
-          ],
-          mobile: [{ maxWidth: 768, height: 489 }]
-        }
-      }
-    })
-  }
-
-  if (isHomeFeatureEnabled(template, 'realtime')) {
-    fragments.push({
-      id: 'fragment://page/home/dock@v2',
-      critical: false,
-      layout: {
-        column: 'span 12',
-        size: 'small',
-        minHeight: 420,
-        heightHint: { desktop: 420, mobile: 420 },
-        heightProfile: {
-          desktop: [{ maxWidth: 1440, height: 420 }],
-          mobile: [{ maxWidth: 768, height: 420 }]
-        }
-      }
-    })
-  }
-
-  return fragments
 }
+
+const resolveHomeFragmentDefinitions = (template?: HomeTemplateFeatures): FragmentDefinition[] =>
+  resolveEnabledHomeTemplateDemos(template)
+    .map((manifest) => homeDefinitionByFragmentId[manifest.fragmentId])
+    .filter((definition): definition is FragmentDefinition => Boolean(definition))
+
+const resolveHomeFragments = (template?: HomeTemplateFeatures): FragmentPlanEntry[] =>
+  resolveEnabledHomeTemplateDemos(template).map((manifest) => ({
+    id: manifest.fragmentId,
+    critical: manifest.id === 'home-manifesto',
+    layout: homeLayoutByFragmentId[manifest.fragmentId]
+  }))
 
 const resolveHomeFetchGroups = (template?: HomeTemplateFeatures) => {
+  const enabled = resolveEnabledHomeTemplateDemos(template)
   const fetchGroups: string[][] = []
   const secondaryGroup: string[] = []
 
-  if (isHomeFeatureEnabled(template, 'demo-home')) {
-    fetchGroups.push(['fragment://page/home/manifest@v1'])
-    secondaryGroup.push('fragment://page/home/planner@v1')
+  if (enabled.some((manifest) => manifest.id === 'home-manifesto')) {
+    fetchGroups.push([manifestoDemo.fragmentId])
   }
-  if (isHomeFeatureEnabled(template, 'realtime')) {
-    fetchGroups.push(['fragment://page/home/dock@v2'])
+  if (enabled.some((manifest) => manifest.id === 'home-collab')) {
+    fetchGroups.push([collabDemo.fragmentId])
   }
-  if (isHomeFeatureEnabled(template, 'demo-wasm')) {
-    secondaryGroup.push('fragment://page/home/ledger@v1')
-  }
-  if (isHomeFeatureEnabled(template, 'demo-preact')) {
-    secondaryGroup.push('fragment://page/home/island@v1')
-  }
-  if (isHomeFeatureEnabled(template, 'demo-react')) {
-    secondaryGroup.push('fragment://page/home/react@v1')
-  }
+
+  enabled.forEach((manifest) => {
+    if (manifest.id === 'home-manifesto' || manifest.id === 'home-collab') return
+    secondaryGroup.push(manifest.fragmentId)
+  })
+
   if (secondaryGroup.length > 0) {
     fetchGroups.push(secondaryGroup)
   }

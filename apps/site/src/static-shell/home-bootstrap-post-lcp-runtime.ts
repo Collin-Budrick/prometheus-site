@@ -329,10 +329,10 @@ const installDeferredHomeUiControls = ({
     )
   }
 
-  const swapStaticHomeLanguage = async (nextLang: Lang) => {
+  const swapStaticHomeLanguage = async (nextLang: Lang): Promise<void> => {
     const current = readStaticHomeBootstrapData()
     if (!current || current.lang === nextLang) {
-      return false
+      return
     }
 
     const { swapStaticHomeLanguage: swapLanguage } =
@@ -342,7 +342,6 @@ const installDeferredHomeUiControls = ({
       destroyActiveController,
       bootstrapStaticHome
     })
-    return true
   }
 
   const loadUiControls = (target: EventTarget | null = null) => {

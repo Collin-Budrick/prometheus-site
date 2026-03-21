@@ -4,8 +4,8 @@ export const HOME_POST_ANCHOR_CORE_ASSET_PATH =
   'build/static-shell/apps/site/src/static-shell/home-post-anchor-core.js'
 
 export type HomePostAnchorCoreModule = {
-  installHomeBootstrapDeferredRuntime: typeof import('./home-post-anchor-core').installHomeBootstrapDeferredRuntime
   installHomeStaticEntry: typeof import('./home-post-anchor-core').installHomeStaticEntry
+  primeHomeSettingsInteraction: typeof import('./home-post-anchor-core').primeHomeSettingsInteraction
 }
 
 type LoadHomePostAnchorCoreOptions = {

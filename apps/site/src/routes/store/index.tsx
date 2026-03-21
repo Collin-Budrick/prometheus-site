@@ -26,6 +26,7 @@ import { buildOfflineShellFragment, offlineShellFragmentId } from '../offline-sh
 import { isStaticShellBuild } from '../../static-shell/build-mode'
 import { buildGlobalStylesheetLinks } from '../../static-shell/global-style-assets'
 import { isSiteFeatureEnabled } from '../../template-features'
+import { starterStoreItems } from '../../template-starter-data'
 
 const storeEnabled = isSiteFeatureEnabled('store')
 type FragmentResource = {
@@ -52,9 +53,10 @@ const loadStoreSeed = async (
   const cartItems = readStoreCartSnapshotFromCookie(cookieHeader)
   const queued = readStoreCartQueueFromCookie(cookieHeader)
   const inventoryItems = await loadServerStoreInventory(request)
+  const seededItems = inventoryItems.length > 0 ? inventoryItems : [...starterStoreItems]
 
   return {
-    stream: { items: inventoryItems, sort: sortParams.sort, dir: sortParams.dir },
+    stream: { items: seededItems, sort: sortParams.sort, dir: sortParams.dir },
     cart: { items: cartItems, queuedCount: queued.length }
   }
 }

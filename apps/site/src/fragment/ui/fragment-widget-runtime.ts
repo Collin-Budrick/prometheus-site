@@ -141,15 +141,19 @@ const attachHomeCollabWidget = async (
   options: FragmentWidgetAttachOptions
 ) => {
   const { attachHomeCollabRoot } = await loadHomeCollabRuntime()
-  return attachHomeCollabRoot({
+  const binding = await attachHomeCollabRoot({
     root: options.root,
     initialTarget: options.target,
   } satisfies AttachHomeCollabRootOptions)
+  return () => {
+    binding?.destroy()
+  }
 }
 
 const bootstrapStoreStaticRuntime = async () => {
   storeStaticBootstrapPromise ??= loadStoreStaticRuntimeLoader()
-    .then(({ bootstrapStaticStoreShell }) => bootstrapStaticStoreShell())
+    .then(({ loadStoreStaticRuntime }) => loadStoreStaticRuntime())
+    .then((module) => module.bootstrapStaticStoreShell())
     .catch((error) => {
       storeStaticBootstrapPromise = null
       throw error
@@ -159,6 +163,7 @@ const bootstrapStoreStaticRuntime = async () => {
 
 const attachStoreWidget = async () => {
   await bootstrapStoreStaticRuntime()
+  return undefined
 }
 
 const attachContactWidgetFallback = async () => {
@@ -168,6 +173,7 @@ const attachContactWidgetFallback = async () => {
       'Fragment contact widget runtime has no plain static adapter yet; leaving SSR shell in place.'
     )
   }
+  return undefined
 }
 
 const widgetDefinitions: Record<string, WidgetDefinition> = {

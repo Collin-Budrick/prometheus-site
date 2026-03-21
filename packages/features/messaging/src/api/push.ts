@@ -1,5 +1,6 @@
 import { createSign } from 'node:crypto'
 import webPush from 'web-push'
+import { templateBranding } from '@prometheus/template-config'
 import { buildPushKey, buildPushUserKey, p2pPushPrefix, p2pPushUserPrefix } from './constants'
 import { isRecord } from './utils'
 import type {
@@ -101,7 +102,11 @@ export const resolvePushEnabled = (push?: PushConfig) =>
 export const configureWebPush = (push?: PushConfig) => {
   if (!resolveWebPushEnabled(push)) return false
   try {
-    webPush.setVapidDetails(push?.subject ?? 'mailto:notifications@prometheus.dev', push?.vapidPublicKey ?? '', push?.vapidPrivateKey ?? '')
+    webPush.setVapidDetails(
+      push?.subject ?? `mailto:${templateBranding.notifications.contactEmail}`,
+      push?.vapidPublicKey ?? '',
+      push?.vapidPrivateKey ?? ''
+    )
     return true
   } catch (error) {
     console.error('Failed to initialize web push', error)
@@ -312,7 +317,8 @@ const sendFcmPushNotification = async (
   if (!projectId) return
 
   const title = typeof payload.title === 'string' ? payload.title : 'New message'
-  const body = typeof payload.body === 'string' ? payload.body : 'Open Fragment Prime to sync.'
+  const body =
+    typeof payload.body === 'string' ? payload.body : templateBranding.notifications.syncBody
 
   const response = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
     method: 'POST',
@@ -367,7 +373,8 @@ const sendApnsPushNotification = async (
   if (!bundleId) return
 
   const title = typeof payload.title === 'string' ? payload.title : 'New message'
-  const body = typeof payload.body === 'string' ? payload.body : 'Open Fragment Prime to sync.'
+  const body =
+    typeof payload.body === 'string' ? payload.body : templateBranding.notifications.syncBody
 
   const response = await fetch(`${endpoint}/3/device/${entry.native.token}`, {
     method: 'POST',
@@ -442,8 +449,8 @@ export const sendServerOnlinePush = async (options: PushBroadcastOptions) => {
 
   const payload = {
     type: 'server:online',
-    title: 'Fragment Prime is back online',
-    body: 'Open Fragment Prime to reconnect.',
+    title: templateBranding.notifications.onlineTitle,
+    body: templateBranding.notifications.onlineBody,
     url: '/chat'
   }
 

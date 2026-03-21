@@ -23,10 +23,12 @@ import { StaticFragmentRoute } from '../../static-shell/StaticFragmentRoute'
 import { buildStaticFragmentRouteModel, type StaticFragmentRouteModel } from '../../static-shell/static-fragment-model'
 import { isStaticShellBuild } from '../../static-shell/build-mode'
 import { buildGlobalStylesheetLinks } from '../../static-shell/global-style-assets'
+import { starterLabCards } from '../../template-starter-data'
 
 const featureLabModule = await import('@features/lab/pages/Lab')
 const { default: LabRoute, LabSkeleton: FeatureLabSkeleton } = featureLabModule
 type LabCopy = import('@features/lab/pages/Lab').LabCopy
+type LabStarterCard = import('@features/lab/pages/Lab').LabStarterCard
 
 type FragmentResource = {
   plan: FragmentPlanValue | null
@@ -126,8 +128,9 @@ const EnabledLabRoute = component$<{ lang: Lang }>(({ lang }) => {
     ...getLabCopy(langSignal.value),
     closeLabel: uiCopy.value.fragmentClose
   }))
+  const resolvedStarterCards = useComputed$<readonly LabStarterCard[]>(() => starterLabCards)
 
-  return <LabRoute copy={resolvedCopy.value} />
+  return <LabRoute copy={resolvedCopy.value} starterCards={resolvedStarterCards.value} />
 })
 
 export const onGet: RequestHandler = createFeatureRouteHandler(

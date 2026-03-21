@@ -13,15 +13,22 @@ import type { StaticShellSeed } from './seed'
 import { readStaticShellSeed } from './seed-client'
 
 type SerializedHomeRuntimeProfileBucket = [maxWidth: number, height: number]
+type SerializedHomeRuntimeLayoutLegacy = [
+  size: string,
+  minHeight: number,
+  desktop: SerializedHomeRuntimeProfileBucket[],
+  mobile: SerializedHomeRuntimeProfileBucket[]
+]
 type SerializedHomeRuntimeLayout = [
+  column: string,
   size: string,
   minHeight: number,
   desktop: SerializedHomeRuntimeProfileBucket[],
   mobile: SerializedHomeRuntimeProfileBucket[]
 ]
 type SerializedHomeRuntimePlanEntryTuple =
-  | [id: string, critical: 0 | 1, layout: SerializedHomeRuntimeLayout, dependsOn: string[]]
-  | [id: string, critical: 0 | 1, layout: SerializedHomeRuntimeLayout, dependsOn: string[], cacheUpdatedAt: number]
+  | [id: string, critical: 0 | 1, layout: SerializedHomeRuntimeLayout | SerializedHomeRuntimeLayoutLegacy, dependsOn: string[]]
+  | [id: string, critical: 0 | 1, layout: SerializedHomeRuntimeLayout | SerializedHomeRuntimeLayoutLegacy, dependsOn: string[], cacheUpdatedAt: number]
 
 export type HomeStaticRouteData = {
   lang: Lang
@@ -131,6 +138,7 @@ const isSerializedHomeRuntimePlanEntryTuple = (
   typeof value[0] === 'string' &&
   (value[1] === 0 || value[1] === 1) &&
   Array.isArray(value[2]) &&
+  (value[2].length === 4 || value[2].length === 5) &&
   Array.isArray(value[3])
 
 const deserializeHomeRuntimePlanEntry = (
@@ -141,13 +149,22 @@ const deserializeHomeRuntimePlanEntry = (
   }
 
   const [id, criticalFlag, layoutValue, dependsOnValue, cacheUpdatedAtValue] = value
+  const hasExplicitColumn = layoutValue.length === 5
+  const column =
+    hasExplicitColumn && typeof layoutValue[0] === 'string' && layoutValue[0] !== ''
+      ? layoutValue[0]
+      : 'main'
+  const sizeIndex = hasExplicitColumn ? 1 : 0
+  const minHeightIndex = hasExplicitColumn ? 2 : 1
+  const desktopIndex = hasExplicitColumn ? 3 : 2
+  const mobileIndex = hasExplicitColumn ? 4 : 3
   const size =
-    typeof layoutValue[0] === 'string' && layoutValue[0] !== ''
-      ? (layoutValue[0] as FragmentRuntimePlanEntry['layout']['size'])
+    typeof layoutValue[sizeIndex] === 'string' && layoutValue[sizeIndex] !== ''
+      ? (layoutValue[sizeIndex] as FragmentRuntimePlanEntry['layout']['size'])
       : undefined
-  const minHeight = readFiniteNumber(layoutValue[1])
-  const desktop = deserializeHomeRuntimeProfileBuckets(layoutValue[2])
-  const mobile = deserializeHomeRuntimeProfileBuckets(layoutValue[3])
+  const minHeight = readFiniteNumber(layoutValue[minHeightIndex])
+  const desktop = deserializeHomeRuntimeProfileBuckets(layoutValue[desktopIndex])
+  const mobile = deserializeHomeRuntimeProfileBuckets(layoutValue[mobileIndex])
   const heightHint = buildHomeRuntimeHeightHint(desktop, mobile)
   const cacheUpdatedAt = readFiniteNumber(cacheUpdatedAtValue)
 
@@ -155,6 +172,7 @@ const deserializeHomeRuntimePlanEntry = (
     id,
     critical: criticalFlag === 1,
     layout: {
+      column,
       ...(size ? { size } : {}),
       ...(minHeight !== null && minHeight > 0 ? { minHeight: Math.round(minHeight) } : {}),
       ...(heightHint ? { heightHint } : {}),
@@ -223,23 +241,31 @@ const deserializeHomeFragmentVersions = (
 
 export const serializeHomeRuntimePlanEntries = (entries: FragmentRuntimePlanEntry[]) =>
   entries.map<SerializedHomeRuntimePlanEntryTuple>((entry) => {
-    const nextEntry: SerializedHomeRuntimePlanEntryTuple = [
-      entry.id,
-      entry.critical ? 1 : 0,
-      [
-        entry.layout.size ?? '',
-        typeof entry.layout.minHeight === 'number' ? Math.round(entry.layout.minHeight) : 0,
-        serializeHomeRuntimeProfileBuckets(entry.layout.heightProfile?.desktop),
-        serializeHomeRuntimeProfileBuckets(entry.layout.heightProfile?.mobile)
-      ],
-      Array.isArray(entry.dependsOn) ? entry.dependsOn.filter((value) => value !== '') : []
+    const layout: SerializedHomeRuntimeLayout = [
+      entry.layout.column,
+      entry.layout.size ?? '',
+      typeof entry.layout.minHeight === 'number' ? Math.round(entry.layout.minHeight) : 0,
+      serializeHomeRuntimeProfileBuckets(entry.layout.heightProfile?.desktop),
+      serializeHomeRuntimeProfileBuckets(entry.layout.heightProfile?.mobile)
     ]
+    const dependsOn = Array.isArray(entry.dependsOn) ? entry.dependsOn.filter((value) => value !== '') : []
 
     if (typeof entry.cacheUpdatedAt === 'number' && Number.isFinite(entry.cacheUpdatedAt)) {
-      nextEntry.push(Math.round(entry.cacheUpdatedAt))
+      return [
+        entry.id,
+        entry.critical ? 1 : 0,
+        layout,
+        dependsOn,
+        Math.round(entry.cacheUpdatedAt)
+      ]
     }
 
-    return nextEntry
+    return [
+      entry.id,
+      entry.critical ? 1 : 0,
+      layout,
+      dependsOn
+    ]
   })
 
 export const serializeHomeRuntimeFetchGroups = (

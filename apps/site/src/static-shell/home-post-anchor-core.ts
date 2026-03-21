@@ -30,7 +30,7 @@ type WarmHomeDemoAssetsOptions = {
 
 let primeHomeSettingsInteractionHandler:
   | ((target?: EventTarget | null) => Promise<void> | void)
-  | null = null
+  | undefined
 
 type InstallHomeStaticEntryOptions = {
   win?: HomeStaticEntryWindow | null
@@ -39,10 +39,10 @@ type InstallHomeStaticEntryOptions = {
   loadDeferredRuntime?: (() => Promise<{
     installHomeBootstrapDeferredRuntime: typeof import('./home-bootstrap-deferred').installHomeBootstrapDeferredRuntime
   }>) | null
-  installDeferredRuntime?: (options?: {
+  installDeferredRuntime?: ((options?: {
     eagerLifecycleRuntime?: boolean
     postLcpIntentTarget?: EventTarget | null
-  }) => Promise<void>
+  }) => Promise<void>) | null
   resumeDeferredHydration?: typeof resumeDeferredHomeHydration
   warmDemoAssets?: (options: WarmHomeDemoAssetsOptions) => Promise<void>
   loadWidgetRuntime?: typeof loadFragmentWidgetRuntime
@@ -320,9 +320,7 @@ export const installHomeStaticEntry = ({
     })
     liveDoc.removeEventListener?.('focusin', handleFocusIn, eventOptions)
     cleanupEarlySettingsBridge()
-    if (primeHomeSettingsInteractionHandler) {
-      primeHomeSettingsInteractionHandler = null
-    }
+    primeHomeSettingsInteractionHandler = undefined
     cancelDeferredRuntimeStart?.()
     cancelDeferredRuntimeStart = null
     widgetRuntime?.destroy()

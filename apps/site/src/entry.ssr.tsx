@@ -138,7 +138,7 @@ const resolveRenderManifest = () => {
     attributes?: Record<string, unknown>;
   }> }).injections;
   if (!Array.isArray(injections) || injections.length === 0) {
-    return manifest;
+    return manifest as RenderOptions['manifest'];
   }
   return {
     ...manifest,
@@ -151,11 +151,11 @@ const resolveRenderManifest = () => {
       if (rel !== "stylesheet" || typeof href !== "string") {
         return true;
       }
-      return !MANIFEST_INJECTION_STYLESHEET_MARKERS.some((marker) =>
-        href.includes(marker),
-      );
-    }),
-  };
+        return !MANIFEST_INJECTION_STYLESHEET_MARKERS.some((marker) =>
+          href.includes(marker),
+        );
+      }),
+  } as RenderOptions['manifest'];
 };
 
 const hasStaticBootstrapBundle = (pathname: string) => {

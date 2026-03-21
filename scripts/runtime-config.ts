@@ -1,12 +1,13 @@
 import {
   hasTemplateFeature,
+  templateBranding,
   resolveTemplateFeatures,
   type ResolvedTemplateFeatures
-} from '@prometheus/template-config'
+} from '../packages/template-config/src/index.ts'
 
 type ProcessEnv = NodeJS.ProcessEnv
 
-export type PrometheusRuntimeConfig = {
+export type SiteRuntimeConfig = {
   domains: {
     db: string
     dbProd: string
@@ -42,10 +43,10 @@ export type PrometheusRuntimeConfig = {
 }
 
 const DEFAULT_DOMAINS = {
-  db: 'db.prometheus.dev',
-  dbProd: 'db.prometheus.prod',
-  web: 'prometheus.dev',
-  webProd: 'prometheus.prod'
+  db: templateBranding.domains.db,
+  dbProd: templateBranding.domains.dbProd,
+  web: templateBranding.domains.web,
+  webProd: templateBranding.domains.webProd
 } as const
 
 const DEFAULT_PORTS = {
@@ -59,7 +60,7 @@ const DEFAULT_PORTS = {
 } as const
 
 const DEFAULT_COMPOSE = {
-  projectName: 'prometheus',
+  projectName: templateBranding.composeProjectName,
   services: {
     core: ['spacetimedb', 'garnet', 'api'],
     web: ['web'],
@@ -137,7 +138,7 @@ const readProjectName = (env: ProcessEnv) => {
 const computeCertBasename = (web: string, webProd: string, db: string, dbProd: string) =>
   `${web}+${webProd}+${db}+${dbProd}`
 
-export const getRuntimeConfig = (env: ProcessEnv = process.env): PrometheusRuntimeConfig => {
+export const getRuntimeConfig = (env: ProcessEnv = process.env): SiteRuntimeConfig => {
   const template = resolveTemplateFeatures(env)
   const dbHost = readDomain(env, 'PROMETHEUS_DB_HOST', DEFAULT_DOMAINS.db)
   const dbProd = readDomain(env, 'PROMETHEUS_DB_HOST_PROD', DEFAULT_DOMAINS.dbProd)

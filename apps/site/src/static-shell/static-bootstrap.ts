@@ -26,6 +26,7 @@ import { patchStaticFragmentCard } from "./fragment-stream";
 import type { StaticShellSeed } from "./seed";
 import type { StaticFragmentRouteModel } from "./static-fragment-model";
 import { persistInitialFragmentCardHeights } from "./fragment-height";
+import type { FragmentPayload } from "../fragment/types";
 import {
   STATIC_FRAGMENT_BODY_ATTR,
   STATIC_FRAGMENT_CARD_ATTR,

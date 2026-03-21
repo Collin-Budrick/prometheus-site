@@ -1,4 +1,5 @@
 import { DbConnection } from '@prometheus/spacetimedb-client'
+import { templateBranding } from '@prometheus/template-config'
 import { appConfig } from '../app-config.server'
 import {
   invalidateServerStoreInventoryCache,
@@ -15,7 +16,7 @@ export type ServerStoreItem = {
 
 type StoreConnection = InstanceType<typeof DbConnection>
 
-const DEFAULT_STORE_SPACETIMEDB_MODULE = 'prometheus-site-local'
+const DEFAULT_STORE_SPACETIMEDB_MODULE = templateBranding.ids.spacetimeModule
 const STORE_MUTATION_TIMEOUT_MS = 4_000
 
 const connectToStoreDatabase = (uri: string, moduleName: string) =>

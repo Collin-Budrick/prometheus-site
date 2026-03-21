@@ -199,7 +199,7 @@ export const installHomeDemoStartupEntry = ({
             entries.forEach((entry) => {
               const demoRoot = entry.target as HTMLElement
               if (!isInactiveHomeDemoRoot(demoRoot)) {
-                inactiveRootObserver.unobserve(demoRoot)
+                inactiveRootObserver?.unobserve(demoRoot)
                 observedInactiveRoots.delete(demoRoot)
                 return
               }
@@ -236,7 +236,7 @@ export const installHomeDemoStartupEntry = ({
                 return
               }
 
-              startupVisibleObserver.unobserve(demoRoot)
+              startupVisibleObserver?.unobserve(demoRoot)
               observedStartupRoots.delete(demoRoot)
 
               if (!isInactiveHomeDemoRoot(demoRoot) || demoRoot.isConnected === false) {

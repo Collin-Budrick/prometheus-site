@@ -4,6 +4,7 @@ import { existsSync, readdirSync } from 'node:fs'
 import { networkInterfaces } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { templateBranding } from '../packages/template-config/src/index.ts'
 import {
   computeFingerprint,
   ensureCaddyConfig,
@@ -695,6 +696,14 @@ const composeEnv = {
   PROMETHEUS_DB_HOST_PROD: runtimeConfig.domains.dbProd,
   PROMETHEUS_WEB_HOST: runtimeConfig.domains.web,
   PROMETHEUS_WEB_HOST_PROD: runtimeConfig.domains.webProd,
+  PROMETHEUS_TEMPLATE_PRESET: runtimeConfig.template.preset,
+  PROMETHEUS_TEMPLATE_HOME_MODE: runtimeConfig.template.homeMode,
+  PROMETHEUS_TEMPLATE_FEATURES: process.env.PROMETHEUS_TEMPLATE_FEATURES?.trim() || '',
+  PROMETHEUS_TEMPLATE_DISABLE_FEATURES: process.env.PROMETHEUS_TEMPLATE_DISABLE_FEATURES?.trim() || '',
+  VITE_TEMPLATE_PRESET: runtimeConfig.template.preset,
+  VITE_TEMPLATE_HOME_MODE: runtimeConfig.template.homeMode,
+  VITE_TEMPLATE_FEATURES: process.env.PROMETHEUS_TEMPLATE_FEATURES?.trim() || '',
+  VITE_TEMPLATE_DISABLE_FEATURES: process.env.PROMETHEUS_TEMPLATE_DISABLE_FEATURES?.trim() || '',
   ENABLE_WEBTRANSPORT_FRAGMENTS: devEnableApiWebTransport,
   WEBTRANSPORT_ENABLE_DATAGRAMS: devEnableWebTransportDatagramsServer,
   WEBTRANSPORT_MAX_DATAGRAM_SIZE: devWebTransportMaxDatagramSize
@@ -721,6 +730,7 @@ type BuildTarget = {
 
 const cacheKeyPrefix = 'dev'
 const cache = loadBuildCache()
+const composeRuntimeCacheKey = `${cacheKeyPrefix}:compose-runtime`
 const buildTargets: BuildTarget[] = [
   {
     service: 'api',
@@ -774,6 +784,24 @@ const buildResults = activeBuildTargets.map((target) => {
   const needsBuild = cache[target.cacheKey]?.fingerprint !== fingerprint
   return { ...target, fingerprint, needsBuild }
 })
+const composeRuntimeFingerprint = computeFingerprint(
+  ['docker-compose.yml', 'apps/site/Dockerfile', 'packages/platform/Dockerfile'],
+  {
+    COMPOSE_PROJECT_NAME: composeEnv.COMPOSE_PROJECT_NAME ?? '',
+    COMPOSE_PROFILES: composeEnv.COMPOSE_PROFILES ?? '',
+    PROMETHEUS_TEMPLATE_PRESET: composeEnv.PROMETHEUS_TEMPLATE_PRESET ?? '',
+    PROMETHEUS_TEMPLATE_HOME_MODE: composeEnv.PROMETHEUS_TEMPLATE_HOME_MODE ?? '',
+    PROMETHEUS_TEMPLATE_FEATURES: composeEnv.PROMETHEUS_TEMPLATE_FEATURES ?? '',
+    PROMETHEUS_TEMPLATE_DISABLE_FEATURES: composeEnv.PROMETHEUS_TEMPLATE_DISABLE_FEATURES ?? '',
+    ENABLE_WEBTRANSPORT_FRAGMENTS: composeEnv.ENABLE_WEBTRANSPORT_FRAGMENTS ?? '',
+    WEBTRANSPORT_ENABLE_DATAGRAMS: composeEnv.WEBTRANSPORT_ENABLE_DATAGRAMS ?? '',
+    VITE_DISABLE_SW: composeEnv.VITE_DISABLE_SW ?? '',
+    VITE_ENABLE_ANALYTICS: composeEnv.VITE_ENABLE_ANALYTICS ?? '',
+    VITE_ENABLE_HIGHLIGHT: composeEnv.VITE_ENABLE_HIGHLIGHT ?? '',
+    INCLUDE_REALTIME_SERVICES: includeRealtimeServices ? '1' : '0'
+  }
+)
+const needsComposeRefresh = cache[composeRuntimeCacheKey]?.fingerprint !== composeRuntimeFingerprint
 
 const buildServices = buildResults.filter((target) => target.needsBuild).map((target) => target.service)
 if (buildServices.length) {
@@ -786,10 +814,21 @@ const baseServices = [...runtimeCompose.services.core, ...runtimeCompose.service
 const running = getRunningServices(command, prefix, composeEnv)
 const baseRunning = baseServices.every((service) => running.has(service))
 const baseNeedsBuild = buildServices.some((service) => service === 'api' || optionalServices.includes(service))
-const needsBaseUp = baseNeedsBuild || !baseRunning
+const needsBaseUp = baseNeedsBuild || !baseRunning || needsComposeRefresh
 
 if (needsBaseUp) {
-  const up = runSync(command, [...prefix, 'up', '-d', '--remove-orphans', ...baseServices], composeEnv)
+  const up = runSync(
+    command,
+    [
+      ...prefix,
+      'up',
+      '-d',
+      '--remove-orphans',
+      ...(needsComposeRefresh && baseRunning ? ['--force-recreate'] : []),
+      ...baseServices
+    ],
+    composeEnv
+  )
   if (up.status !== 0) process.exit(up.status ?? 1)
 }
 
@@ -807,6 +846,10 @@ if (configChanged && caddyWasRunning) {
 
 for (const target of buildResults) {
   cache[target.cacheKey] = { fingerprint: target.fingerprint, updatedAt: new Date().toISOString() }
+}
+cache[composeRuntimeCacheKey] = {
+  fingerprint: composeRuntimeFingerprint,
+  updatedAt: new Date().toISOString()
 }
 saveBuildCache(cache)
 
@@ -863,12 +906,20 @@ const devWebTransportBase = explicitWebTransportBase
 const webEnv: NodeJS.ProcessEnv = {
   ...process.env,
   VITE_DEV_HOST: devHostForVite,
+  PROMETHEUS_TEMPLATE_PRESET: composeEnv.PROMETHEUS_TEMPLATE_PRESET,
+  PROMETHEUS_TEMPLATE_HOME_MODE: composeEnv.PROMETHEUS_TEMPLATE_HOME_MODE,
+  PROMETHEUS_TEMPLATE_FEATURES: composeEnv.PROMETHEUS_TEMPLATE_FEATURES,
+  PROMETHEUS_TEMPLATE_DISABLE_FEATURES: composeEnv.PROMETHEUS_TEMPLATE_DISABLE_FEATURES,
+  VITE_TEMPLATE_PRESET: composeEnv.VITE_TEMPLATE_PRESET,
+  VITE_TEMPLATE_HOME_MODE: composeEnv.VITE_TEMPLATE_HOME_MODE,
+  VITE_TEMPLATE_FEATURES: composeEnv.VITE_TEMPLATE_FEATURES,
+  VITE_TEMPLATE_DISABLE_FEATURES: composeEnv.VITE_TEMPLATE_DISABLE_FEATURES,
   VITE_API_BASE: devApiBase,
   VITE_SPACETIMEDB_URI: process.env.VITE_SPACETIMEDB_URI?.trim() || devDbOrigin,
   VITE_SPACETIMEDB_MODULE:
     process.env.VITE_SPACETIMEDB_MODULE?.trim() ||
     process.env.SPACETIMEDB_MODULE?.trim() ||
-    'prometheus-site-local',
+    templateBranding.ids.spacetimeModule,
   VITE_SPACETIMEAUTH_AUTHORITY:
     process.env.VITE_SPACETIMEAUTH_AUTHORITY?.trim() ||
     process.env.SPACETIMEAUTH_AUTHORITY?.trim() ||
@@ -876,7 +927,7 @@ const webEnv: NodeJS.ProcessEnv = {
   VITE_SPACETIMEAUTH_CLIENT_ID:
     process.env.VITE_SPACETIMEAUTH_CLIENT_ID?.trim() ||
     process.env.SPACETIMEAUTH_CLIENT_ID?.trim() ||
-    'prometheus-site-dev',
+    templateBranding.ids.authClientId,
   VITE_WEBTRANSPORT_BASE: devWebTransportBase,
   VITE_ENABLE_PREFETCH: devEnablePrefetch,
   VITE_ENABLE_WEBTRANSPORT_FRAGMENTS: devEnableWebTransport,

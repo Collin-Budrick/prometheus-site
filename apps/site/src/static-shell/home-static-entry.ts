@@ -28,6 +28,7 @@ const startHomeStaticEntryInstall = ({
       .catch((error) => {
         homeStaticEntryInstallPromise = null
         console.error('Static home post-anchor core failed:', error)
+        return undefined
       })
   }
 

@@ -511,7 +511,7 @@ const replaceStaticNodes = (node: RenderNode, context: StaticFragmentRenderConte
 
 const hasStaticReplacementNode = (node: RenderNode): boolean => {
   if (node.type !== 'element') return false
-  if (staticReplacementTags.has(node.tag)) return true
+  if (typeof node.tag === 'string' && staticReplacementTags.has(node.tag)) return true
   return (node.children ?? []).some((child) => hasStaticReplacementNode(child))
 }
 

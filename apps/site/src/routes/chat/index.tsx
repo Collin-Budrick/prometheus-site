@@ -10,7 +10,6 @@ import { defaultLang, type Lang } from '../../shared/lang-store'
 import { loadAuthSession } from '../../shared/auth-session'
 import type { FragmentPlanValue } from '../../fragment/types'
 import type { ContactInvitesSeed } from '../../shared/contact-invites-seed'
-import { emptyInviteGroups } from '../../components/contact-invites/data'
 import { buildFragmentCssLinks } from '../../fragment/fragment-css'
 import {
   chatLanguageSelection,
@@ -28,6 +27,7 @@ import {
 import { isStaticShellBuild } from '../../static-shell/build-mode'
 import { STATIC_FRAGMENT_DATA_SCRIPT_ID } from '../../static-shell/constants'
 import { buildGlobalStylesheetLinks } from '../../static-shell/global-style-assets'
+import { starterContactInvites } from '../../template-starter-data'
 
 type ProtectedRouteData = {
   lang: Lang
@@ -57,9 +57,7 @@ type FragmentResource = {
   languageSeed: LanguageSeedPayload
 }
 
-const loadContactInvitesSeed = async (_request: Request): Promise<ContactInvitesSeed> => ({
-  invites: emptyInviteGroups
-})
+const loadContactInvitesSeed = async (_request: Request): Promise<ContactInvitesSeed> => starterContactInvites
 
 export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, request }) => {
   ensureFeatureEnabled('messaging')

@@ -1,3 +1,4 @@
+import { templateBranding } from '@prometheus/template-config'
 import { appConfig } from '../public-app-config'
 import { attemptBootstrapSession, clearBootstrapSession } from './auth-bootstrap'
 import { clearClientAuthSessionCache } from './auth-session-client'
@@ -621,7 +622,7 @@ const readStoredPreferredSpacetimeDbUri = (origin: string, moduleName: string) =
 export const resolveSpacetimeDbClientConfig = async (apiBase = appConfig.apiBase) => {
   const token = await getSpacetimeDbAuthToken(apiBase)
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
-  const moduleName = appConfig.spacetimeDbModule || 'prometheus-site-local'
+  const moduleName = appConfig.spacetimeDbModule || templateBranding.ids.spacetimeModule
   const fallbackUri = origin ? resolveDirectSpacetimeDbUri(origin) : appConfig.spacetimeDbUri
   const preferredUri = origin ? readStoredPreferredSpacetimeDbUri(origin, moduleName) : null
   return {

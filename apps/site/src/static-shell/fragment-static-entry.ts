@@ -319,8 +319,8 @@ export const installFragmentStaticEntry = ({
         typeof win.requestAnimationFrame === 'function' ? win.requestAnimationFrame.bind(win) : undefined,
       cancelFrame:
         typeof win.cancelAnimationFrame === 'function' ? win.cancelAnimationFrame.bind(win) : undefined,
-      setTimer: win.setTimeout.bind(win),
-      clearTimer: win.clearTimeout.bind(win),
+      setTimer: (handler, timeout) => win.setTimeout(handler, timeout),
+      clearTimer: (handle) => win.clearTimeout(handle as number),
       onReady: () => {
         void startWidgetRuntime()
         releaseReadyStagger({

@@ -1,10 +1,11 @@
 # AGENTS
 
-This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams binary-rendered fragments from a Bun + Elysia API. Use this file as the canonical guide for how the site works, what is compatible, and repo-specific rules.
+This monorepo ships as a reusable web showcase template: a Qwik frontend that streams binary-rendered fragments from a Bun + Elysia API. The default branding currently renders as **Fragment Prime** on the **Prometheus** hostnames, but template defaults now live in `packages/template-config/src/index.ts` and can be rewritten with `bun run template:init`. Use this file as the repo workflow guide, and use the generated template docs for preset and bundle details.
 
 ## Architecture overview
 
 - **Workspaces:** Managed with Bun (`bun@1.3.5`). Site entrypoint lives in `apps/site`, API entrypoint lives in `packages/platform/src/entrypoints/api.ts`. Core, platform, UI, template-config, and features live under `packages/`.
+- **Template docs:** `docs/template-reference.md` is generated from the bundle manifest, `docs/monorepo-refactor-plan.md` is the operator guide for presets/branding/infra defaults, and `docs/add-a-bundle.md` is the contract for adding a new detachable bundle.
 - **Core (`packages/core`):** Fragment planning/rendering, binary codecs, client streaming helpers, fragment registry, and prefetch/speculation utilities.
 - **Platform (`packages/platform`):** Bun + Elysia integration, env/config resolution, SpaceTimeDB/Garnet clients, rate limiting, and bundle-aware API route composition.
 - **UI (`packages/ui`):** Design system (global styles, RouteMotion, Dock, FragmentCard, toggles), no data fetching.
@@ -55,8 +56,9 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
 
 ## Repo conventions and checks
 
-- **Scripts:** Use root scripts before custom commands (`dev`, `build`, `preview`, `lint`, `typecheck`, `test`, `dev:storybook`, `build:storybook`). API linting uses Oxlint configs in `packages/platform/.oxlintrc.json`.
-- **Testing:** Root `bun run test` executes API tests; `bun run typecheck` covers site, Storybook config, and packages. Add targeted tests in `packages/platform/tests/` or `apps/site/src/**/*.test.tsx`.
+- **Scripts:** Use root scripts before custom commands (`dev`, `build`, `preview`, `lint`, `typecheck`, `test`, `dev:storybook`, `build:storybook`). Preset-specific scripts (`build:full`, `build:core`, `typecheck:full`, `typecheck:core`, `test:full`, `test:core`, `test:browser:full`, `test:browser:core`) are the template-facing entrypoints. API linting uses Oxlint configs in `packages/platform/.oxlintrc.json`.
+- **Testing:** Root `bun run test` executes API tests; `bun run typecheck` covers site, Storybook config, and packages. Add targeted tests in `packages/platform/tests/`, `apps/site/src/**/*.test.tsx`, or `tests/browser/*.spec.ts`.
+- **Template sync:** `bun run template:sync` regenerates `docs/template-reference.md`, the manifest, and env examples. `bun run check:template` verifies generated docs, branding placeholders, and untracked build outputs.
 - **Native affordance fallbacks:** `apps/site/src/native/affordances.ts` and `apps/site/src/native/haptics.ts` must preserve browser/PWA UX without assuming platform plugins are available.
 - **Preferences key allowlist:** Lightweight settings persisted via `apps/site/src/native/preferences.ts` are limited to `theme`, `locale`, `haptics-enabled`, `onboarding-complete`, and `last-tab`. Keep additional user/session/cache data in existing storage layers.
 - **Formatting:** API files use Oxlint/formatter configs (`.oxlintrc.json`, `.oxfmtrc.json`). Frontend follows project styling in `packages/ui/src/global.css` and component patterns (Qwik components with `$` suffix).
