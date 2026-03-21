@@ -8,6 +8,7 @@ import type { StaticShellSnapshot, StaticShellSnapshotManifest } from '../src/sh
 import { supportedLanguages, type Lang } from '../src/lang/manifest'
 import {
   createStaticSnapshotManifestEntry,
+  STATIC_SHELL_SNAPSHOT_MANIFEST_PATH,
   toStaticSnapshotAssetPath,
   toStaticSnapshotKey
 } from '../src/shell/core/snapshot'
@@ -28,7 +29,7 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const siteRoot = path.resolve(scriptDir, '..')
 const distRoot = path.resolve(siteRoot, 'dist')
 const staticShellOutDir = path.resolve(distRoot, 'build', 'static-shell')
-const snapshotOutDir = path.resolve(staticShellOutDir, 'snapshots')
+const snapshotOutDir = path.resolve(distRoot, path.dirname(STATIC_SHELL_SNAPSHOT_MANIFEST_PATH))
 const previewEntryPath = path.resolve(siteRoot, 'server', 'entry.preview.js')
 
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -215,7 +216,7 @@ const writeSnapshots = async (origin: string) => {
     }
   }
 
-  writeFileSync(path.resolve(snapshotOutDir, 'manifest.json'), `${JSON.stringify(manifest)}\n`)
+  writeFileSync(path.resolve(distRoot, STATIC_SHELL_SNAPSHOT_MANIFEST_PATH), `${JSON.stringify(manifest)}\n`)
 }
 
 runPreviewBuild()

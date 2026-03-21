@@ -7,7 +7,12 @@ import {
   STATIC_SHELL_REGION_ATTR
 } from './constants'
 import { seedStaticHomeCopy } from '../home/home-copy-store'
-import { applyStaticShellSnapshot } from './snapshot-client'
+import {
+  applyStaticShellSnapshot,
+  loadStaticShellSnapshot,
+  resetStaticShellSnapshotClientForTests
+} from './snapshot-client'
+import { STATIC_SHELL_SNAPSHOT_MANIFEST_PATH, toStaticSnapshotAssetPath } from './snapshot'
 
 const unwrapTrustedHtml = (value: unknown) =>
   typeof value === 'object' && value !== null && '__html' in value
@@ -67,6 +72,7 @@ const originalDocument = globalThis.document
 const originalWindow = globalThis.window
 const originalHTMLElement = globalThis.HTMLElement
 const originalHTMLScriptElement = globalThis.HTMLScriptElement
+const originalFetch = globalThis.fetch
 const originalTrustedTypes = (globalThis as typeof globalThis & { trustedTypes?: unknown }).trustedTypes
 
 describe('snapshot-client', () => {
@@ -132,6 +138,8 @@ describe('snapshot-client', () => {
     globalThis.window = originalWindow
     globalThis.HTMLElement = originalHTMLElement
     globalThis.HTMLScriptElement = originalHTMLScriptElement
+    globalThis.fetch = originalFetch
+    resetStaticShellSnapshotClientForTests()
     if (originalTrustedTypes !== undefined) {
       ;(globalThis as typeof globalThis & { trustedTypes?: unknown }).trustedTypes = originalTrustedTypes
     } else {
@@ -168,5 +176,55 @@ describe('snapshot-client', () => {
     expect(dockRegion?.dataset.staticDockPath).toBe('/chat')
     expect(dockRegion?.innerHTML).toContain('data-dock-mode="auth"')
     expect(dockRegion?.innerHTML).toContain('/chat/?lang=ja')
+  })
+
+  it('falls back to the deterministic snapshot asset path when the manifest is missing', async () => {
+    const calls: string[] = []
+    const manifestUrl = new URL(STATIC_SHELL_SNAPSHOT_MANIFEST_PATH, 'https://prometheus.test/').toString()
+    const snapshotUrl = new URL(toStaticSnapshotAssetPath('/chat', 'ja'), 'https://prometheus.test/').toString()
+
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url
+      calls.push(url)
+
+      if (url === manifestUrl) {
+        return new Response('Not found', { status: 404 })
+      }
+
+      if (url === snapshotUrl) {
+        return new Response(
+          JSON.stringify({
+            path: '/chat',
+            lang: 'ja',
+            title: 'Prometheus | Chat',
+            regions: {
+              header: '<header>header</header>',
+              main: '<main>main</main>',
+              dock: '<div>dock</div>'
+            }
+          }),
+          {
+            status: 200,
+            headers: {
+              'content-type': 'application/json'
+            }
+          }
+        )
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`)
+    }) as typeof fetch
+
+    const snapshot = await loadStaticShellSnapshot('/chat', 'ja')
+    const cachedSnapshot = await loadStaticShellSnapshot('/chat/', 'ja')
+
+    expect(snapshot.title).toBe('Prometheus | Chat')
+    expect(cachedSnapshot).toEqual(snapshot)
+    expect(calls).toEqual([manifestUrl, snapshotUrl])
   })
 })

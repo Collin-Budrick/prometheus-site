@@ -10,7 +10,11 @@ import {
   STATIC_SHELL_REGION_ATTR
 } from './constants'
 import { resolveStaticAssetUrl } from './static-asset-url'
-import { STATIC_SHELL_SNAPSHOT_MANIFEST_PATH } from './snapshot'
+import {
+  STATIC_SHELL_SNAPSHOT_MANIFEST_PATH,
+  toStaticSnapshotAssetPath,
+  toStaticSnapshotKey
+} from './snapshot'
 import type { StaticDockState } from './seed-client'
 import { replayStaticSnapshotReadyStagger } from './snapshot-ready-stagger'
 
@@ -113,19 +117,31 @@ export const loadStaticShellSnapshotManifest = async () => {
   return await snapshotManifestPromise
 }
 
+const resolveSnapshotAssetPath = async (snapshotKey: string, lang: Lang) => {
+  const normalizedSnapshotKey = toStaticSnapshotKey(snapshotKey)
+  try {
+    const manifest = await loadStaticShellSnapshotManifest()
+    const assetPath = manifest[normalizedSnapshotKey]?.[lang]
+    if (assetPath) {
+      return assetPath
+    }
+  } catch {
+    // Fall back to the deterministic asset path when the manifest is unavailable.
+  }
+
+  return toStaticSnapshotAssetPath(normalizedSnapshotKey, lang)
+}
+
 export const loadStaticShellSnapshot = async (snapshotKey: string, lang: Lang) => {
-  const cacheKey = `${snapshotKey}|${lang}`
+  const normalizedSnapshotKey = toStaticSnapshotKey(snapshotKey)
+  const cacheKey = `${normalizedSnapshotKey}|${lang}`
   const cached = snapshotCache.get(cacheKey)
   if (cached) {
     return await cached
   }
 
   const nextPromise = (async () => {
-    const manifest = await loadStaticShellSnapshotManifest()
-    const assetPath = manifest[snapshotKey]?.[lang]
-    if (!assetPath) {
-      throw new Error(`Missing static snapshot for ${snapshotKey} (${lang})`)
-    }
+    const assetPath = await resolveSnapshotAssetPath(normalizedSnapshotKey, lang)
     return await readJson<StaticShellSnapshot>(toSnapshotUrl(assetPath))
   })()
   snapshotCache.set(cacheKey, nextPromise)
@@ -151,4 +167,9 @@ export const updateStaticShellUrlLang = (lang: Lang) => {
   const nextUrl = `${url.pathname}${url.search}${url.hash}`
   const state = window.history.state && typeof window.history.state === 'object' ? { ...window.history.state } : {}
   window.history.replaceState(state, '', nextUrl)
+}
+
+export const resetStaticShellSnapshotClientForTests = () => {
+  snapshotManifestPromise = null
+  snapshotCache.clear()
 }
