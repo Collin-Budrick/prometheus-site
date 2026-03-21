@@ -45,6 +45,7 @@ Trace-*
 artifacts/
 reports/
 test-results/
+tests/results/
 apps/site/src/fragment/fragment-css.generated.ts
 
 tmp*

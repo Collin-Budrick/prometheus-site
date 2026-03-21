@@ -77,6 +77,33 @@ The site uses Serwist via `@serwist/vite` to build the service worker from `apps
 
 Keep service worker behavior isolated from SSR and preview-only flows. PWA behavior should only activate when the `pwa` bundle is enabled.
 
+## Highlight Builds
+
+Highlight stays disabled unless the build sets both `VITE_ENABLE_HIGHLIGHT=1` and `VITE_HIGHLIGHT_PROJECT_ID`.
+
+Optional tuning envs:
+
+- `VITE_HIGHLIGHT_SAMPLE_RATE=0.1`
+- `VITE_HIGHLIGHT_PRIVACY=strict`
+- `VITE_HIGHLIGHT_SESSION_RECORDING=1`
+- `VITE_HIGHLIGHT_CANVAS_SAMPLING=2`
+
+Example Bun build:
+
+```sh
+VITE_ENABLE_HIGHLIGHT=1 VITE_HIGHLIGHT_PROJECT_ID=your-project-id bun run --cwd apps/site build
+```
+
+Example Docker build:
+
+```sh
+docker build -f apps/site/Dockerfile \
+  --build-arg VITE_ENABLE_HIGHLIGHT=1 \
+  --build-arg VITE_HIGHLIGHT_PROJECT_ID=your-project-id \
+  --build-arg VITE_HIGHLIGHT_SAMPLE_RATE=0.1 \
+  -t prometheus-site .
+```
+
 ## Root Commands
 
 Keep the repo root limited to user-facing template commands:
