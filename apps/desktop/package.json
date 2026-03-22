@@ -1,0 +1,25 @@
+{
+  "name": "desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare:runtime": "bun run scripts/patch-electrobun.ts",
+    "postinstall": "bun run prepare:runtime",
+    "dev": "bun run prepare:runtime && electrobun dev --watch",
+    "run": "bun run prepare:runtime && electrobun run",
+    "build": "bun run prepare:runtime && electrobun build",
+    "build:canary": "bun run prepare:runtime && electrobun build --env=canary",
+    "build:stable": "bun run prepare:runtime && electrobun build --env=stable",
+    "typecheck": "bunx tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "electrobun": "1.16.0"
+  },
+  "devDependencies": {
+    "@types/node": "25.5.0",
+    "@types/three": "0.165.0",
+    "bun-types": "^1.3.11",
+    "typescript": "6.0.1-rc"
+  }
+}

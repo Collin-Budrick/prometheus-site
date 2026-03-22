@@ -29,6 +29,7 @@ ensureSpacetimeJwtKeys()
 const isWsl = process.platform === 'linux' && Boolean(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP)
 const runtimeConfig = getRuntimeConfig(process.env)
 const runtimeCompose = runtimeConfig.compose
+process.env.COMPOSE_PROJECT_NAME = process.env.COMPOSE_PROJECT_NAME?.trim() || runtimeCompose.projectName
 
 const resolveExistingPath = (value: string | undefined) => {
   const raw = value?.trim().replace(/^["'](.*)["']$/, '$1')

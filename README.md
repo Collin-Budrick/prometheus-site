@@ -26,11 +26,17 @@ Use `.env.core.example` instead if you want the lean preset from the start.
 ```bash
 bun run dev
 bun run dev:core
+bun run desktop:dev
+bun run desktop:run
+bun run desktop:build
+bun run desktop:build:canary
+bun run desktop:build:stable
 bun run build
 bun run build:core
 bun run preview
 bun run typecheck
 bun run typecheck:core
+bun run desktop:typecheck
 bun run test
 bun run test:core
 bun run template:init -- --site-name "Acme" --product-name "Acme Platform" --package-scope @acme --project-name acme-site --web-host acme.dev --web-host-prod acme.prod --db-host db.acme.dev --db-host-prod db.acme.prod --compose-project-name acme --spacetime-module acme-site-local --auth-client-id acme-site-dev --native-bundle-id com.acme.site --notification-email notifications@acme.dev
@@ -44,6 +50,15 @@ Browser smoke tests remain available after the containers are running:
 bun run test:browser:full
 bun run test:browser:core
 ```
+
+## Desktop Target
+
+`apps/desktop` packages the existing HTTPS deployment as an Electrobun desktop shell. It does not start a local API stack; it loads the same site and Rust API/WebTransport endpoints you already run behind Caddy.
+
+- `bun run desktop:dev` builds a watch-mode shell that targets `https://prometheus.dev` by default.
+- `bun run desktop:build` creates a dev-channel build.
+- `bun run desktop:build:canary` and `bun run desktop:build:stable` default to `https://prometheus.prod`.
+- `PROMETHEUS_DESKTOP_TARGET_URL` overrides the remote URL for any run, and `PROMETHEUS_DESKTOP_TARGET_URL_DEV`, `PROMETHEUS_DESKTOP_TARGET_URL_CANARY`, and `PROMETHEUS_DESKTOP_TARGET_URL_STABLE` let you pin per-channel targets at build time.
 
 ## Generated Files
 
@@ -63,5 +78,7 @@ Generated build outputs must stay untracked:
 - `apps/site/dist/`
 - `apps/site/server/`
 - `apps/site/storybook-static/`
+- `apps/desktop/build/`
+- `apps/desktop/artifacts/`
 - `apps/site/android/`
 - `extras/spacetimedb-module/target/`

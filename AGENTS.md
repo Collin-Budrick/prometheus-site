@@ -1,10 +1,10 @@
 # AGENTS
 
-This monorepo ships as a reusable web showcase template: a Qwik frontend that streams binary-rendered fragments from a combined Rust axum + WebTransport runtime. The default branding currently renders as **Fragment Prime** on the **Prometheus** hostnames, but template defaults now live in `packages/template-config/src/index.ts` and can be rewritten with `bun run template:init`. Keep the primary template surface focused on `apps/site`, `packages/{core,platform,platform-rs,ui,template-config,spacetimedb-client}`, `scripts`, `infra`, `tests`, and `docs`. Advanced or internal subsystems live under `extras/`.
+This monorepo ships as a reusable web showcase template: a Qwik frontend that streams binary-rendered fragments from a combined Rust axum + WebTransport runtime, plus an Electrobun desktop shell that can package the hosted app for desktop distribution. The default branding currently renders as **Fragment Prime** on the **Prometheus** hostnames, but template defaults now live in `packages/template-config/src/index.ts` and can be rewritten with `bun run template:init`. Keep the primary template surface focused on `apps/{site,desktop}`, `packages/{core,platform,platform-rs,ui,template-config,spacetimedb-client}`, `scripts`, `infra`, `tests`, and `docs`. Advanced or internal subsystems live under `extras/`.
 
 ## Architecture overview
 
-- **Workspaces:** Managed with Bun (`bun@1.3.5`). Site entrypoint lives in `apps/site`, and the combined API/WebTransport entrypoint lives in `packages/platform-rs/src/main.rs`. Core, platform, platform-rs, UI, template-config, and the shared SpacetimeDB client live under `packages/`.
+- **Workspaces:** Managed with Bun (`bun@1.3.5`). Site entrypoint lives in `apps/site`, the desktop shell lives in `apps/desktop`, and the combined API/WebTransport entrypoint lives in `packages/platform-rs/src/main.rs`. Core, platform, platform-rs, UI, template-config, and the shared SpacetimeDB client live under `packages/`.
 - **Template docs:** `docs/template-reference.md` is generated from the bundle manifest, and `docs/template-maintainer-guide.md` is the maintainer guide for presets, branding, bundle ownership, and template checks.
 - **Core (`packages/core`):** Fragment planning/rendering, binary codecs, client streaming helpers, fragment registry, and prefetch/speculation utilities.
 - **Platform/runtime (`packages/platform-rs`):** Rust axum + WebTransport runtime, env/config resolution, SpaceTimeDB/Garnet clients, rate limiting, and bundle-aware API route composition.
@@ -23,6 +23,7 @@ This monorepo ships as a reusable web showcase template: a Qwik frontend that st
 - **Local dev entrypoint:** `bun run dev` (runs Compose services, ensures the Caddy file, starts Qwik dev server on 4173 with HTTPS routed through Caddy at `https://prometheus.dev`, and defaults to the `full` template preset).
 - **Runtime defaults:** canonical host/port/profile/preset defaults live in `scripts/runtime-config.ts`.
 - **Storybook:** Storybook stays scoped to `apps/site`. Use the app-local scripts inside `apps/site` when you need it; keep the repo root limited to template-facing commands.
+- **Desktop shell:** `apps/desktop` packages the existing HTTPS app through Electrobun. It defaults to `https://prometheus.dev` for dev builds and `https://prometheus.prod` for canary/stable builds, and you can override the target with `PROMETHEUS_DESKTOP_TARGET_URL` or the per-channel `PROMETHEUS_DESKTOP_TARGET_URL_{DEV,CANARY,STABLE}` envs.
 - **Fragment HMR (dev):** Vite watches `apps/site/src/fragment`, `apps/site/src/fragment/definitions`, and fragment island components under `apps/site/src/components`, emits `fragments:refresh`, clears in-memory/local fragment shell + plan cache on refresh, and re-fetches fragment payloads with `refresh=1` (dev-only); requires the API running from source (dev/watch) and plan changes still require a reload.
 - **Build:** `bun run build` builds the default `full` preset; `bun run build:core` builds the lean preset.
 - **Template presets:** `PROMETHEUS_TEMPLATE_PRESET`, `TEMPLATE_PRESET`, and `VITE_TEMPLATE_PRESET` resolve the shared feature bundle set. `full` is the default showcase preset; `core` keeps the lean web shell (`auth`, `account`, `demo-home`). Override bundles with `PROMETHEUS_TEMPLATE_FEATURES` / `PROMETHEUS_TEMPLATE_DISABLE_FEATURES` (or the `TEMPLATE_` / `VITE_TEMPLATE_` variants) using comma/newline-separated feature ids.
@@ -54,7 +55,7 @@ This monorepo ships as a reusable web showcase template: a Qwik frontend that st
 
 ## Repo conventions and checks
 
-- **Scripts:** Keep the root surface template-facing: `dev`, `dev:core`, `build`, `build:core`, `preview`, `typecheck`, `typecheck:core`, `test`, `test:core`, `template:init`, `template:sync`, `check:template`, `test:browser:full`, and `test:browser:core`. Internal helpers should stay app-local or `_internal:*`. API linting uses Oxlint configs in `packages/platform/.oxlintrc.json`.
+- **Scripts:** Keep the root surface template-facing: `dev`, `dev:core`, `desktop:dev`, `desktop:run`, `desktop:build`, `desktop:build:canary`, `desktop:build:stable`, `build`, `build:core`, `preview`, `typecheck`, `typecheck:core`, `desktop:typecheck`, `test`, `test:core`, `template:init`, `template:sync`, `check:template`, `test:browser:full`, and `test:browser:core`. Internal helpers should stay app-local or `_internal:*`. API linting uses Oxlint configs in `packages/platform/.oxlintrc.json`.
 - **Testing:** Root `bun run test` executes API tests; `bun run typecheck` covers site, Storybook config, and packages. Add targeted tests in `packages/platform/tests/`, `apps/site/src/**/*.test.tsx`, or `tests/browser/*.spec.ts`.
 - **Template sync:** `bun run template:sync` regenerates `docs/template-reference.md`, the manifest, and env examples. `bun run check:template` verifies generated docs, branding placeholders, and untracked build outputs.
 - **Native affordance fallbacks:** `apps/site/src/native/affordances.ts` and `apps/site/src/native/haptics.ts` must preserve browser/PWA UX without assuming platform plugins are available.
@@ -65,6 +66,7 @@ This monorepo ships as a reusable web showcase template: a Qwik frontend that st
 ## File map (quick pointers)
 
 - **Site:** `apps/site/src/root.tsx` (app shell), `apps/site/.storybook/` (Storybook config), `apps/site/src/routes/` (pages/layout/head), `apps/site/src/features/fragments/` (FragmentShell), `apps/site/src/fragment/definitions/` (site fragment bundles).
+- **Desktop:** `apps/desktop/src/bun/index.ts` (Electrobun main process), `apps/desktop/electrobun.config.ts` (desktop build/runtime config).
 - **Stories:** `apps/site/src/**/*.stories.tsx` and `packages/ui/src/**/*.stories.tsx` feed the shared Storybook instance; prefer real component stories over generated onboarding samples.
 - **Core:** `packages/core/src/fragment/` (types/codec/planner/service), `packages/core/src/app/` (client extras).
 - **Template config:** `packages/template-config/src/index.ts` (bundle manifests, presets, and shared feature resolution).
