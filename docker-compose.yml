@@ -195,24 +195,6 @@ services:
       prometheus_net:
         ipv4_address: 172.30.0.5
 
-  yjs-signaling:
-    profiles:
-      - realtime
-    build:
-      context: .
-      dockerfile: infra/yjs-signaling/Dockerfile
-      cache_from:
-        - type=local,src=.cache/buildx/yjs-signaling
-      cache_to:
-        - type=local,dest=.cache/buildx/yjs-signaling,mode=max
-    environment:
-      PORT: 4444
-    expose:
-      - "4444"
-    networks:
-      prometheus_net:
-        ipv4_address: 172.30.0.8
-
   web:
     build:
       context: .
@@ -235,7 +217,7 @@ services:
         VITE_HIGHLIGHT_CANVAS_SAMPLING: ${VITE_HIGHLIGHT_CANVAS_SAMPLING:-}
         VITE_HIGHLIGHT_SAMPLE_RATE: ${VITE_HIGHLIGHT_SAMPLE_RATE:-0.1}
         VITE_WEBTRANSPORT_BASE: ${PROMETHEUS_VITE_WEBTRANSPORT_BASE:-}
-        VITE_P2P_CRDT_SIGNALING: ${VITE_P2P_CRDT_SIGNALING:-/yjs,wss://signaling.yjs.dev}
+        VITE_P2P_CRDT_SIGNALING: ${VITE_P2P_CRDT_SIGNALING:-/yjs}
         VITE_P2P_RELAY_BASES: ${VITE_P2P_RELAY_BASES:-}
         VITE_P2P_NOSTR_RELAYS: ${VITE_P2P_NOSTR_RELAYS:-}
         VITE_P2P_WAKU_RELAYS: ${VITE_P2P_WAKU_RELAYS:-}

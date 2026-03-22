@@ -7,3 +7,4 @@ pub mod home_collab;
 pub mod shared;
 pub mod store;
 pub mod transport;
+pub mod yjs_signaling;

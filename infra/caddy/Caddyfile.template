@@ -54,11 +54,11 @@ https://{{DB_HOST_PROD}} {
   encode br gzip
 
   handle /yjs {
-    reverse_proxy http://yjs-signaling:4444
+    reverse_proxy http://api:4000
   }
 
-  handle_path /yjs/* {
-    reverse_proxy http://yjs-signaling:4444
+  handle /yjs/* {
+    reverse_proxy http://api:4000
   }
 
   handle_path /api/* {

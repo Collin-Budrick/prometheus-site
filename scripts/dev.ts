@@ -773,26 +773,7 @@ const buildTargets: BuildTarget[] = [
     inputs: ['infra/caddy/Dockerfile']
   }
 ]
-const optionalBuildTargets: BuildTarget[] = includeRealtimeServices
-  ? [
-      {
-        service: 'yjs-signaling',
-        cacheKey: `${cacheKeyPrefix}:yjs-signaling`,
-        inputs: [
-          'infra/yjs-signaling/Dockerfile',
-          'package.json',
-          'bun.lock',
-          'apps/site/package.json',
-          'packages/core/package.json',
-          'packages/platform-rs/Cargo.toml',
-          'packages/platform-rs/Cargo.lock',
-          'packages/spacetimedb-client/package.json',
-          'packages/template-config/package.json',
-          'packages/ui/package.json'
-        ]
-      }
-    ]
-  : []
+const optionalBuildTargets: BuildTarget[] = []
 
 const activeBuildTargets = [...buildTargets, ...optionalBuildTargets]
 const buildResults = activeBuildTargets.map((target) => {

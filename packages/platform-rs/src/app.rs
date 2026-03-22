@@ -18,6 +18,7 @@ use crate::fragments;
 use crate::home_collab;
 use crate::shared::AppState;
 use crate::store;
+use crate::yjs_signaling;
 
 #[derive(Debug, Deserialize)]
 struct EchoBody {
@@ -45,7 +46,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/health", get(health))
         .route("/ai/echo", axum::routing::post(ai_echo))
         .route("/{*path}", options(preflight))
-        .merge(fragments::router());
+        .merge(fragments::router())
+        .merge(yjs_signaling::router());
 
     if features.auth {
         router = router.nest("/auth", auth::router());

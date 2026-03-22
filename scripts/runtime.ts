@@ -63,6 +63,11 @@ const waitForExit = (child: ReturnType<typeof spawn>, timeoutMs: number) =>
     })
   })
 
+const readPositiveIntEnv = (value: string | undefined, fallback: number) => {
+  const parsed = Number.parseInt(value ?? '', 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
 const killChildTree = (pid: number | undefined) => {
   if (!pid) return
   if (process.platform === 'win32') {
@@ -211,7 +216,7 @@ const runBrowserSmoke = async () => {
       previewStdoutPath,
       previewStderrPath,
       url: baseURL,
-      timeoutMs: 240000
+      timeoutMs: readPositiveIntEnv(process.env.PROMETHEUS_BROWSER_PREVIEW_TIMEOUT_MS, 1200000)
     })
 
     const test = spawnSync(bunBin, ['x', 'playwright', 'test', specPath], {

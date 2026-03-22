@@ -2,6 +2,7 @@ use crate::config::AppConfig;
 use anyhow::Context;
 use redis::Client;
 use std::sync::Arc;
+use yrs_axum::signaling::SignalingService;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -12,6 +13,7 @@ pub struct AppState {
     pub home_collab: Arc<crate::home_collab::HomeCollabState>,
     pub store: Arc<crate::store::StoreState>,
     pub chat: Arc<crate::chat::ChatState>,
+    pub yjs_signaling: SignalingService,
 }
 
 impl AppState {
@@ -27,6 +29,7 @@ impl AppState {
         ));
         let home_collab = Arc::new(crate::home_collab::HomeCollabState::new());
         let chat = Arc::new(crate::chat::ChatState::new());
+        let yjs_signaling = SignalingService::new();
 
         Ok(Self {
             config: Arc::new(config),
@@ -36,6 +39,7 @@ impl AppState {
             home_collab,
             store,
             chat,
+            yjs_signaling,
         })
     }
 }

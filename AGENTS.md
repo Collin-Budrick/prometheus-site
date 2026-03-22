@@ -7,11 +7,11 @@ This monorepo ships as a reusable web showcase template: a Qwik frontend that st
 - **Workspaces:** Managed with Bun (`bun@1.3.5`). Site entrypoint lives in `apps/site`, the desktop shell lives in `apps/desktop`, and the combined API/WebTransport entrypoint lives in `packages/platform-rs/src/main.rs`. Core, platform, platform-rs, UI, template-config, and the shared SpacetimeDB client live under `packages/`.
 - **Template docs:** `docs/template-reference.md` is generated from the bundle manifest, and `docs/template-maintainer-guide.md` is the maintainer guide for presets, branding, bundle ownership, and template checks.
 - **Core (`packages/core`):** Fragment planning/rendering, binary codecs, client streaming helpers, fragment registry, and prefetch/speculation utilities.
-- **Platform/runtime (`packages/platform-rs`):** Rust axum + WebTransport runtime, env/config resolution, SpaceTimeDB/Garnet clients, rate limiting, and bundle-aware API route composition.
+- **Platform/runtime (`packages/platform-rs`):** Rust axum + WebTransport runtime, embedded Yjs signaling, env/config resolution, SpaceTimeDB/Garnet clients, rate limiting, and bundle-aware API route composition.
 - **UI (`packages/ui`):** Design system (global styles, RouteMotion, Dock, FragmentCard, toggles), no data fetching.
 - **Features (`apps/site/src/features + packages/platform-rs/src`):** Auth, Store, Messaging, Lab (self-contained front/back logic).
 - **Site (`apps/site`):** Qwik + Qwik City SPA/SSR composition layer, FragmentShell, routes, branding/copy.
-- **API/runtime (platform entrypoint):** Combined Rust entrypoint that boots the platform server, registers site fragment definitions, and serves WebTransport from the same runtime.
+- **API/runtime (platform entrypoint):** Combined Rust entrypoint that boots the platform server, registers site fragment definitions, serves WebTransport, and hosts the `/yjs` signaling endpoint from the same runtime.
 - **Infrastructure (`infra/` + `docker-compose.yml`):**
   - Caddy terminates TLS and routes `prometheus.dev` traffic to web/API containers.
   - Caddy serves HTTP over TCP (h1/h2); UDP 4444 is bound to the integrated WebTransport runtime for HTTP/3 sessions.
@@ -39,7 +39,7 @@ This monorepo ships as a reusable web showcase template: a Qwik frontend that st
 - **Public base (IPFS/PWA):** `VITE_PUBLIC_BASE` controls the Vite `base` path (use `./` for IPFS/gateway hosting so assets resolve under the CID path).
 - **P2P relay/signaling envs:** `VITE_P2P_RELAY_BASES` (HTTP mailbox relays), `VITE_P2P_NOSTR_RELAYS` (wss relays for discovery/prekeys), `VITE_P2P_WAKU_RELAYS` (Waku multiaddrs), and `VITE_P2P_CRDT_SIGNALING` (y-webrtc signaling list; if empty, falls back to `/yjs`).
 - **Database bootstrap:** Compose dev/preview now ensures SpaceTimeDB JWT keys exist and publishes the Rust module into the running SpaceTimeDB instance before the API/site are treated as ready.
-- **Compose profiles:** the `realtime` profile is owned by the `realtime` bundle and controls `webtransport` + `yjs-signaling`; `full` enables it by default, while `core` leaves those services off.
+- **Compose profiles:** the `realtime` profile is owned by the `realtime` bundle and controls realtime behavior such as WebTransport and the embedded `/yjs` signaling endpoint; `full` enables it by default, while `core` leaves those features off.
 - **Networking:** Caddy expects `prometheus.dev` to resolve to localhost. On WSL/non-macOS, set `DEV_WEB_UPSTREAM` if `host.docker.internal` is unsuitable.
 
 ## Compatibility and constraints
