@@ -16,7 +16,12 @@ import {
 } from './compose-utils'
 import { generateFragmentCss } from './fragment-css'
 import { getRuntimeConfig } from './runtime-config'
-import { ensureSpacetimeJwtKeys } from './spacetimedb'
+import {
+  ensureSpacetimeJwtKeys,
+  hasPublishedSpacetimeModule,
+  publishSpacetimeModule,
+  waitForSpacetimeServer
+} from './spacetimedb'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 ensureSpacetimeJwtKeys()
@@ -730,6 +735,21 @@ type BuildTarget = {
 
 const cacheKeyPrefix = 'dev'
 const cache = loadBuildCache()
+const spacetimeModuleName = process.env.SPACETIMEDB_MODULE?.trim() || templateBranding.ids.spacetimeModule
+const spacetimeServerUri = `http://127.0.0.1:${devSpacetimeDbPort}`
+const spacetimedbModuleCacheKey = `${cacheKeyPrefix}:spacetimedb-module`
+const spacetimedbModuleFingerprint = computeFingerprint(
+  [
+    'extras/spacetimedb-module/Cargo.toml',
+    'extras/spacetimedb-module/Cargo.lock',
+    'extras/spacetimedb-module/src',
+    'scripts/spacetimedb.ts'
+  ],
+  {
+    SPACETIMEDB_MODULE: spacetimeModuleName,
+    SPACETIMEDB_SERVER: spacetimeServerUri
+  }
+)
 const composeRuntimeCacheKey = `${cacheKeyPrefix}:compose-runtime`
 const buildTargets: BuildTarget[] = [
   {
@@ -739,10 +759,11 @@ const buildTargets: BuildTarget[] = [
       'package.json',
       'bun.lock',
       'tsconfig.base.json',
-      'packages/platform/Dockerfile',
-      'packages/platform',
+      'packages/platform-rs/Dockerfile',
+      'packages/platform-rs',
       'apps/site',
-      'packages'
+      'packages',
+      'scripts/runtime-config.ts'
     ]
   },
   {
@@ -762,16 +783,12 @@ const optionalBuildTargets: BuildTarget[] = includeRealtimeServices
           'bun.lock',
           'apps/site/package.json',
           'packages/core/package.json',
-          'packages/platform/package.json',
+          'packages/platform-rs/Cargo.toml',
+          'packages/platform-rs/Cargo.lock',
           'packages/spacetimedb-client/package.json',
           'packages/template-config/package.json',
           'packages/ui/package.json'
         ]
-      },
-      {
-        service: 'webtransport',
-        cacheKey: `${cacheKeyPrefix}:webtransport`,
-        inputs: ['extras/webtransport/Dockerfile', 'extras/webtransport']
       }
     ]
   : []
@@ -782,8 +799,14 @@ const buildResults = activeBuildTargets.map((target) => {
   const needsBuild = cache[target.cacheKey]?.fingerprint !== fingerprint
   return { ...target, fingerprint, needsBuild }
 })
+const resetSpacetimeData = cache[spacetimedbModuleCacheKey]?.fingerprint !== spacetimedbModuleFingerprint
+
+if (resetSpacetimeData) {
+  const down = runSync(command, [...prefix, 'down', '--volumes', '--remove-orphans'], composeEnv)
+  if (down.status !== 0) process.exit(down.status ?? 1)
+}
 const composeRuntimeFingerprint = computeFingerprint(
-  ['docker-compose.yml', 'apps/site/Dockerfile', 'packages/platform/Dockerfile'],
+  ['docker-compose.yml', 'apps/site/Dockerfile', 'packages/platform-rs/Dockerfile', 'scripts/runtime-config.ts'],
   {
     COMPOSE_PROJECT_NAME: composeEnv.COMPOSE_PROJECT_NAME ?? '',
     COMPOSE_PROFILES: composeEnv.COMPOSE_PROFILES ?? '',
@@ -842,8 +865,21 @@ if (configChanged && caddyWasRunning) {
   if (restart.status !== 0) process.exit(restart.status ?? 1)
 }
 
+waitForSpacetimeServer(spacetimeServerUri)
+const needsSpacetimeModulePublish =
+  cache[spacetimedbModuleCacheKey]?.fingerprint !== spacetimedbModuleFingerprint ||
+  !hasPublishedSpacetimeModule(spacetimeModuleName, spacetimeServerUri)
+
+if (needsSpacetimeModulePublish) {
+  publishSpacetimeModule(spacetimeModuleName, spacetimeServerUri)
+}
+
 for (const target of buildResults) {
   cache[target.cacheKey] = { fingerprint: target.fingerprint, updatedAt: new Date().toISOString() }
+}
+cache[spacetimedbModuleCacheKey] = {
+  fingerprint: spacetimedbModuleFingerprint,
+  updatedAt: new Date().toISOString()
 }
 cache[composeRuntimeCacheKey] = {
   fingerprint: composeRuntimeFingerprint,

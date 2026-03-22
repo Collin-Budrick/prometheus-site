@@ -4,10 +4,11 @@ This repo ships as a reusable showcase template. Keep `full` as the default ship
 
 ## Template Surface
 
-- Primary template paths: `apps/site`, `packages/{core,platform,ui,template-config,spacetimedb-client}`, `scripts`, `infra`, `tests`, `docs`
-- Secondary paths: `extras/webtransport`, `extras/spacetimedb-module`
+- Primary template paths: `apps/site`, `packages/{core,platform,platform-rs,ui,template-config,spacetimedb-client}`, `scripts`, `infra`, `tests`, `docs`
+- Secondary paths: `extras/spacetimedb-module`
+- Combined runtime entrypoint: `packages/platform-rs/src/main.rs`
 - Site feature UI belongs under `apps/site/src/features`
-- Platform feature server code belongs under `packages/platform/src/features`
+- Platform feature server code belongs under `packages/platform-rs/src`
 - Shared site utilities stay in `apps/site/src/shared` only when they are genuinely cross-route
 
 ## Control Plane

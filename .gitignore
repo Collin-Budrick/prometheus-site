@@ -18,6 +18,7 @@ apps/site/server/*
 apps/site/storybook-static/
 apps/site/android/
 extras/spacetimedb-module/target/
+packages/platform-rs/target/
 preview-started.txt
 tmp
 apps/site/public/fragments/

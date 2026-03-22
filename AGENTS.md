@@ -1,21 +1,20 @@
 # AGENTS
 
-This monorepo ships as a reusable web showcase template: a Qwik frontend that streams binary-rendered fragments from a Bun + Elysia API. The default branding currently renders as **Fragment Prime** on the **Prometheus** hostnames, but template defaults now live in `packages/template-config/src/index.ts` and can be rewritten with `bun run template:init`. Keep the primary template surface focused on `apps/site`, `packages/{core,platform,ui,template-config,spacetimedb-client}`, `scripts`, `infra`, `tests`, and `docs`. Advanced or internal subsystems live under `extras/`.
+This monorepo ships as a reusable web showcase template: a Qwik frontend that streams binary-rendered fragments from a combined Rust axum + WebTransport runtime. The default branding currently renders as **Fragment Prime** on the **Prometheus** hostnames, but template defaults now live in `packages/template-config/src/index.ts` and can be rewritten with `bun run template:init`. Keep the primary template surface focused on `apps/site`, `packages/{core,platform,platform-rs,ui,template-config,spacetimedb-client}`, `scripts`, `infra`, `tests`, and `docs`. Advanced or internal subsystems live under `extras/`.
 
 ## Architecture overview
 
-- **Workspaces:** Managed with Bun (`bun@1.3.5`). Site entrypoint lives in `apps/site`, API entrypoint lives in `packages/platform/src/entrypoints/api.ts`. Core, platform, UI, template-config, and the shared SpacetimeDB client live under `packages/`.
+- **Workspaces:** Managed with Bun (`bun@1.3.5`). Site entrypoint lives in `apps/site`, and the combined API/WebTransport entrypoint lives in `packages/platform-rs/src/main.rs`. Core, platform, platform-rs, UI, template-config, and the shared SpacetimeDB client live under `packages/`.
 - **Template docs:** `docs/template-reference.md` is generated from the bundle manifest, and `docs/template-maintainer-guide.md` is the maintainer guide for presets, branding, bundle ownership, and template checks.
 - **Core (`packages/core`):** Fragment planning/rendering, binary codecs, client streaming helpers, fragment registry, and prefetch/speculation utilities.
-- **Platform (`packages/platform`):** Bun + Elysia integration, env/config resolution, SpaceTimeDB/Garnet clients, rate limiting, and bundle-aware API route composition.
+- **Platform/runtime (`packages/platform-rs`):** Rust axum + WebTransport runtime, env/config resolution, SpaceTimeDB/Garnet clients, rate limiting, and bundle-aware API route composition.
 - **UI (`packages/ui`):** Design system (global styles, RouteMotion, Dock, FragmentCard, toggles), no data fetching.
-- **Features (`apps/site/src/features + packages/platform/src/features`):** Auth, Store, Messaging, Lab (self-contained front/back logic).
+- **Features (`apps/site/src/features + packages/platform-rs/src`):** Auth, Store, Messaging, Lab (self-contained front/back logic).
 - **Site (`apps/site`):** Qwik + Qwik City SPA/SSR composition layer, FragmentShell, routes, branding/copy.
-- **API (platform entrypoint):** Thin Bun entry that boots the platform server and registers site fragment definitions.
-- **WebTransport (`extras/webtransport`):** Go HTTP/3 sidecar that upgrades CONNECT requests and streams fragment binaries from the API over WebTransport.
+- **API/runtime (platform entrypoint):** Combined Rust entrypoint that boots the platform server, registers site fragment definitions, and serves WebTransport from the same runtime.
 - **Infrastructure (`infra/` + `docker-compose.yml`):**
   - Caddy terminates TLS and routes `prometheus.dev` traffic to web/API containers.
-  - Caddy serves HTTP over TCP (h1/h2); UDP 4444 is bound to the WebTransport sidecar for HTTP/3 WebTransport sessions.
+  - Caddy serves HTTP over TCP (h1/h2); UDP 4444 is bound to the integrated WebTransport runtime for HTTP/3 sessions.
   - SpaceTimeDB 2.0 + Microsoft Garnet containers with healthchecks; SpaceTimeDB uses a persistent volume and Garnet runs as an in-memory low-latency cache tier.
   - Dynamic Caddy config generated for dev via `scripts/compose-utils.ts` (writes `infra/caddy/Caddyfile`, controlled by `scripts/runtime-config.ts`).
 
@@ -48,7 +47,7 @@ This monorepo ships as a reusable web showcase template: a Qwik frontend that st
 - **Fragments:** Keep fragment payloads binary-compatible with `packages/core/src/fragment/binary.ts` and API encoders. Changes to fragment schemas must update both sides and related tests.
 - **Early hints:** Fragment plans may include `earlyHints` for shell assets only (CSS, fonts, critical JS); never include fragment payloads or WebTransport URLs.
 - **Caching:** Garnet cache keys for store items come from `buildStoreItemsCacheKey`; invalidation is coupled to realtime events. Preserve this coupling when modifying store logic.
-- **Rate limits and payload limits:** Respect API constraints in `packages/platform/src/server/app.ts` (prompt length, body size, WS quotas). Frontend UX should surface these limits rather than bypass them.
+- **Rate limits and payload limits:** Respect API constraints in `packages/platform-rs/src/app.rs` (prompt length, body size, WS quotas). Frontend UX should surface these limits rather than bypass them.
 - **TLS/hosts:** Dev HTTPS assumes mkcert-style certs under `infra/caddy/certs` (shared with Caddy and WebTransport). Don’t check private keys into version control; reuse existing paths.
 - **WebTransport TLS:** Chrome may require WebTransport developer mode for mkcert/local CAs (`chrome://flags/#enable-webtransport-developer-mode` or launch with `--enable-features=WebTransportDeveloperMode`; `chrome-devtools-mcp` supports `--acceptInsecureCerts`/`--chromeArg`).
 - **Service worker policy:** Browser and PWA builds can generate/register the service worker; keep that behavior isolated from SSR and preview-only flows.
@@ -69,11 +68,11 @@ This monorepo ships as a reusable web showcase template: a Qwik frontend that st
 - **Stories:** `apps/site/src/**/*.stories.tsx` and `packages/ui/src/**/*.stories.tsx` feed the shared Storybook instance; prefer real component stories over generated onboarding samples.
 - **Core:** `packages/core/src/fragment/` (types/codec/planner/service), `packages/core/src/app/` (client extras).
 - **Template config:** `packages/template-config/src/index.ts` (bundle manifests, presets, and shared feature resolution).
-- **Platform/API:** `packages/platform/src/server/app.ts` (Elysia setup), `packages/platform/src/config.ts` (resolved runtime config), `packages/platform/src/cache.ts` (Garnet RESP client), `packages/platform/src/server/fragments.ts` (fragment routes).
-- **Features:** `packages/platform/src/features/auth/server.ts`, `packages/platform/src/features/store/api.ts`, `packages/platform/src/features/messaging/api.ts`, `apps/site/src/features/lab/lab-route.tsx`.
+- **Platform/API:** `packages/platform-rs/src/main.rs` (API/runtime entrypoint), `packages/platform-rs/src/config.rs` (resolved runtime config), `packages/platform-rs/src/fragments.rs` (fragment routes).
+- **Features:** `packages/platform-rs/src/auth.rs`, `packages/platform-rs/src/store.rs`, `packages/platform-rs/src/chat.rs`, `packages/platform-rs/src/home_collab.rs`, `apps/site/src/features/lab/lab-route.tsx`.
 - **Infra:** `docker-compose.yml` (service graph), `infra/caddy` (Caddyfile routing), `infra/spacetimedb/keys`, `scripts/*.ts` (compose helpers, preview/dev).
 - **Runtime config:** `scripts/runtime-config.ts`.
-- **WebTransport:** `extras/webtransport/main.go` (HTTP/3 server), `extras/webtransport/Dockerfile`.
+- **WebTransport:** integrated into `packages/platform-rs`; no separate sidecar entrypoint.
 
 ## Contribution dos and don’ts
 

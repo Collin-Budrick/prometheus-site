@@ -1,0 +1,34 @@
+[package]
+name = "prometheus-platform-rs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.98"
+axum = { version = "0.8.8", features = ["http1", "http2", "json", "macros", "ws"] }
+base64 = "0.22.1"
+bytes = "1.10.1"
+chrono = { version = "0.4.41", default-features = false, features = ["clock", "std"] }
+futures = "0.3.31"
+hmac = "0.12.1"
+http = "1.3.1"
+http-body-util = "0.1.3"
+jsonwebtoken = "9.3.1"
+once_cell = "1.21.3"
+rand = "0.8.5"
+redis = { version = "1.1.0", features = ["aio", "tokio-comp"] }
+reqwest = { version = "0.12.23", default-features = false, features = ["http2", "json", "rustls-tls"] }
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.143"
+sha2 = "0.10.9"
+thiserror = "2.0.16"
+tokio = { version = "1.47.1", features = ["full"] }
+tokio-stream = "0.1.17"
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.20", features = ["env-filter", "fmt"] }
+url = "2.5.7"
+uuid = { version = "1.18.0", features = ["serde", "v4"] }
+wtransport = "0.7.0"
+
+[dev-dependencies]
+tower = { version = "0.5.2", features = ["util"] }

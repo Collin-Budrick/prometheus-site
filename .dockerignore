@@ -6,5 +6,6 @@ packages/**/node_modules
 apps/*/dist
 apps/site/server
 apps/site/qwikcity-import.cpuprofile
+packages/platform-rs/target
 *.log
 infra/nginx/tls

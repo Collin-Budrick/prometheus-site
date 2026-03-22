@@ -1,6 +1,8 @@
 # Reusable Showcase Template
 
-This repo ships as a Bun-powered template for a Qwik site, a Bun + Elysia API, SpaceTimeDB, Garnet, and the fragment streaming shell that ties them together. The repo surface is intentionally split into a primary template path and a secondary `extras/` area so the default starter stays easier to scan.
+This repo ships as a Bun-powered template for a Qwik site, a Rust axum + WebTransport runtime, SpaceTimeDB, Garnet, and the fragment streaming shell that ties them together. The repo surface is intentionally split into a primary template path and a secondary `extras/` area so the default starter stays easier to scan.
+
+The combined runtime entrypoint lives in `packages/platform-rs/src/main.rs`.
 
 The template keeps two presets:
 

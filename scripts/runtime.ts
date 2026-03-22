@@ -3,7 +3,8 @@ import { mkdirSync, createWriteStream } from 'node:fs'
 import https from 'node:https'
 import path from 'node:path'
 import { getTemplatePresetDescriptor, templateBranding } from '../packages/template-config/src/index.ts'
-import { resolveComposeCommand, root, runSync } from './compose-utils'
+import { getRunningServices, resolveComposeCommand, root, runSync } from './compose-utils'
+import { getRuntimeConfig } from './runtime-config'
 
 const bunGlobal = globalThis as typeof globalThis & { Bun?: { execPath?: string } }
 const bunBin =
@@ -75,6 +76,64 @@ const killChildTree = (pid: number | undefined) => {
   }
 }
 
+const waitForPreviewProject = async ({
+  composeCommand,
+  prefix,
+  env,
+  requiredServices,
+  preview,
+  previewExitState,
+  previewStdoutPath,
+  previewStderrPath,
+  url,
+  timeoutMs
+}: {
+  composeCommand: string
+  prefix: string[]
+  env: NodeJS.ProcessEnv
+  requiredServices: string[]
+  preview: ReturnType<typeof spawn>
+  previewExitState: { code: number | null; signal: NodeJS.Signals | null } | null
+  previewStdoutPath: string
+  previewStderrPath: string
+  url: string
+  timeoutMs: number
+}) => {
+  const startedAt = Date.now()
+  let lastState = 'preview project not ready'
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const runningServices = getRunningServices(composeCommand, prefix, env)
+    const missingServices = requiredServices.filter((service) => !runningServices.has(service))
+
+    if (!missingServices.length) {
+      try {
+        const status = await requestStatus(url)
+        if (status === 200) return
+        lastState = `status ${status}`
+      } catch (error) {
+        lastState = error instanceof Error ? error.message : String(error)
+      }
+    } else {
+      lastState = `waiting for services: ${missingServices.join(', ')}`
+    }
+
+    if (preview.exitCode !== null || preview.signalCode !== null || previewExitState) {
+      const exitSummary = previewExitState
+        ? `code=${previewExitState.code ?? 'null'} signal=${previewExitState.signal ?? 'null'}`
+        : `code=${preview.exitCode ?? 'null'} signal=${preview.signalCode ?? 'null'}`
+      throw new Error(
+        `[runtime] Preview exited before its Compose services were ready (${exitSummary}). ` +
+          `stdout: ${previewStdoutPath} stderr: ${previewStderrPath}`
+      )
+    }
+
+    await wait(1000)
+  }
+
+  throw new Error(`[runtime] Timed out waiting for preview project readiness (${lastState}).`)
+}
+
 const runBrowserSmoke = async () => {
   const allowedPresets = new Set(['full', 'core'])
   const requestedPreset = process.argv[3]?.trim() || process.env.PROMETHEUS_TEMPLATE_PRESET?.trim() || 'full'
@@ -97,6 +156,13 @@ const runBrowserSmoke = async () => {
     PROMETHEUS_DEVICE_HOST: process.env.PROMETHEUS_DEVICE_HOST?.trim() || '0',
     PLAYWRIGHT_BASE_URL: baseURL
   }
+  const runtimeConfig = getRuntimeConfig(env)
+  const requiredServices = [
+    ...runtimeConfig.compose.services.core,
+    ...runtimeConfig.compose.services.web,
+    ...runtimeConfig.compose.services.proxy,
+    ...(runtimeConfig.compose.includeOptionalServices ? runtimeConfig.compose.services.optional : [])
+  ]
 
   const { command: composeCommand, prefix } = resolveComposeCommand()
 
@@ -109,8 +175,10 @@ const runBrowserSmoke = async () => {
 
   const logDir = path.join(root, 'tmp')
   mkdirSync(logDir, { recursive: true })
-  const outLog = createWriteStream(path.join(logDir, `browser-preview-${preset}.out.log`), { flags: 'w' })
-  const errLog = createWriteStream(path.join(logDir, `browser-preview-${preset}.err.log`), { flags: 'w' })
+  const previewStdoutPath = path.join(logDir, `browser-preview-${preset}.out.log`)
+  const previewStderrPath = path.join(logDir, `browser-preview-${preset}.err.log`)
+  const outLog = createWriteStream(previewStdoutPath, { flags: 'w' })
+  const errLog = createWriteStream(previewStderrPath, { flags: 'w' })
 
   runComposeDown()
 
@@ -121,12 +189,30 @@ const runBrowserSmoke = async () => {
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true
   })
+  let previewExitState: { code: number | null; signal: NodeJS.Signals | null } | null = null
+  preview.once('exit', (code, signal) => {
+    previewExitState = {
+      code,
+      signal: signal ?? null
+    }
+  })
 
   preview.stdout?.pipe(outLog)
   preview.stderr?.pipe(errLog)
 
   try {
-    await waitForUrl(baseURL, 240000)
+    await waitForPreviewProject({
+      composeCommand,
+      prefix,
+      env,
+      requiredServices,
+      preview,
+      previewExitState,
+      previewStdoutPath,
+      previewStderrPath,
+      url: baseURL,
+      timeoutMs: 240000
+    })
 
     const test = spawnSync(bunBin, ['x', 'playwright', 'test', specPath], {
       cwd: root,

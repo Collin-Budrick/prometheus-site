@@ -65,7 +65,7 @@ const DEFAULT_COMPOSE = {
     core: ['spacetimedb', 'garnet', 'api'],
     web: ['web'],
     proxy: ['caddy'],
-    optional: ['yjs-signaling', 'webtransport']
+    optional: ['yjs-signaling']
   } as const
 } as const
 
