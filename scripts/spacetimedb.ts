@@ -23,6 +23,7 @@ const privateKeyPath = path.join(keysDir, 'jwt.key')
 const modulePath = 'extras/spacetimedb-module'
 const moduleManifestPath = `${modulePath}/Cargo.toml`
 const moduleWasmPath = `${modulePath}/target/wasm32-unknown-unknown/release/prometheus_spacetimedb_module.wasm`
+const moduleWasmAbsolutePath = path.join(root, moduleWasmPath)
 const generatedBindingsPath = 'packages/spacetimedb-client/src/generated'
 const localDockerHosts = new Set(['127.0.0.1', 'localhost', '::1'])
 
@@ -265,6 +266,8 @@ export const hasPublishedSpacetimeModule = (
   return result.status === 0
 }
 
+export const hasBuiltSpacetimeModule = () => existsSync(moduleWasmAbsolutePath)
+
 export const buildSpacetimeModule = () =>
   runDockerRust([
     'sh',
@@ -303,12 +306,10 @@ export const generateSpacetimeBindings = () => {
   )
 }
 
-export const publishSpacetimeModule = (
+export const publishBuiltSpacetimeModule = (
   moduleName = defaultModuleName,
   serverUri = defaultServerUri
 ) => {
-  waitForSpacetimeServer(serverUri)
-  buildSpacetimeModule()
   if (isLocalComposeServer(serverUri)) {
     runComposeSpacetimePublish(moduleName)
     return
@@ -332,6 +333,15 @@ export const publishSpacetimeModule = (
     },
     target.dockerArgs
   )
+}
+
+export const publishSpacetimeModule = (
+  moduleName = defaultModuleName,
+  serverUri = defaultServerUri
+) => {
+  waitForSpacetimeServer(serverUri)
+  buildSpacetimeModule()
+  publishBuiltSpacetimeModule(moduleName, serverUri)
 }
 
 if (import.meta.main) {

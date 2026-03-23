@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -81,6 +81,16 @@ const resolveCssEntries = (repoRoot: string) =>
     return collectFragmentCssEntries(source, templateConstants)
   })
 
+const readIfExists = (filePath: string) => {
+  if (!existsSync(filePath)) return null
+  return readFileSync(filePath, 'utf8')
+}
+
+const writeIfChanged = (filePath: string, nextContent: string) => {
+  if (readIfExists(filePath) === nextContent) return
+  writeFileSync(filePath, nextContent)
+}
+
 export const generateFragmentCss = (repoRoot: string = defaultRepoRoot) => {
   const outputDir = resolve(repoRoot, 'apps/site/public/fragments')
   const manifestPath = resolve(repoRoot, 'apps/site/src/fragment/fragment-css.generated.ts')
@@ -103,11 +113,17 @@ export const generateFragmentCss = (repoRoot: string = defaultRepoRoot) => {
 
   manifestEntries.sort(([a], [b]) => a.localeCompare(b))
 
-  rmSync(outputDir, { recursive: true, force: true })
   mkdirSync(outputDir, { recursive: true })
+  const expectedFiles = new Set(outputs.map(({ fileName }) => fileName))
+
+  for (const entry of readdirSync(outputDir)) {
+    if (expectedFiles.has(entry)) continue
+    rmSync(resolve(outputDir, entry), { recursive: true, force: true })
+  }
+
   outputs.forEach(({ fileName, css }) => {
     const target = resolve(outputDir, fileName)
-    writeFileSync(target, `${css.trim()}\n`)
+    writeIfChanged(target, `${css.trim()}\n`)
   })
 
   const lines: string[] = []
@@ -121,7 +137,7 @@ export const generateFragmentCss = (repoRoot: string = defaultRepoRoot) => {
   lines.push('export type FragmentCssManifest = typeof fragmentCssManifest')
   lines.push('')
 
-  writeFileSync(manifestPath, lines.join('\n'))
+  writeIfChanged(manifestPath, lines.join('\n'))
 }
 
 const isScriptEntrypoint = () => {

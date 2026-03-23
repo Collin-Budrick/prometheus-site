@@ -6,6 +6,7 @@ import {
   createStoreItemDirect,
   deleteStoreItemDirect,
   executeStoreCommandDirect,
+  loadStoreInventoryOverHttp,
   type StoreInventoryItem,
   type StoreInventorySnapshot
 } from '../../../features/store/spacetime-store'
@@ -287,6 +288,11 @@ const renderStoreStream = (state: StoreStaticState) => {
   const root = getStoreStreamRoot()
   if (!root) return
   const copy = state.copy
+  const hasItems = state.inventory.items.length > 0
+  const renderedStatus =
+    (state.inventory.status === 'idle' || state.inventory.status === 'error') && hasItems
+      ? 'live'
+      : state.inventory.status
 
   const searchInput = root.querySelector<HTMLInputElement>('input[type="search"]')
   if (searchInput) {
@@ -295,21 +301,21 @@ const renderStoreStream = (state: StoreStaticState) => {
   }
 
   const statusCopy =
-    state.inventory.status === 'connecting'
+    renderedStatus === 'connecting'
       ? resolveCopy(copy, 'Connecting')
-      : state.inventory.status === 'error'
+      : renderedStatus === 'error'
         ? state.inventory.error ?? resolveCopy(copy, 'Stream error')
-        : state.inventory.status === 'offline'
+        : renderedStatus === 'offline'
           ? resolveCopy(copy, 'Offline')
-          : state.inventory.status === 'live'
-            ? resolveCopy(copy, 'Realtime stream')
+          : renderedStatus === 'live'
+            ? resolveCopy(copy, 'Store snapshot ready')
             : resolveCopy(copy, 'Idle')
   const statusLabel = root.querySelector<HTMLElement>('.sr-only')
   if (statusLabel) {
     statusLabel.textContent = statusCopy
   }
 
-  root.dataset.state = state.inventory.status
+  root.dataset.state = renderedStatus
 
   const filteredItems = getFilteredInventoryItems(state)
   const metaValues = root.querySelectorAll<HTMLElement>('.store-stream-meta span')
@@ -507,6 +513,38 @@ const createScheduler = (state: StoreStaticState, routeData: StaticFragmentRoute
   return scheduleRender
 }
 
+const refreshInventory = async (state: StoreStaticState, scheduleRender: () => void) => {
+  const hasSeededItems = state.inventory.items.length > 0
+  if (!hasSeededItems) {
+    state.inventory = {
+      ...state.inventory,
+      error: null,
+      status: 'connecting'
+    }
+    scheduleRender()
+  }
+
+  try {
+    const items = await loadStoreInventoryOverHttp()
+    if (state.destroyed) return
+    state.inventory = {
+      error: null,
+      items: items.map((item) => ({ ...item })),
+      status: 'live'
+    }
+  } catch (error) {
+    if (state.destroyed) return
+    const message = error instanceof Error ? error.message : 'Unable to load store inventory'
+    state.inventory = {
+      ...state.inventory,
+      error: message,
+      status: state.inventory.items.length > 0 ? 'idle' : 'error'
+    }
+  }
+
+  scheduleRender()
+}
+
 const persistCart = async (state: StoreStaticState) => {
   await persistStoreCartSnapshot(cloneCartItems(state.cart))
 }
@@ -657,6 +695,7 @@ export const activateStoreStaticController = async ({ routeData }: StoreStaticCo
     return () => {}
   }
 
+  const initialInventory = readInitialInventory(routeData)
   const state: StoreStaticState = {
     cart: readInitialCart(routeData),
     copy: getFragmentTextCopy(routeData.lang),
@@ -671,7 +710,8 @@ export const activateStoreStaticController = async ({ routeData }: StoreStaticCo
     },
     inventory: {
       ...emptyInventorySnapshot,
-      items: readInitialInventory(routeData)
+      items: initialInventory,
+      status: initialInventory.length > 0 ? 'idle' : 'connecting'
     },
     observer: null,
     pendingAddIds: new Set<number>(),
@@ -769,6 +809,7 @@ export const activateStoreStaticController = async ({ routeData }: StoreStaticCo
 
   syncRouteData(state, routeData)
   renderAll(state, routeData, scheduleRender)
+  void refreshInventory(state, scheduleRender)
 
   return () => {
     state.destroyed = true

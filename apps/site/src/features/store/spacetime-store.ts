@@ -526,6 +526,29 @@ export const deleteStoreItemDirect = async (id: number, options: DirectStoreMuta
   }
 }
 
+export const loadStoreInventoryOverHttp = async (limit = 50) => {
+  const clampedLimit = Number.isFinite(limit) ? Math.min(50, Math.max(1, Math.floor(limit))) : 50
+  const response = await fetchStoreApi(`/store/items?limit=${clampedLimit}&sort=id&dir=asc`, {
+    method: 'GET',
+    credentials: 'include',
+    headers: await buildStoreMutationHeaders()
+  })
+  if (!response.ok) {
+    throw new Error(await readResponseError(response, 'Unable to load store inventory'))
+  }
+
+  const payload = await readJsonResponse(response)
+  const items = Array.isArray(payload?.items)
+    ? payload.items
+        .map((item) => normalizeStoreItem(item))
+        .filter((item): item is StoreInventoryItem => item !== null)
+        .sort((left, right) => compareStoreItems(left, right, 'id', 'asc'))
+    : []
+
+  setInventoryItems(items)
+  return items
+}
+
 export const createStoreItemDirect = async (input: {
   name: string
   price: number

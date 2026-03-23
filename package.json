@@ -25,7 +25,7 @@
     "build:core": "PROMETHEUS_TEMPLATE_PRESET=core bun run build",
     "build": "bun run _internal:build:site && bun run _internal:build:api",
     "preview": "bun run _internal:preview",
-    "_internal:preview": "bun run _internal:build:fragment-css && PROMETHEUS_DEVICE_HOST=0 bun run scripts/runtime.ts preview",
+    "_internal:preview": "PROMETHEUS_DEVICE_HOST=0 bun run scripts/runtime.ts preview",
     "_internal:dev:site": "bun run --cwd apps/site dev",
     "_internal:dev:api": "cargo run --manifest-path packages/platform-rs/Cargo.toml --locked",
     "_internal:dev:storybook": "bun run --cwd apps/site storybook",

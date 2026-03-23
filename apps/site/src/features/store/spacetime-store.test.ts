@@ -41,6 +41,7 @@ const {
   deleteStoreItemDirect,
   executeStoreCommandDirect,
   getStoreInventorySnapshot,
+  loadStoreInventoryOverHttp,
   resetStoreInventoryStateForTests
 } = await import('./spacetime-store')
 
@@ -76,6 +77,48 @@ beforeEach(() => {
 })
 
 describe('spacetime-store HTTP fallback', () => {
+  it('loads store inventory through the store API when the static shell needs a fresh catalog snapshot', async () => {
+    installFetchMock(async (input, init) => {
+      if (input.endsWith('/api/store/items?limit=50&sort=id&dir=asc') && init?.method === 'GET') {
+        return new Response('not found', { status: 404 })
+      }
+      if (input.endsWith('/store/items?limit=50&sort=id&dir=asc') && init?.method === 'GET') {
+        return new Response(
+          JSON.stringify({
+            items: [
+              { id: 3, name: 'Item 3', price: 9, quantity: 3 },
+              { id: 1, name: 'Item 1', price: 3, quantity: 1 }
+            ]
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' }
+          }
+        )
+      }
+      return new Response('not found', { status: 404 })
+    })
+
+    const items = await loadStoreInventoryOverHttp()
+
+    expect(items).toEqual([
+      { id: 1, name: 'Item 1', price: 3, quantity: 1 },
+      { id: 3, name: 'Item 3', price: 9, quantity: 3 }
+    ])
+    expect(getStoreInventorySnapshot()).toEqual({
+      error: null,
+      items: [
+        { id: 1, name: 'Item 1', price: 3, quantity: 1 },
+        { id: 3, name: 'Item 3', price: 9, quantity: 3 }
+      ],
+      status: 'live'
+    })
+    expect(fetchCalls.map((entry) => `${entry.init?.method}:${entry.input}`)).toEqual([
+      'GET:https://prometheus.prod/api/store/items?limit=50&sort=id&dir=asc',
+      'GET:https://prometheus.prod/store/items?limit=50&sort=id&dir=asc'
+    ])
+  })
+
   it('creates and deletes store items through the store API when direct DB access is unavailable', async () => {
     installFetchMock(async (input, init) => {
       if (input.endsWith('/api/store/items') && init?.method === 'POST') {

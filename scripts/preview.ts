@@ -17,9 +17,11 @@ import {
 import { generateFragmentCss } from './fragment-css'
 import { getRuntimeConfig } from './runtime-config'
 import {
+  buildSpacetimeModule,
   ensureSpacetimeJwtKeys,
+  hasBuiltSpacetimeModule,
   hasPublishedSpacetimeModule,
-  publishSpacetimeModule,
+  publishBuiltSpacetimeModule,
   waitForSpacetimeServer
 } from './spacetimedb'
 
@@ -267,8 +269,6 @@ const previewBuildApiBase =
   process.env.API_BASE?.trim() ||
   (previewApiBase && previewApiBase.trim()) ||
   `http://127.0.0.1:${previewApiPort}`
-const previewWebTransportBase =
-  process.env.VITE_WEBTRANSPORT_BASE?.trim() || resolvedWebTransportBase
 const composeStaticRoot = '/srv/web/dist'
 const composeStaticSiteOptions = {
   servePrecompressed: true,
@@ -393,130 +393,6 @@ const buildComposeSiteDist = () => {
   if (result.status !== 0) {
     logSpawnFailure('Compose static site build', result)
     process.exit(result.status ?? 1)
-  }
-}
-
-const waitForApiHealth = async (port: string) => {
-  const timeoutMs = 30000
-  const intervalMs = 500
-  const url = `http://127.0.0.1:${port}/health`
-  const startedAt = Date.now()
-
-  while (Date.now() - startedAt < timeoutMs) {
-    try {
-      const response = await fetch(url, { headers: { accept: 'application/json' } })
-      if (response.ok) return
-    } catch {
-      // ignore and retry
-    }
-    await new Promise((resolve) => setTimeout(resolve, intervalMs))
-  }
-
-  console.warn(`[preview] API healthcheck timed out (${url}). Continuing with build.`)
-}
-
-const buildSiteBundle = async () => {
-  await waitForApiHealth(previewApiPort)
-  const buildEnv = {
-    ...process.env,
-    PROMETHEUS_WEB_HOST: previewWebHost,
-    PROMETHEUS_HTTPS_PORT: previewHttpsPort,
-    PROMETHEUS_WEBTRANSPORT_PORT: previewWebTransportPort,
-    PROMETHEUS_API_PORT: previewApiPort,
-    PROMETHEUS_TEMPLATE_PRESET: composeEnv.PROMETHEUS_TEMPLATE_PRESET,
-    PROMETHEUS_TEMPLATE_HOME_MODE: composeEnv.PROMETHEUS_TEMPLATE_HOME_MODE,
-    PROMETHEUS_TEMPLATE_FEATURES: composeEnv.PROMETHEUS_TEMPLATE_FEATURES,
-    PROMETHEUS_TEMPLATE_DISABLE_FEATURES: composeEnv.PROMETHEUS_TEMPLATE_DISABLE_FEATURES,
-    VITE_TEMPLATE_PRESET: composeEnv.VITE_TEMPLATE_PRESET,
-    VITE_TEMPLATE_HOME_MODE: composeEnv.VITE_TEMPLATE_HOME_MODE,
-    VITE_TEMPLATE_FEATURES: composeEnv.VITE_TEMPLATE_FEATURES,
-    VITE_TEMPLATE_DISABLE_FEATURES: composeEnv.VITE_TEMPLATE_DISABLE_FEATURES,
-    VITE_API_BASE: previewApiBase,
-    VITE_SPACETIMEDB_URI: process.env.VITE_SPACETIMEDB_URI?.trim() || previewDbOrigin,
-    VITE_SPACETIMEDB_MODULE:
-      process.env.VITE_SPACETIMEDB_MODULE?.trim() ||
-      process.env.SPACETIMEDB_MODULE?.trim() ||
-      templateBranding.ids.spacetimeModule,
-    VITE_SPACETIMEAUTH_AUTHORITY:
-      process.env.VITE_SPACETIMEAUTH_AUTHORITY?.trim() ||
-      process.env.SPACETIMEAUTH_AUTHORITY?.trim() ||
-      'https://auth.spacetimedb.com/oidc',
-    VITE_SPACETIMEAUTH_CLIENT_ID:
-      process.env.VITE_SPACETIMEAUTH_CLIENT_ID?.trim() ||
-      process.env.SPACETIMEAUTH_CLIENT_ID?.trim() ||
-      templateBranding.ids.authClientId,
-    API_BASE: previewBuildApiBase,
-    VITE_WEBTRANSPORT_BASE: previewWebTransportBase,
-    WEBTRANSPORT_BASE: previewWebTransportBase,
-    VITE_ENABLE_PREFETCH: previewEnablePrefetch,
-    VITE_ENABLE_WEBTRANSPORT_FRAGMENTS: previewEnableWebTransport,
-    VITE_ENABLE_WEBTRANSPORT_DATAGRAMS: previewEnableWebTransportDatagrams,
-    VITE_ENABLE_FRAGMENT_COMPRESSION: previewEnableCompression,
-    VITE_ENABLE_ANALYTICS: previewEnableAnalytics,
-    VITE_ENABLE_HIGHLIGHT: previewEnableHighlight,
-    VITE_HIGHLIGHT_PROJECT_ID: previewHighlightProjectId,
-    VITE_HIGHLIGHT_PRIVACY: previewHighlightPrivacy,
-    VITE_HIGHLIGHT_SESSION_RECORDING: previewHighlightSessionRecording,
-    VITE_HIGHLIGHT_CANVAS_SAMPLING: previewHighlightCanvasSampling,
-    VITE_HIGHLIGHT_SAMPLE_RATE: previewHighlightSampleRate,
-    VITE_P2P_CRDT_SIGNALING: previewCrdtSignaling,
-    VITE_P2P_RELAY_BASES: previewP2pRelayBases,
-    VITE_P2P_NOSTR_RELAYS: previewP2pNostrRelays,
-    VITE_P2P_WAKU_RELAYS: previewP2pWakuRelays,
-    VITE_P2P_PEERJS_SERVER: previewPeerjsServer,
-    VITE_DISABLE_SW: previewDisableSw,
-    PROMETHEUS_STATIC_SHELL_BUILD: '1'
-  }
-  const runViteBuild = (args: string[]) =>
-    spawnSync(bunBin, ['run', '--cwd', 'apps/site', 'scripts/vite-run.ts', '--', 'build', ...args], {
-      stdio: 'inherit',
-      cwd: root,
-      env: buildEnv
-    })
-  const runSsrBuild = () =>
-    spawnSync(
-      bunBin,
-      ['run', '--cwd', 'apps/site', 'scripts/vite-run.ts', '--', 'build', '--ssr', 'src/entry.preview.tsx'],
-      {
-        stdio: 'inherit',
-        cwd: root,
-        env: buildEnv
-      }
-    )
-  const runStaticShellEntryBuild = () =>
-    spawnSync(bunBin, ['run', '--cwd', 'apps/site', 'build:static-shell:entries'], {
-      stdio: 'inherit',
-      cwd: root,
-      env: buildEnv
-    })
-  const runStaticShellBuild = () =>
-    spawnSync(bunBin, ['run', '--cwd', 'apps/site', 'scripts/build-static-shell.ts'], {
-      stdio: 'inherit',
-      cwd: root,
-      env: {
-        ...buildEnv,
-        PROMETHEUS_STATIC_SHELL_BUILD: '1'
-      }
-    })
-  const clientResult = runViteBuild([])
-  if (clientResult.status !== 0) {
-    logSpawnFailure('Vite client build', clientResult)
-    process.exit(clientResult.status ?? 1)
-  }
-  const staticShellEntryResult = runStaticShellEntryBuild()
-  if (staticShellEntryResult.status !== 0) {
-    logSpawnFailure('Static shell entry build', staticShellEntryResult)
-    process.exit(staticShellEntryResult.status ?? 1)
-  }
-  const staticShellResult = runStaticShellBuild()
-  if (staticShellResult.status !== 0) {
-    logSpawnFailure('Static shell build', staticShellResult)
-    process.exit(staticShellResult.status ?? 1)
-  }
-  const ssrResult = runSsrBuild()
-  if (ssrResult.status !== 0) {
-    logSpawnFailure('Vite SSR build', ssrResult)
-    process.exit(ssrResult.status ?? 1)
   }
 }
 
@@ -701,12 +577,19 @@ if (configChanged && running.has('caddy')) {
 }
 
 waitForSpacetimeServer(spacetimeServerUri)
-const needsSpacetimeModulePublish =
+const needsSpacetimeModuleBuild =
   cache[spacetimedbModuleCacheKey]?.fingerprint !== spacetimedbModuleFingerprint ||
+  !hasBuiltSpacetimeModule()
+const needsSpacetimeModulePublish =
+  needsSpacetimeModuleBuild ||
   !hasPublishedSpacetimeModule(spacetimeModuleName, spacetimeServerUri)
 
+if (needsSpacetimeModuleBuild) {
+  buildSpacetimeModule()
+}
+
 if (needsSpacetimeModulePublish) {
-  publishSpacetimeModule(spacetimeModuleName, spacetimeServerUri)
+  publishBuiltSpacetimeModule(spacetimeModuleName, spacetimeServerUri)
 }
 
 for (const target of buildResults) {
@@ -780,4 +663,4 @@ const runPreview = async () => {
   if (!keepContainers) down()
 }
 
-void buildSiteBundle().then(runPreview)
+void runPreview()

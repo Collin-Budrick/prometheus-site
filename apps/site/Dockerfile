@@ -94,9 +94,6 @@ ENV PROMETHEUS_TEMPLATE_DISABLE_FEATURES=$PROMETHEUS_TEMPLATE_DISABLE_FEATURES
 RUN --mount=type=cache,target=/root/.bun/install/cache \
     --mount=type=cache,target=/root/.cache \
     bun run --cwd apps/site build
-RUN --mount=type=cache,target=/root/.bun/install/cache \
-    --mount=type=cache,target=/root/.cache \
-    bun run --cwd apps/site scripts/vite-run.ts -- build --ssr src/entry.preview.tsx
 
 FROM oven/bun:1.3.11-alpine AS runner
 WORKDIR /app/apps/site
