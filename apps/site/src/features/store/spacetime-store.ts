@@ -2,6 +2,7 @@ import type { SubscriptionHandle } from '@prometheus/spacetimedb-client'
 import { appConfig } from '@site/site-config'
 import type { StoreCommandPayload, StoreConsumeResult } from './store-cart'
 import type { StoreSortDir, StoreSortKey } from './store-sort'
+import { hasClientSiteSessionCookie } from '@site/features/auth/auth-session-client'
 import { getSpacetimeDbAuthToken } from '@site/features/auth/spacetime-auth'
 import {
   ensureSpacetimeConnection,
@@ -126,7 +127,14 @@ const readResponseError = async (response: Response, fallback: string) => {
   return typeof message === 'string' && message.trim() !== '' ? message : fallback
 }
 
-const buildStoreMutationHeaders = async (contentType?: string) => {
+type StoreMutationRequestContext = {
+  canAttemptAuthenticatedRequest: boolean
+  headers: Headers
+}
+
+const buildStoreMutationRequestContext = async (
+  contentType?: string
+): Promise<StoreMutationRequestContext> => {
   const headers = new Headers()
   if (contentType) {
     headers.set('content-type', contentType)
@@ -135,7 +143,10 @@ const buildStoreMutationHeaders = async (contentType?: string) => {
   if (token) {
     headers.set('authorization', `Bearer ${token}`)
   }
-  return headers
+  return {
+    canAttemptAuthenticatedRequest: Boolean(token) || hasClientSiteSessionCookie(),
+    headers
+  }
 }
 
 const setInventoryItems = (items: StoreInventoryItem[]) => {
@@ -371,10 +382,14 @@ const executeStoreCommandOverHttp = async (
   }
 
   if (payload.type === 'consume') {
+    const { canAttemptAuthenticatedRequest, headers } = await buildStoreMutationRequestContext()
+    if (!canAttemptAuthenticatedRequest) {
+      return { ok: false, status: 401 }
+    }
     const response = await fetchStoreApi(`/store/items/${id}/consume`, {
       method: 'POST',
       credentials: 'include',
-      headers: await buildStoreMutationHeaders()
+      headers
     })
     if (!response.ok) {
       return { ok: false, status: response.status }
@@ -395,10 +410,15 @@ const executeStoreCommandOverHttp = async (
   if (!Number.isFinite(amount) || amount <= 0) {
     return { ok: false, status: 400 }
   }
+  const { canAttemptAuthenticatedRequest, headers } =
+    await buildStoreMutationRequestContext('application/json')
+  if (!canAttemptAuthenticatedRequest) {
+    return { ok: false, status: 401 }
+  }
   const response = await fetchStoreApi(`/store/items/${id}/restore`, {
     method: 'POST',
     credentials: 'include',
-    headers: await buildStoreMutationHeaders('application/json'),
+    headers,
     body: JSON.stringify({ amount })
   })
   if (!response.ok) {
@@ -424,10 +444,15 @@ const createStoreItemOverHttp = async (input: {
   if (typeof window === 'undefined') {
     throw new Error('Store item creation is only available in the browser.')
   }
+  const { canAttemptAuthenticatedRequest, headers } =
+    await buildStoreMutationRequestContext('application/json')
+  if (!canAttemptAuthenticatedRequest) {
+    throw new Error('Authentication required')
+  }
   const response = await fetchStoreApi('/store/items', {
     method: 'POST',
     credentials: 'include',
-    headers: await buildStoreMutationHeaders('application/json'),
+    headers,
     body: JSON.stringify(input)
   })
   if (!response.ok) {
@@ -446,10 +471,14 @@ const deleteStoreItemOverHttp = async (id: number) => {
   if (typeof window === 'undefined') {
     throw new Error('Store item deletion is only available in the browser.')
   }
+  const { canAttemptAuthenticatedRequest, headers } = await buildStoreMutationRequestContext()
+  if (!canAttemptAuthenticatedRequest) {
+    throw new Error('Authentication required')
+  }
   const response = await fetchStoreApi(`/store/items/${id}`, {
     method: 'DELETE',
     credentials: 'include',
-    headers: await buildStoreMutationHeaders()
+    headers
   })
   if (!response.ok) {
     throw new Error(await readResponseError(response, 'Unable to delete item'))
@@ -531,7 +560,7 @@ export const loadStoreInventoryOverHttp = async (limit = 50) => {
   const response = await fetchStoreApi(`/store/items?limit=${clampedLimit}&sort=id&dir=asc`, {
     method: 'GET',
     credentials: 'include',
-    headers: await buildStoreMutationHeaders()
+    headers: (await buildStoreMutationRequestContext()).headers
   })
   if (!response.ok) {
     throw new Error(await readResponseError(response, 'Unable to load store inventory'))

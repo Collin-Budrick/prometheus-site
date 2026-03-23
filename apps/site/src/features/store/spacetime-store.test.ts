@@ -74,6 +74,9 @@ beforeEach(() => {
       origin: 'https://prometheus.prod'
     }
   } as unknown as Window
+  ;(globalThis as typeof globalThis & { document?: Document }).document = {
+    cookie: 'session=preview-user'
+  } as Document
 })
 
 describe('spacetime-store HTTP fallback', () => {
@@ -230,5 +233,28 @@ describe('spacetime-store HTTP fallback', () => {
     expect(getStoreInventorySnapshot().items).toEqual([
       { id: 9, name: 'Item 9', price: 4.25, quantity: 5 }
     ])
+  })
+
+  it('skips authenticated store mutation requests when the browser has no auth context', async () => {
+    installFetchMock(async () => new Response('unexpected request', { status: 500 }))
+    ;(globalThis as typeof globalThis & { document?: Document }).document = {
+      cookie: ''
+    } as Document
+
+    const consumeResult = await executeStoreCommandDirect({ type: 'consume', id: 9 }, { preferHttp: true })
+    const restoreResult = await executeStoreCommandDirect(
+      { type: 'restore', id: 9, amount: 2 },
+      { preferHttp: true }
+    )
+
+    expect(consumeResult).toEqual({
+      ok: false,
+      status: 401
+    })
+    expect(restoreResult).toEqual({
+      ok: false,
+      status: 401
+    })
+    expect(fetchCalls).toEqual([])
   })
 })

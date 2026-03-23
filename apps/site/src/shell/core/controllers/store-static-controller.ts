@@ -39,7 +39,6 @@ type StoreStaticState = {
   destroyed: boolean
   form: StoreCreateState
   inventory: StoreInventorySnapshot
-  observer: MutationObserver | null
   pendingAddIds: Set<number>
   pendingDeleteIds: Set<number>
   pendingRemoveIds: Set<number>
@@ -475,29 +474,12 @@ const renderStoreCart = (state: StoreStaticState) => {
   )
 }
 
-const attachObserver = (state: StoreStaticState, routeData: StaticFragmentRouteData, scheduleRender: () => void) => {
-  state.observer?.disconnect()
-  const root = document.querySelector<HTMLElement>('[data-static-fragment-root]')
-  if (!root) return
-  state.observer = new MutationObserver(() => {
-    if (state.destroyed) return
-    syncRouteData(state, routeData)
-    scheduleRender()
-  })
-  state.observer.observe(root, {
-    childList: true,
-    subtree: true
-  })
-}
-
-const renderAll = (state: StoreStaticState, routeData: StaticFragmentRouteData, scheduleRender: () => void) => {
+const renderAll = (state: StoreStaticState, routeData: StaticFragmentRouteData) => {
   if (state.destroyed) return
   syncRouteData(state, routeData)
-  state.observer?.disconnect()
   renderStoreStream(state)
   renderStoreCreateForm(state)
   renderStoreCart(state)
-  attachObserver(state, routeData, scheduleRender)
 }
 
 const createScheduler = (state: StoreStaticState, routeData: StaticFragmentRouteData) => {
@@ -506,7 +488,7 @@ const createScheduler = (state: StoreStaticState, routeData: StaticFragmentRoute
     state.renderQueued = true
     window.requestAnimationFrame(() => {
       state.renderQueued = false
-      renderAll(state, routeData, scheduleRender)
+      renderAll(state, routeData)
     })
   }
 
@@ -713,7 +695,6 @@ export const activateStoreStaticController = async ({ routeData }: StoreStaticCo
       items: initialInventory,
       status: initialInventory.length > 0 ? 'idle' : 'connecting'
     },
-    observer: null,
     pendingAddIds: new Set<number>(),
     pendingDeleteIds: new Set<number>(),
     pendingRemoveIds: new Set<number>(),
@@ -808,12 +789,11 @@ export const activateStoreStaticController = async ({ routeData }: StoreStaticCo
   document.addEventListener('change', handleChange)
 
   syncRouteData(state, routeData)
-  renderAll(state, routeData, scheduleRender)
+  renderAll(state, routeData)
   void refreshInventory(state, scheduleRender)
 
   return () => {
     state.destroyed = true
-    state.observer?.disconnect()
     document.removeEventListener('click', handleClick)
     document.removeEventListener('input', handleInput)
     document.removeEventListener('change', handleChange)
