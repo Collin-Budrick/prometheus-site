@@ -208,37 +208,47 @@ const renderReactBinaryPreview = (copy: ReactBinaryDemoCopy, ui: Pick<UiCopy, 'd
         })}
       </div>
       <div class="react-binary-track">
-        <div class="react-binary-panel" data-panel="react">
+        <div class="react-binary-panel" data-panel="react" data-state="active">
           <div class="react-binary-panel-title">{copy.panels.reactTitle}</div>
           <div class="react-binary-node-tree">
-            <div class="react-binary-node">Fragment</div>
-            <div class="react-binary-node is-child">Card</div>
-            <div class="react-binary-node is-child">Title</div>
-            <div class="react-binary-node is-child">Copy</div>
-            <div class="react-binary-node is-child">Badge</div>
+            <div class="react-binary-node" data-node-index="0" data-state="active">Fragment</div>
+            <div class="react-binary-node is-child" data-node-index="1" data-state="ready">Card</div>
+            <div class="react-binary-node is-child" data-node-index="2" data-state="ready">Title</div>
+            <div class="react-binary-node is-child" data-node-index="3" data-state="ready">Copy</div>
+            <div class="react-binary-node is-child" data-node-index="4" data-state="ready">Badge</div>
           </div>
           <div class="react-binary-caption">{copy.panels.reactCaption}</div>
         </div>
-        <div class="react-binary-connector" aria-hidden="true" />
-        <div class="react-binary-panel" data-panel="binary">
+        <div class="react-binary-connector" data-connector="react-binary" data-state="idle" aria-hidden="true" />
+        <div class="react-binary-panel" data-panel="binary" data-state="idle">
           <div class="react-binary-panel-title">{copy.panels.binaryTitle}</div>
           <div class="react-binary-bits" role="group" aria-label={copy.footer.binaryStream}>
-            <span data-anim="false">0101 1100 0011 1010 0110 1001 0001 1110</span>
+            <span class="react-binary-bit" data-bit-index="0" data-anim="false" data-state="idle">0101</span>
+            <span class="react-binary-bit" data-bit-index="1" data-anim="false" data-state="idle">1100</span>
+            <span class="react-binary-bit" data-bit-index="2" data-anim="false" data-state="idle">0011</span>
+            <span class="react-binary-bit" data-bit-index="3" data-anim="false" data-state="idle">1010</span>
+            <span class="react-binary-bit" data-bit-index="4" data-anim="false" data-state="idle">0110</span>
+            <span class="react-binary-bit" data-bit-index="5" data-anim="false" data-state="idle">1001</span>
+            <span class="react-binary-bit" data-bit-index="6" data-anim="false" data-state="idle">0001</span>
+            <span class="react-binary-bit" data-bit-index="7" data-anim="false" data-state="idle">1110</span>
           </div>
           <div class="react-binary-caption">{copy.panels.binaryCaption}</div>
         </div>
-        <div class="react-binary-connector" aria-hidden="true" />
-        <div class="react-binary-panel" data-panel="qwik">
+        <div class="react-binary-connector" data-connector="binary-qwik" data-state="idle" aria-hidden="true" />
+        <div class="react-binary-panel" data-panel="qwik" data-state="idle">
           <div class="react-binary-panel-title">{copy.panels.qwikTitle}</div>
           <div class="react-binary-dom">
-            <span>{'<section> <h2> <p> <div.badge>'}</span>
+            <span class="react-binary-dom-token" data-dom-index="0" data-state="idle">{'<section>'}</span>
+            <span class="react-binary-dom-token" data-dom-index="1" data-state="idle">{'<h2>'}</span>
+            <span class="react-binary-dom-token" data-dom-index="2" data-state="idle">{'<p>'}</span>
+            <span class="react-binary-dom-token" data-dom-index="3" data-state="idle">{'<div.badge>'}</span>
           </div>
           <div class="react-binary-caption">{copy.panels.qwikCaption}</div>
         </div>
       </div>
       <div class="react-binary-footer">
-        <span class="react-binary-chip">{copy.footer.hydrationSkipped}</span>
-        <span class="react-binary-chip">{copy.footer.binaryStream}</span>
+        <span class="react-binary-chip" data-state="active">{copy.footer.hydrationSkipped}</span>
+        <span class="react-binary-chip" data-state="idle">{copy.footer.binaryStream}</span>
       </div>
     </div>
   )

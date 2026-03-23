@@ -643,6 +643,8 @@ describe('renderHomeStaticFragmentHtml', () => {
     expect(islandCard?.reservedHeight).toBe(544)
     expect(reactCard?.html).toContain('react-binary-demo')
     expect(reactCard?.html).toContain('data-fragment-widget="react-binary-demo"')
+    expect(reactCard?.html).toContain('react-binary-bit')
+    expect(reactCard?.html).toContain('react-binary-dom-token')
     expect(reactCard?.patchState).toBe('pending')
     expect(reactCard?.revealPhase).toBe('visible')
     expect(reactCard?.previewVisible).toBe(true)

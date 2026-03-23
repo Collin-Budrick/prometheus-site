@@ -1,5 +1,5 @@
 import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
-import { getReactBinaryDemoCopy } from '../lang/client'
+import { getFragmentTextCopy, getReactBinaryDemoCopy } from '../lang/client'
 import { useLangSignal } from '../shared/lang-bridge'
 
 const randomBits = (length = 4) => {
@@ -12,18 +12,18 @@ const randomBits = (length = 4) => {
 
 const reactNodes = ['Fragment', 'Card', 'Title', 'Copy', 'Badge']
 const initialChunks = ['0101', '1100', '0011', '1010', '0110', '1001', '0001', '1110']
-const domNodes = ['section', 'h2', 'p', 'div.badge']
+const domNodes = ['<section>', '<h2>', '<p>', '<div.badge>']
 
 export const ReactBinaryDemo = component$(() => {
   const langSignal = useLangSignal()
   const copy = getReactBinaryDemoCopy(langSignal.value)
+  const fragmentText = getFragmentTextCopy(langSignal.value)
   const stageIndex = useSignal(0)
   const stage = copy.stages[stageIndex.value]
   const binaryChunks = useSignal(initialChunks)
 
   const actionLabel = copy.actions[stage.id as keyof typeof copy.actions]
-  const binaryStream = binaryChunks.value.join(' ')
-  const domPreview = domNodes.map((node) => `<${node}>`).join(' ')
+  const stageId = stage.id
 
   const handleClick = $((event: Event) => {
     const target = event.target as HTMLElement | null
@@ -97,17 +97,18 @@ export const ReactBinaryDemo = component$(() => {
       <div class="react-binary-header">
         <div class="react-binary-controls">
           <div class="react-binary-title">{copy.title}</div>
-          <button class="react-binary-action" type="button" data-action="advance">
+          <button class="react-binary-action" type="button" data-action="advance" data-stage={stageId}>
             {actionLabel}
           </button>
         </div>
-        <div class="react-binary-status" aria-live="polite">
+        <div class="react-binary-status" data-stage={stageId} aria-live="polite">
           {stage.hint}
         </div>
       </div>
       <div class="react-binary-steps" role="tablist" aria-label={copy.ariaStages}>
         {copy.stages.map((item, index) => {
           const isActive = stageIndex.value === index
+          const state = index < stageIndex.value ? 'done' : isActive ? 'active' : 'idle'
           const tabId = `react-binary-tab-${item.id}`
           const panelId = `react-binary-panel-${item.id}`
           return (
@@ -122,6 +123,7 @@ export const ReactBinaryDemo = component$(() => {
               aria-controls={panelId}
               tabIndex={isActive ? 0 : -1}
               data-stage-index={String(index)}
+              data-state={state}
             >
               <span class="react-binary-step-dot" aria-hidden="true" />
               {item.label}
@@ -133,6 +135,7 @@ export const ReactBinaryDemo = component$(() => {
         <div
           class="react-binary-panel"
           data-panel="react"
+          data-state={stageId === 'react' ? 'active' : stageIndex.value > 0 ? 'done' : 'idle'}
           id="react-binary-panel-react"
           role="tabpanel"
           aria-labelledby="react-binary-tab-react"
@@ -140,45 +143,87 @@ export const ReactBinaryDemo = component$(() => {
           <div class="react-binary-panel-title">{copy.panels.reactTitle}</div>
           <div class="react-binary-node-tree">
             {reactNodes.map((node, index) => (
-              <div key={node} class={{ 'react-binary-node': true, 'is-child': index > 0 }}>
-                {node}
+              <div
+                key={node}
+                class={{ 'react-binary-node': true, 'is-child': index > 0 }}
+                data-node-index={String(index)}
+                data-state={stageId === 'react' ? (index === 0 ? 'active' : 'ready') : 'idle'}
+              >
+                {fragmentText[node] ?? node}
               </div>
             ))}
           </div>
           <div class="react-binary-caption">{copy.panels.reactCaption}</div>
         </div>
-        <div class="react-binary-connector" aria-hidden="true" />
+        <div
+          class="react-binary-connector"
+          data-connector="react-binary"
+          data-state={stageId === 'binary' || stageId === 'qwik' ? 'active' : 'idle'}
+          aria-hidden="true"
+        />
         <div
           class="react-binary-panel"
           data-panel="binary"
+          data-state={stageId === 'binary' ? 'active' : stageId === 'qwik' ? 'done' : 'idle'}
           id="react-binary-panel-binary"
           role="tabpanel"
           aria-labelledby="react-binary-tab-binary"
         >
           <div class="react-binary-panel-title">{copy.panels.binaryTitle}</div>
           <div class="react-binary-bits" role="group" aria-label={copy.footer.binaryStream}>
-            <span data-anim="true">{binaryStream}</span>
+            {binaryChunks.value.map((chunk, index) => (
+              <span
+                key={`${index}:${chunk}`}
+                class="react-binary-bit"
+                data-bit-index={String(index)}
+                data-anim={stageId === 'binary' ? 'true' : 'false'}
+                data-state={stageId === 'binary' ? 'active' : stageId === 'qwik' ? 'ready' : 'idle'}
+                style={{ '--react-binary-bit-delay': `${index * 65}ms` }}
+              >
+                {chunk}
+              </span>
+            ))}
           </div>
           <div class="react-binary-caption">{copy.panels.binaryCaption}</div>
         </div>
-        <div class="react-binary-connector" aria-hidden="true" />
+        <div
+          class="react-binary-connector"
+          data-connector="binary-qwik"
+          data-state={stageId === 'qwik' ? 'active' : 'idle'}
+          aria-hidden="true"
+        />
         <div
           class="react-binary-panel"
           data-panel="qwik"
+          data-state={stageId === 'qwik' ? 'active' : 'idle'}
           id="react-binary-panel-qwik"
           role="tabpanel"
           aria-labelledby="react-binary-tab-qwik"
         >
           <div class="react-binary-panel-title">{copy.panels.qwikTitle}</div>
           <div class="react-binary-dom">
-            <span>{domPreview}</span>
+            {domNodes.map((node, index) => (
+              <span
+                key={node}
+                class="react-binary-dom-token"
+                data-dom-index={String(index)}
+                data-state={stageId === 'qwik' ? 'active' : stageId === 'binary' ? 'ready' : 'idle'}
+                style={{ '--react-binary-dom-delay': `${index * 70}ms` }}
+              >
+                {node}
+              </span>
+            ))}
           </div>
           <div class="react-binary-caption">{copy.panels.qwikCaption}</div>
         </div>
       </div>
       <div class="react-binary-footer">
-        <span class="react-binary-chip">{copy.footer.hydrationSkipped}</span>
-        <span class="react-binary-chip">{copy.footer.binaryStream}</span>
+        <span class="react-binary-chip" data-state={stageId === 'react' ? 'active' : 'idle'}>
+          {copy.footer.hydrationSkipped}
+        </span>
+        <span class="react-binary-chip" data-state={stageId === 'binary' || stageId === 'qwik' ? 'active' : 'idle'}>
+          {copy.footer.binaryStream}
+        </span>
       </div>
     </div>
   )

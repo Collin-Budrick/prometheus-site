@@ -126,6 +126,7 @@ const HOME_PREVIEW_DEMO_WIDGETS = new Set<DemoWidgetKind>([
   'preact-island'
 ])
 const initialReactBinaryChunks = ['0101', '1100', '0011', '1010', '0110', '1001', '0001', '1110']
+const initialReactDomTokens = ['<section>', '<h2>', '<p>', '<div.badge>']
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
@@ -543,6 +544,7 @@ const buildActiveDemoNode = (
               {
                 class: 'react-binary-panel',
                 'data-panel': 'react',
+                'data-state': stage.id === 'react' ? 'active' : 'idle',
                 id: 'react-binary-panel-react',
                 role: 'tabpanel',
                 'aria-labelledby': 'react-binary-tab-react'
@@ -550,53 +552,119 @@ const buildActiveDemoNode = (
               [
                 h('div', { class: 'react-binary-panel-title' }, [t(copy.reactBinary.panels.reactTitle)]),
                 h('div', { class: 'react-binary-node-tree' }, [
-                  h('div', { class: 'react-binary-node' }, [t(resolveFragmentText(copy, 'Fragment'))]),
-                  h('div', { class: 'react-binary-node is-child' }, [t(resolveFragmentText(copy, 'Card'))]),
-                  h('div', { class: 'react-binary-node is-child' }, [t(resolveFragmentText(copy, 'Title'))]),
-                  h('div', { class: 'react-binary-node is-child' }, [t(resolveFragmentText(copy, 'Copy'))]),
-                  h('div', { class: 'react-binary-node is-child' }, [t(resolveFragmentText(copy, 'Badge'))])
+                  h('div', { class: 'react-binary-node', 'data-node-index': '0', 'data-state': 'active' }, [
+                    t(resolveFragmentText(copy, 'Fragment'))
+                  ]),
+                  h('div', { class: 'react-binary-node is-child', 'data-node-index': '1', 'data-state': 'ready' }, [
+                    t(resolveFragmentText(copy, 'Card'))
+                  ]),
+                  h('div', { class: 'react-binary-node is-child', 'data-node-index': '2', 'data-state': 'ready' }, [
+                    t(resolveFragmentText(copy, 'Title'))
+                  ]),
+                  h('div', { class: 'react-binary-node is-child', 'data-node-index': '3', 'data-state': 'ready' }, [
+                    t(resolveFragmentText(copy, 'Copy'))
+                  ]),
+                  h('div', { class: 'react-binary-node is-child', 'data-node-index': '4', 'data-state': 'ready' }, [
+                    t(resolveFragmentText(copy, 'Badge'))
+                  ])
                 ]),
                 h('div', { class: 'react-binary-caption' }, [t(copy.reactBinary.panels.reactCaption)])
               ]
             ),
-            h('div', { class: 'react-binary-connector', 'aria-hidden': 'true' }, []),
+            h(
+              'div',
+              {
+                class: 'react-binary-connector',
+                'data-connector': 'react-binary',
+                'data-state': 'idle',
+                'aria-hidden': 'true'
+              },
+              []
+            ),
             h(
               'div',
               {
                 class: 'react-binary-panel',
                 'data-panel': 'binary',
+                'data-state': stage.id === 'binary' ? 'active' : 'idle',
                 id: 'react-binary-panel-binary',
                 role: 'tabpanel',
                 'aria-labelledby': 'react-binary-tab-binary'
               },
               [
                 h('div', { class: 'react-binary-panel-title' }, [t(copy.reactBinary.panels.binaryTitle)]),
-                h('div', { class: 'react-binary-bits', role: 'group', 'aria-label': copy.reactBinary.footer.binaryStream }, [
-                  h('span', { 'data-anim': 'true' }, [t(initialReactBinaryChunks.join(' '))])
-                ]),
+                h(
+                  'div',
+                  { class: 'react-binary-bits', role: 'group', 'aria-label': copy.reactBinary.footer.binaryStream },
+                  initialReactBinaryChunks.map((chunk, index) =>
+                    h(
+                      'span',
+                      {
+                        class: 'react-binary-bit',
+                        'data-anim': stage.id === 'binary' ? 'true' : 'false',
+                        'data-bit-index': `${index}`,
+                        'data-state': stage.id === 'binary' ? 'active' : 'idle'
+                      },
+                      [t(chunk)]
+                    )
+                  )
+                ),
                 h('div', { class: 'react-binary-caption' }, [t(copy.reactBinary.panels.binaryCaption)])
               ]
             ),
-            h('div', { class: 'react-binary-connector', 'aria-hidden': 'true' }, []),
+            h(
+              'div',
+              {
+                class: 'react-binary-connector',
+                'data-connector': 'binary-qwik',
+                'data-state': 'idle',
+                'aria-hidden': 'true'
+              },
+              []
+            ),
             h(
               'div',
               {
                 class: 'react-binary-panel',
                 'data-panel': 'qwik',
+                'data-state': stage.id === 'qwik' ? 'active' : 'idle',
                 id: 'react-binary-panel-qwik',
                 role: 'tabpanel',
                 'aria-labelledby': 'react-binary-tab-qwik'
               },
               [
                 h('div', { class: 'react-binary-panel-title' }, [t(copy.reactBinary.panels.qwikTitle)]),
-                h('div', { class: 'react-binary-dom' }, [h('span', null, [t('<section> <h2> <p> <div.badge>')])]),
+                h(
+                  'div',
+                  { class: 'react-binary-dom' },
+                  initialReactDomTokens.map((token, index) =>
+                    h(
+                      'span',
+                      {
+                        class: 'react-binary-dom-token',
+                        'data-dom-index': `${index}`,
+                        'data-state': stage.id === 'qwik' ? 'active' : 'idle'
+                      },
+                      [t(token)]
+                    )
+                  )
+                ),
                 h('div', { class: 'react-binary-caption' }, [t(copy.reactBinary.panels.qwikCaption)])
               ]
             )
           ]),
           h('div', { class: 'react-binary-footer' }, [
-            h('span', { class: 'react-binary-chip' }, [t(copy.reactBinary.footer.hydrationSkipped)]),
-            h('span', { class: 'react-binary-chip' }, [t(copy.reactBinary.footer.binaryStream)])
+            h('span', { class: 'react-binary-chip', 'data-state': stage.id === 'react' ? 'active' : 'idle' }, [
+              t(copy.reactBinary.footer.hydrationSkipped)
+            ]),
+            h(
+              'span',
+              {
+                class: 'react-binary-chip',
+                'data-state': stage.id === 'binary' || stage.id === 'qwik' ? 'active' : 'idle'
+              },
+              [t(copy.reactBinary.footer.binaryStream)]
+            )
           ])
         ]
       ),

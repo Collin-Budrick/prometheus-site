@@ -324,32 +324,60 @@ const buildReactBinaryDemoTree = (root: MockElement) => {
   const track = createElement(root, 'div', 'react-binary-track')
   const reactPanel = createElement(root, 'div', 'react-binary-panel')
   reactPanel.setAttribute('data-panel', 'react')
+  reactPanel.setAttribute('data-state', 'active')
   reactPanel.append(createElement(root, 'div', 'react-binary-panel-title'))
   const nodeTree = createElement(root, 'div', 'react-binary-node-tree')
   for (let index = 0; index < 5; index += 1) {
-    nodeTree.append(createElement(root, 'div', 'react-binary-node'))
+    const node = createElement(root, 'div', index === 0 ? 'react-binary-node' : 'react-binary-node is-child')
+    node.setAttribute('data-node-index', `${index}`)
+    node.setAttribute('data-state', index === 0 ? 'active' : 'ready')
+    nodeTree.append(node)
   }
   reactPanel.append(nodeTree, createElement(root, 'div', 'react-binary-caption'))
 
+  const leftConnector = createElement(root, 'div', 'react-binary-connector')
+  leftConnector.setAttribute('data-connector', 'react-binary')
+  leftConnector.setAttribute('data-state', 'idle')
+
   const binaryPanel = createElement(root, 'div', 'react-binary-panel')
   binaryPanel.setAttribute('data-panel', 'binary')
+  binaryPanel.setAttribute('data-state', 'idle')
   binaryPanel.append(createElement(root, 'div', 'react-binary-panel-title'))
   const bits = createElement(root, 'div', 'react-binary-bits')
-  bits.append(createElement(root, 'span'))
+  for (let index = 0; index < 8; index += 1) {
+    const bit = createElement(root, 'span', 'react-binary-bit')
+    bit.setAttribute('data-bit-index', `${index}`)
+    bit.setAttribute('data-anim', 'false')
+    bit.setAttribute('data-state', 'idle')
+    bits.append(bit)
+  }
   binaryPanel.append(bits, createElement(root, 'div', 'react-binary-caption'))
+
+  const rightConnector = createElement(root, 'div', 'react-binary-connector')
+  rightConnector.setAttribute('data-connector', 'binary-qwik')
+  rightConnector.setAttribute('data-state', 'idle')
 
   const qwikPanel = createElement(root, 'div', 'react-binary-panel')
   qwikPanel.setAttribute('data-panel', 'qwik')
+  qwikPanel.setAttribute('data-state', 'idle')
   qwikPanel.append(createElement(root, 'div', 'react-binary-panel-title'))
   const dom = createElement(root, 'div', 'react-binary-dom')
-  dom.append(createElement(root, 'span'))
+  for (let index = 0; index < 4; index += 1) {
+    const token = createElement(root, 'span', 'react-binary-dom-token')
+    token.setAttribute('data-dom-index', `${index}`)
+    token.setAttribute('data-state', 'idle')
+    dom.append(token)
+  }
   qwikPanel.append(dom, createElement(root, 'div', 'react-binary-caption'))
 
-  track.append(reactPanel, binaryPanel, qwikPanel)
+  track.append(reactPanel, leftConnector, binaryPanel, rightConnector, qwikPanel)
 
   const footer = createElement(root, 'div', 'react-binary-footer')
-  footer.append(createElement(root, 'span', 'react-binary-chip'))
-  footer.append(createElement(root, 'span', 'react-binary-chip'))
+  const hydrationChip = createElement(root, 'span', 'react-binary-chip')
+  hydrationChip.setAttribute('data-state', 'active')
+  const binaryChip = createElement(root, 'span', 'react-binary-chip')
+  binaryChip.setAttribute('data-state', 'idle')
+  footer.append(hydrationChip, binaryChip)
 
   root.replaceChildren(header, steps, track, footer)
 }
@@ -599,6 +627,17 @@ describe('home-demo-activate', () => {
       'Binary stream',
       'Qwik DOM'
     ])
+    const reactPanel = root
+      .querySelectorAll('.react-binary-panel')
+      .find((panel) => panel.dataset.panel === 'react')
+    expect(reactPanel?.dataset.state).toBe('active')
+    expect(root.querySelectorAll('.react-binary-bit').length).toBe(8)
+    expect(root.querySelectorAll('.react-binary-dom-token').map((token) => token.textContent)).toEqual([
+      '<section>',
+      '<h2>',
+      '<p>',
+      '<div.badge>'
+    ])
 
     result.cleanup()
   })
@@ -800,6 +839,36 @@ describe('home-demo-activate', () => {
     result?.cleanup()
   })
 
+  it('updates the nested SSR react binary surface stage when the wrapper root already contains the demo markup', async () => {
+    const doc = new MockDocument()
+    installBootstrapScripts(doc)
+    installDomGlobals(doc)
+    const root = doc.createElement('div')
+    const surface = doc.createElement('div')
+    surface.className = 'react-binary-demo'
+    surface.setAttribute('data-home-demo-ssr-active', 'true')
+    surface.setAttribute('data-stage', 'react')
+    buildReactBinaryDemoTree(surface)
+    root.append(surface)
+
+    const result = await attachHomeDemo({
+      root: root as never,
+      kind: 'react-binary',
+      props: {}
+    })
+
+    const actionButton = surface.querySelector('.react-binary-action')
+    expect(actionButton).toBeTruthy()
+    actionButton?.dispatchEvent(new Event('click'))
+
+    expect(surface.dataset.stage).toBe('binary')
+    expect(surface.querySelector('.react-binary-status')?.textContent).toBe(
+      getStaticHomeReactBinaryDemoCopy('en-US').stages[1]?.hint
+    )
+
+    result?.cleanup()
+  })
+
   it('does not throw when react-binary copy is unavailable', async () => {
     resetStaticHomeCopyForTests()
     resetHomeDemoActivationForTests()
@@ -879,7 +948,17 @@ describe('home-demo-activate', () => {
     expect(actionButton).toBeTruthy()
     actionButton?.dispatchEvent(new Event('click'))
 
-    const bits = root.querySelector('.react-binary-bits span')
+    expect(root.dataset.stage).toBe('binary')
+    const binaryPanel = root
+      .querySelectorAll('.react-binary-panel')
+      .find((panel) => panel.dataset.panel === 'binary')
+    const reactBinaryConnector = root
+      .querySelectorAll('.react-binary-connector')
+      .find((connector) => connector.dataset.connector === 'react-binary')
+    expect(binaryPanel?.dataset.state).toBe('active')
+    expect(reactBinaryConnector?.dataset.state).toBe('active')
+
+    const bits = root.querySelector('.react-binary-bits')
     const initialBits = bits?.textContent
     await new Promise((resolve) => setTimeout(resolve, 750))
     const advancedBits = bits?.textContent

@@ -34,7 +34,7 @@ const initialBinaryChunks = ['0101', '1100', '0011', '1010', '0110', '1001', '00
 const plannerStepDelayMs = 720
 const preactCountdownSeconds = 60
 const reactNodeLabels = ['Fragment', 'Card', 'Title', 'Copy', 'Badge']
-const reactDomPreview = '<section> <h2> <p> <div.badge>'
+const reactDomPreviewTokens = ['<section>', '<h2>', '<p>', '<div.badge>']
 let didWarnMissingReactBinaryCopy = false
 let preparedHomeDemoMarkupCache: { lang: Lang; markup: PreparedHomeDemoMarkup } | null = null
 
@@ -122,6 +122,15 @@ const setButtonLabel = (button: HTMLButtonElement | null, label: string) => {
   button.textContent = label
 }
 
+const setStyleCustomProperty = (element: HTMLElement, name: string, value: string) => {
+  const style = element.style as CSSStyleDeclaration | Record<string, string>
+  if (typeof (style as CSSStyleDeclaration).setProperty === 'function') {
+    ;(style as CSSStyleDeclaration).setProperty(name, value)
+    return
+  }
+  ;(style as Record<string, string>)[name] = value
+}
+
 const setReactStepLabel = (button: HTMLButtonElement, label: string) => {
   button.replaceChildren(createTextSpan('react-binary-step-dot', ''))
   const dot = button.querySelector('.react-binary-step-dot')
@@ -149,6 +158,9 @@ const prepareActiveDemoRoot = (root: HTMLElement, className: string, html: strin
 
 const hasPreparedActiveDemoMarkup = (root: HTMLElement, className: string) =>
   root.classList.contains(className) || Boolean(root.querySelector(`.${className}`))
+
+const getPreparedActiveDemoSurface = (root: HTMLElement, className: string) =>
+  root.classList.contains(className) ? root : root.querySelector<HTMLElement>(`.${className}`) ?? root
 
 const isHomeDemoRootInViewport = (root: HTMLElement) => {
   if (typeof root.getBoundingClientRect !== 'function') {
@@ -321,37 +333,47 @@ const renderReactBinaryDemoMarkup = (copy: ReactBinaryDemoCopy) => `
       .join('')}
   </div>
   <div class="react-binary-track">
-    <div class="react-binary-panel" data-panel="react">
+    <div class="react-binary-panel" data-panel="react" data-state="active">
       <div class="react-binary-panel-title"></div>
       <div class="react-binary-node-tree">
-        <div class="react-binary-node"></div>
-        <div class="react-binary-node is-child"></div>
-        <div class="react-binary-node is-child"></div>
-        <div class="react-binary-node is-child"></div>
-        <div class="react-binary-node is-child"></div>
+        <div class="react-binary-node" data-node-index="0" data-state="active"></div>
+        <div class="react-binary-node is-child" data-node-index="1" data-state="ready"></div>
+        <div class="react-binary-node is-child" data-node-index="2" data-state="ready"></div>
+        <div class="react-binary-node is-child" data-node-index="3" data-state="ready"></div>
+        <div class="react-binary-node is-child" data-node-index="4" data-state="ready"></div>
       </div>
       <div class="react-binary-caption"></div>
     </div>
-    <div class="react-binary-connector" aria-hidden="true"></div>
-    <div class="react-binary-panel" data-panel="binary">
+    <div class="react-binary-connector" data-connector="react-binary" data-state="idle" aria-hidden="true"></div>
+    <div class="react-binary-panel" data-panel="binary" data-state="idle">
       <div class="react-binary-panel-title"></div>
       <div class="react-binary-bits" role="group" aria-label="${escapeHtml(copy.footer.binaryStream)}">
-        <span data-anim="false"></span>
+        ${initialBinaryChunks
+          .map(
+            (chunk, index) =>
+              `<span class="react-binary-bit" data-bit-index="${index}" data-anim="false" data-state="idle">${chunk}</span>`
+          )
+          .join('')}
       </div>
       <div class="react-binary-caption"></div>
     </div>
-    <div class="react-binary-connector" aria-hidden="true"></div>
-    <div class="react-binary-panel" data-panel="qwik">
+    <div class="react-binary-connector" data-connector="binary-qwik" data-state="idle" aria-hidden="true"></div>
+    <div class="react-binary-panel" data-panel="qwik" data-state="idle">
       <div class="react-binary-panel-title"></div>
       <div class="react-binary-dom">
-        <span></span>
+        ${reactDomPreviewTokens
+          .map(
+            (token, index) =>
+              `<span class="react-binary-dom-token" data-dom-index="${index}" data-state="idle">${escapeHtml(token)}</span>`
+          )
+          .join('')}
       </div>
       <div class="react-binary-caption"></div>
     </div>
   </div>
   <div class="react-binary-footer">
-    <span class="react-binary-chip"></span>
-    <span class="react-binary-chip"></span>
+    <span class="react-binary-chip" data-state="active"></span>
+    <span class="react-binary-chip" data-state="idle"></span>
   </div>
 `
 
@@ -409,12 +431,13 @@ const activatePlannerDemo = (root: HTMLElement): HomeDemoActivationResult => {
   if (!hasPreparedActiveDemoMarkup(root, 'planner-demo')) {
     prepareActiveDemoRoot(root, 'planner-demo', getPreparedHomeDemoMarkup('planner'))
   }
-  const title = root.querySelector<HTMLElement>('.planner-demo-title')
-  const runButton = root.querySelector<HTMLButtonElement>('.planner-demo-action')
-  const shuffleButton = root.querySelector<HTMLButtonElement>('.planner-demo-secondary')
-  const status = root.querySelector<HTMLElement>('.planner-demo-status')
-  const stepElements = Array.from(root.querySelectorAll<HTMLElement>('.planner-demo-step'))
-  const cardElements = Array.from(root.querySelectorAll<HTMLElement>('.planner-demo-card'))
+  const surface = getPreparedActiveDemoSurface(root, 'planner-demo')
+  const title = surface.querySelector<HTMLElement>('.planner-demo-title')
+  const runButton = surface.querySelector<HTMLButtonElement>('.planner-demo-action')
+  const shuffleButton = surface.querySelector<HTMLButtonElement>('.planner-demo-secondary')
+  const status = surface.querySelector<HTMLElement>('.planner-demo-status')
+  const stepElements = Array.from(surface.querySelectorAll<HTMLElement>('.planner-demo-step'))
+  const cardElements = Array.from(surface.querySelectorAll<HTMLElement>('.planner-demo-card'))
   let stageIndex = -1
   let isRunning = false
   let timeoutHandle = 0
@@ -515,8 +538,8 @@ const activatePlannerDemo = (root: HTMLElement): HomeDemoActivationResult => {
 
   const update = () => {
     const stage = stageIndex >= 0 ? copy.steps[stageIndex] : null
-    root.dataset.preview = 'false'
-    root.dataset.stage = stage?.id ?? 'idle'
+    surface.dataset.preview = 'false'
+    surface.dataset.stage = stage?.id ?? 'idle'
     if (title) {
       title.textContent = copy.title
     }
@@ -566,7 +589,7 @@ const activatePlannerDemo = (root: HTMLElement): HomeDemoActivationResult => {
 
   const handleClick = (event: Event) => {
     const button = (event.target as HTMLElement | null)?.closest('button') as HTMLButtonElement | null
-    if (!button || !root.contains(button)) return
+    if (!button || !surface.contains(button)) return
 
     const cacheId = button.dataset.cacheId
     if (cacheId) {
@@ -605,7 +628,7 @@ const activatePlannerDemo = (root: HTMLElement): HomeDemoActivationResult => {
     scheduleSequenceStep()
   })
 
-  root.addEventListener('click', handleClick)
+  surface.addEventListener('click', handleClick)
   document.addEventListener('visibilitychange', handleVisibilityChange)
   update()
 
@@ -614,7 +637,7 @@ const activatePlannerDemo = (root: HTMLElement): HomeDemoActivationResult => {
       disposed = true
       stopTimer()
       viewportPlayback.cleanup()
-      root.removeEventListener('click', handleClick)
+      surface.removeEventListener('click', handleClick)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     },
     setViewportActive: viewportPlayback.setViewportActive
@@ -626,21 +649,22 @@ const activateWasmRendererDemo = (root: HTMLElement): HomeDemoActivationResult =
   if (!hasPreparedActiveDemoMarkup(root, 'wasm-demo')) {
     prepareActiveDemoRoot(root, 'wasm-demo', getPreparedHomeDemoMarkup('wasm-renderer'))
   }
-  const title = root.querySelector<HTMLElement>('.wasm-demo-title')
-  const actionButton = root.querySelector<HTMLButtonElement>('.wasm-demo-action')
-  const subtitle = root.querySelector<HTMLElement>('.wasm-demo-subtitle')
-  const panelTitles = Array.from(root.querySelectorAll<HTMLElement>('.wasm-demo-panel-title'))
-  const valueElements = Array.from(root.querySelectorAll<HTMLElement>('.wasm-demo-value'))
-  const stepButtons = Array.from(root.querySelectorAll<HTMLButtonElement>('.wasm-demo-step'))
-  const noteElements = Array.from(root.querySelectorAll<HTMLElement>('.wasm-demo-note'))
-  const metricElements = Array.from(root.querySelectorAll<HTMLElement>('.wasm-demo-metric'))
-  const barFill = root.querySelector<HTMLElement>('.wasm-demo-bar-fill')
-  const historyRoot = root.querySelector<HTMLElement>('.wasm-demo-history')
-  const core = root.querySelector<HTMLElement>('.wasm-demo-core')
-  const coreValue = root.querySelector<HTMLElement>('.wasm-demo-core-value')
-  const coreHash = root.querySelector<HTMLElement>('.wasm-demo-core-hash')
-  const bits = root.querySelector<HTMLElement>('.wasm-demo-bits')
-  const footerChips = Array.from(root.querySelectorAll<HTMLElement>('.wasm-demo-chip'))
+  const surface = getPreparedActiveDemoSurface(root, 'wasm-demo')
+  const title = surface.querySelector<HTMLElement>('.wasm-demo-title')
+  const actionButton = surface.querySelector<HTMLButtonElement>('.wasm-demo-action')
+  const subtitle = surface.querySelector<HTMLElement>('.wasm-demo-subtitle')
+  const panelTitles = Array.from(surface.querySelectorAll<HTMLElement>('.wasm-demo-panel-title'))
+  const valueElements = Array.from(surface.querySelectorAll<HTMLElement>('.wasm-demo-value'))
+  const stepButtons = Array.from(surface.querySelectorAll<HTMLButtonElement>('.wasm-demo-step'))
+  const noteElements = Array.from(surface.querySelectorAll<HTMLElement>('.wasm-demo-note'))
+  const metricElements = Array.from(surface.querySelectorAll<HTMLElement>('.wasm-demo-metric'))
+  const barFill = surface.querySelector<HTMLElement>('.wasm-demo-bar-fill')
+  const historyRoot = surface.querySelector<HTMLElement>('.wasm-demo-history')
+  const core = surface.querySelector<HTMLElement>('.wasm-demo-core')
+  const coreValue = surface.querySelector<HTMLElement>('.wasm-demo-core-value')
+  const coreHash = surface.querySelector<HTMLElement>('.wasm-demo-core-hash')
+  const bits = surface.querySelector<HTMLElement>('.wasm-demo-bits')
+  const footerChips = Array.from(surface.querySelectorAll<HTMLElement>('.wasm-demo-chip'))
   let inputA = 128
   let inputB = 256
   let history = [computeWasmMetrics(inputA, inputB).mixed]
@@ -650,7 +674,7 @@ const activateWasmRendererDemo = (root: HTMLElement): HomeDemoActivationResult =
     const metrics = computeWasmMetrics(inputA, inputB)
     const progress = Math.min(100, Math.max(0, metrics.hotPath))
 
-    root.dataset.preview = 'false'
+    surface.dataset.preview = 'false'
     if (title) {
       title.textContent = copy.title
     }
@@ -737,7 +761,7 @@ const activateWasmRendererDemo = (root: HTMLElement): HomeDemoActivationResult =
 
   const handleClick = (event: Event) => {
     const button = (event.target as HTMLElement | null)?.closest('button') as HTMLButtonElement | null
-    if (!button || !root.contains(button)) return
+    if (!button || !surface.contains(button)) return
 
     switch (button.dataset.action) {
       case 'a-dec':
@@ -768,7 +792,7 @@ const activateWasmRendererDemo = (root: HTMLElement): HomeDemoActivationResult =
     }
   }
 
-  root.addEventListener('click', handleClick)
+  surface.addEventListener('click', handleClick)
   update()
 
   return {
@@ -776,7 +800,7 @@ const activateWasmRendererDemo = (root: HTMLElement): HomeDemoActivationResult =
       if (pulseTimer) {
         window.clearTimeout(pulseTimer)
       }
-      root.removeEventListener('click', handleClick)
+      surface.removeEventListener('click', handleClick)
     }
   }
 }
@@ -793,18 +817,21 @@ const activateReactBinaryDemo = (root: HTMLElement): HomeDemoActivationResult =>
   if (!hasPreparedActiveDemoMarkup(root, 'react-binary-demo')) {
     prepareActiveDemoRoot(root, 'react-binary-demo', getPreparedHomeDemoMarkup('react-binary'))
   }
-  const title = root.querySelector<HTMLElement>('.react-binary-title')
-  const actionButton = root.querySelector<HTMLButtonElement>('.react-binary-action')
-  const status = root.querySelector<HTMLElement>('.react-binary-status')
-  const steps = root.querySelector<HTMLElement>('.react-binary-steps')
-  const stepButtons = Array.from(root.querySelectorAll<HTMLButtonElement>('.react-binary-step'))
-  const panelTitles = Array.from(root.querySelectorAll<HTMLElement>('.react-binary-panel-title'))
-  const captions = Array.from(root.querySelectorAll<HTMLElement>('.react-binary-caption'))
-  const footerChips = Array.from(root.querySelectorAll<HTMLElement>('.react-binary-chip'))
-  const nodeElements = Array.from(root.querySelectorAll<HTMLElement>('.react-binary-node'))
-  const bitsGroup = root.querySelector<HTMLElement>('.react-binary-bits')
-  const bits = root.querySelector<HTMLElement>('.react-binary-bits span')
-  const domPreview = root.querySelector<HTMLElement>('.react-binary-dom span')
+  const surface = getPreparedActiveDemoSurface(root, 'react-binary-demo')
+  const title = surface.querySelector<HTMLElement>('.react-binary-title')
+  const actionButton = surface.querySelector<HTMLButtonElement>('.react-binary-action')
+  const status = surface.querySelector<HTMLElement>('.react-binary-status')
+  const steps = surface.querySelector<HTMLElement>('.react-binary-steps')
+  const stepButtons = Array.from(surface.querySelectorAll<HTMLButtonElement>('.react-binary-step'))
+  const panels = Array.from(surface.querySelectorAll<HTMLElement>('.react-binary-panel'))
+  const connectors = Array.from(surface.querySelectorAll<HTMLElement>('.react-binary-connector'))
+  const panelTitles = Array.from(surface.querySelectorAll<HTMLElement>('.react-binary-panel-title'))
+  const captions = Array.from(surface.querySelectorAll<HTMLElement>('.react-binary-caption'))
+  const footerChips = Array.from(surface.querySelectorAll<HTMLElement>('.react-binary-chip'))
+  const nodeElements = Array.from(surface.querySelectorAll<HTMLElement>('.react-binary-node'))
+  const bitsGroup = surface.querySelector<HTMLElement>('.react-binary-bits')
+  const bitElements = Array.from(surface.querySelectorAll<HTMLElement>('.react-binary-bit'))
+  const domTokenElements = Array.from(surface.querySelectorAll<HTMLElement>('.react-binary-dom-token'))
   let stageIndex = 0
   let binaryChunks = [...initialBinaryChunks]
   let timeoutHandle = 0
@@ -818,9 +845,9 @@ const activateReactBinaryDemo = (root: HTMLElement): HomeDemoActivationResult =>
 
   const updateBits = () => {
     binaryChunks = binaryChunks.map((chunk) => randomBits(chunk.length))
-    if (bits) {
-      bits.textContent = binaryChunks.join(' ')
-    }
+    bitElements.forEach((element, index) => {
+      element.textContent = binaryChunks[index] ?? ''
+    })
   }
 
   const schedule = () => {
@@ -839,8 +866,8 @@ const activateReactBinaryDemo = (root: HTMLElement): HomeDemoActivationResult =>
     const stage = copy.stages[stageIndex] ?? copy.stages[0]
     const actionLabel = copy.actions[stage.id as keyof typeof copy.actions] ?? copy.actions.react
 
-    root.dataset.preview = 'false'
-    root.dataset.stage = stage.id
+    surface.dataset.preview = 'false'
+    surface.dataset.stage = stage.id
 
     if (title) {
       title.textContent = copy.title
@@ -849,11 +876,13 @@ const activateReactBinaryDemo = (root: HTMLElement): HomeDemoActivationResult =>
     if (actionButton) {
       actionButton.disabled = false
       actionButton.dataset.action = 'advance'
+      actionButton.dataset.stage = stage.id
       actionButton.removeAttribute('data-demo-activate')
       actionButton.textContent = actionLabel
     }
 
     if (status) {
+      status.dataset.stage = stage.id
       status.textContent = stage.hint
     }
 
@@ -866,9 +895,24 @@ const activateReactBinaryDemo = (root: HTMLElement): HomeDemoActivationResult =>
       if (!step) return
       button.disabled = false
       button.dataset.stageIndex = `${index}`
+      button.dataset.state = index < stageIndex ? 'done' : index === stageIndex ? 'active' : 'idle'
       button.setAttribute('aria-selected', index === stageIndex ? 'true' : 'false')
       button.tabIndex = index === stageIndex ? 0 : -1
       setReactStepLabel(button, step.label)
+    })
+
+    panels.forEach((panel) => {
+      const panelStage = panel.dataset.panel
+      const panelIndex = copy.stages.findIndex((item) => item.id === panelStage)
+      panel.dataset.state = panelStage === stage.id ? 'active' : panelIndex >= 0 && panelIndex < stageIndex ? 'done' : 'idle'
+    })
+
+    connectors.forEach((connector) => {
+      const connectorKey = connector.dataset.connector
+      const isActive =
+        (stage.id === 'binary' && connectorKey === 'react-binary') ||
+        (stage.id === 'qwik' && (connectorKey === 'react-binary' || connectorKey === 'binary-qwik'))
+      connector.dataset.state = isActive ? 'active' : 'idle'
     })
 
     panelTitles[0] && (panelTitles[0].textContent = copy.panels.reactTitle)
@@ -879,22 +923,33 @@ const activateReactBinaryDemo = (root: HTMLElement): HomeDemoActivationResult =>
     captions[2] && (captions[2].textContent = copy.panels.qwikCaption)
     footerChips[0] && (footerChips[0].textContent = copy.footer.hydrationSkipped)
     footerChips[1] && (footerChips[1].textContent = copy.footer.binaryStream)
+    if (footerChips[0]) {
+      footerChips[0].dataset.state = stage.id === 'react' ? 'active' : 'idle'
+    }
+    if (footerChips[1]) {
+      footerChips[1].dataset.state = stage.id === 'binary' || stage.id === 'qwik' ? 'active' : 'idle'
+    }
     nodeElements.forEach((element, index) => {
       const label = reactNodeLabels[index] ?? ''
+      element.dataset.state = stage.id === 'react' ? (index === 0 ? 'active' : 'ready') : 'idle'
       element.textContent = fragmentText[label] ?? label
     })
-    if (domPreview) {
-      domPreview.textContent = reactDomPreview
-    }
+    domTokenElements.forEach((element, index) => {
+      element.dataset.state = stage.id === 'qwik' ? 'active' : stage.id === 'binary' ? 'ready' : 'idle'
+      setStyleCustomProperty(element, '--react-binary-dom-delay', `${index * 70}ms`)
+      element.textContent = reactDomPreviewTokens[index] ?? ''
+    })
 
     if (bitsGroup) {
       bitsGroup.setAttribute('aria-label', copy.footer.binaryStream)
     }
 
-    if (bits) {
-      bits.dataset.anim = stage.id === 'binary' ? 'true' : 'false'
-      bits.textContent = binaryChunks.join(' ')
-    }
+    bitElements.forEach((element, index) => {
+      element.dataset.anim = stage.id === 'binary' ? 'true' : 'false'
+      element.dataset.state = stage.id === 'binary' ? 'active' : stage.id === 'qwik' ? 'ready' : 'idle'
+      setStyleCustomProperty(element, '--react-binary-bit-delay', `${index * 65}ms`)
+      element.textContent = binaryChunks[index] ?? ''
+    })
 
     stopTimer()
     if (stage.id === 'binary') {
@@ -905,7 +960,7 @@ const activateReactBinaryDemo = (root: HTMLElement): HomeDemoActivationResult =>
 
   const handleClick = (event: Event) => {
     const button = (event.target as HTMLElement | null)?.closest('button') as HTMLButtonElement | null
-    if (!button || !root.contains(button)) return
+    if (!button || !surface.contains(button)) return
 
     if (button.dataset.action === 'advance') {
       stageIndex = (stageIndex + 1) % copy.stages.length
@@ -939,7 +994,7 @@ const activateReactBinaryDemo = (root: HTMLElement): HomeDemoActivationResult =>
     schedule()
   })
 
-  root.addEventListener('click', handleClick)
+  surface.addEventListener('click', handleClick)
   document.addEventListener('visibilitychange', handleVisibilityChange)
   update()
 
@@ -947,7 +1002,7 @@ const activateReactBinaryDemo = (root: HTMLElement): HomeDemoActivationResult =>
     cleanup: () => {
       stopTimer()
       viewportPlayback.cleanup()
-      root.removeEventListener('click', handleClick)
+      surface.removeEventListener('click', handleClick)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     },
     setViewportActive: viewportPlayback.setViewportActive
@@ -963,14 +1018,15 @@ const activatePreactIslandDemo = (
   if (!hasPreparedActiveDemoMarkup(root, 'preact-island-ui')) {
     prepareActiveDemoRoot(root, 'preact-island-ui', getPreparedHomeDemoMarkup('preact-island'))
   }
-  const labelElement = root.querySelector<HTMLElement>('.preact-island-label')
-  const timer = root.querySelector<HTMLElement>('.preact-island-timer')
-  const stageTitle = root.querySelector<HTMLElement>('.preact-island-stage-title')
-  const stageTime = root.querySelector<HTMLElement>('.preact-island-stage-time')
-  const stageSub = root.querySelector<HTMLElement>('.preact-island-stage-sub')
-  const actionButton = root.querySelector<HTMLButtonElement>('.preact-island-action')
-  const progressCircle = root.querySelector<SVGCircleElement>('.preact-island-dial-progress')
-  const dialHand = root.querySelector<SVGLineElement>('.preact-island-dial-hand')
+  const surface = getPreparedActiveDemoSurface(root, 'preact-island-ui')
+  const labelElement = surface.querySelector<HTMLElement>('.preact-island-label')
+  const timer = surface.querySelector<HTMLElement>('.preact-island-timer')
+  const stageTitle = surface.querySelector<HTMLElement>('.preact-island-stage-title')
+  const stageTime = surface.querySelector<HTMLElement>('.preact-island-stage-time')
+  const stageSub = surface.querySelector<HTMLElement>('.preact-island-stage-sub')
+  const actionButton = surface.querySelector<HTMLButtonElement>('.preact-island-action')
+  const progressCircle = surface.querySelector<SVGCircleElement>('.preact-island-dial-progress')
+  const dialHand = surface.querySelector<SVGLineElement>('.preact-island-dial-hand')
   let remaining = preactCountdownSeconds
   let timeoutHandle = 0
   let cancelDeferredTick: () => void = () => undefined
@@ -1003,8 +1059,8 @@ const activatePreactIslandDemo = (
     const offset = Math.round(circumference * (1 - progress))
     const rotation = Math.round((1 - progress) * -360)
 
-    root.dataset.preview = 'false'
-    root.dataset.running = remaining > 0 ? 'true' : 'false'
+    surface.dataset.preview = 'false'
+    surface.dataset.running = remaining > 0 ? 'true' : 'false'
     labelElement && (labelElement.textContent = label)
     stageTitle && (stageTitle.textContent = copy.countdown)
     timer && (timer.textContent = remaining === 0 ? copy.ready : `${minutes}:${seconds}`)
@@ -1030,7 +1086,7 @@ const activatePreactIslandDemo = (
 
   const handleClick = (event: Event) => {
     const button = (event.target as HTMLElement | null)?.closest('button') as HTMLButtonElement | null
-    if (!button || !root.contains(button)) return
+    if (!button || !surface.contains(button)) return
     remaining = preactCountdownSeconds
     update()
     scheduleTick()
@@ -1053,7 +1109,7 @@ const activatePreactIslandDemo = (
     scheduleTick()
   })
 
-  root.addEventListener('click', handleClick)
+  surface.addEventListener('click', handleClick)
   document.addEventListener('visibilitychange', handleVisibilityChange)
   update()
   cancelDeferredTick = scheduleHomeDemoEnhancement(() => {
@@ -1065,7 +1121,7 @@ const activatePreactIslandDemo = (
       cancelDeferredTick()
       clearTick()
       viewportPlayback.cleanup()
-      root.removeEventListener('click', handleClick)
+      surface.removeEventListener('click', handleClick)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     },
     setViewportActive: viewportPlayback.setViewportActive

@@ -1,30 +1,68 @@
 @layer components {
   @keyframes binary-flash {
     0% {
-      opacity: 0.6;
-      transform: translateY(0);
+      opacity: 0.68;
+      transform: translateY(0) scale(0.98);
     }
-    50% {
+    45% {
       opacity: 1;
-      transform: translateY(-1px);
+      transform: translateY(-2px) scale(1.02);
     }
     100% {
-      opacity: 0.6;
+      opacity: 0.72;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes react-binary-panel-pulse {
+    0% {
+      box-shadow: 0 18px 30px rgba(15, 23, 42, 0.12);
+    }
+    50% {
+      box-shadow: 0 22px 44px rgba(15, 23, 42, 0.16);
+    }
+    100% {
+      box-shadow: 0 18px 30px rgba(15, 23, 42, 0.12);
+    }
+  }
+
+  @keyframes react-binary-token-rise {
+    0% {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    100% {
+      opacity: 1;
       transform: translateY(0);
     }
   }
 
   .react-binary-demo {
-    @apply mt-4 rounded-2xl border border-slate-200/70 bg-white/70 p-4;
+    @apply mt-4 border p-4;
+    position: relative;
     display: grid;
-    gap: 12px;
-    background-color: rgb(var(--surface) / 0.75);
-    border-color: rgb(var(--stroke) / 0.7);
+    gap: 14px;
+    overflow: hidden;
+    border-radius: 28px;
+    border-color: rgb(var(--stroke) / 0.72);
+    background:
+      radial-gradient(circle at top left, rgb(var(--accent) / 0.08), transparent 36%),
+      radial-gradient(circle at top right, rgb(var(--signal) / 0.09), transparent 34%),
+      linear-gradient(160deg, rgb(var(--surface) / 0.82), rgb(var(--surface-soft) / 0.46));
+    box-shadow: 0 20px 38px rgba(15, 23, 42, 0.12);
+  }
+
+  .react-binary-demo::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto;
+    height: 1px;
+    background: linear-gradient(90deg, rgb(var(--accent) / 0.12), rgb(var(--signal) / 0.18));
   }
 
   .react-binary-header {
     display: grid;
-    gap: 8px;
+    gap: 10px;
   }
 
   .react-binary-controls {
@@ -32,7 +70,7 @@
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
+    gap: 12px;
   }
 
   .react-binary-title,
@@ -44,29 +82,31 @@
   }
 
   .react-binary-title {
-    @apply font-mono text-[11px] text-slate-500 uppercase tracking-[0.35em];
+    @apply font-mono text-[11px] uppercase tracking-[0.35em];
+    color: rgb(var(--muted));
   }
 
   .react-binary-action {
-    @apply inline-flex items-center gap-2 rounded-full border border-amber-200/80 bg-amber-50 px-4 py-2;
-    @apply font-mono text-[10px] text-amber-700 uppercase tracking-[0.35em];
+    @apply inline-flex items-center gap-2 rounded-full border px-4 py-2;
+    @apply font-mono text-[10px] uppercase tracking-[0.35em];
     justify-content: center;
     line-height: 1;
-    box-shadow: 0 12px 20px rgba(249, 115, 22, 0.2);
-    transition:
-      transform 160ms ease,
-      background-color 160ms ease,
-      border-color 160ms ease;
-    background-color: rgb(var(--accent) / 0.12);
-    border-color: rgb(var(--accent) / 0.28);
+    border-color: rgb(var(--accent) / 0.3);
+    background: linear-gradient(160deg, rgb(var(--surface) / 0.52), rgb(var(--accent) / 0.12));
     color: rgb(var(--accent-strong));
+    box-shadow: 0 14px 22px rgba(249, 115, 22, 0.18);
+    transition:
+      transform 180ms ease,
+      background 180ms ease,
+      border-color 180ms ease,
+      box-shadow 180ms ease;
   }
 
   .react-binary-action:hover {
-    background: rgb(var(--surface));
     transform: translateY(-1px);
-    border-color: rgb(var(--accent) / 0.4);
-    color: rgb(var(--accent-strong));
+    border-color: rgb(var(--accent) / 0.46);
+    background: linear-gradient(160deg, rgb(var(--surface) / 0.6), rgb(var(--accent) / 0.18));
+    box-shadow: 0 18px 28px rgba(249, 115, 22, 0.24);
   }
 
   .react-binary-action:focus-visible {
@@ -74,9 +114,48 @@
     outline-offset: 2px;
   }
 
+  .react-binary-action[data-stage="binary"] {
+    border-color: rgb(var(--accent) / 0.42);
+    background: linear-gradient(160deg, rgb(var(--surface) / 0.42), rgb(var(--accent) / 0.2));
+    box-shadow: 0 18px 30px rgba(249, 115, 22, 0.24);
+  }
+
+  .react-binary-action[data-stage="qwik"] {
+    border-color: rgb(var(--signal) / 0.36);
+    background: linear-gradient(160deg, rgb(var(--surface) / 0.42), rgb(var(--signal) / 0.18));
+    color: rgb(var(--ink-soft));
+    box-shadow: 0 16px 28px rgba(20, 184, 166, 0.18);
+  }
+
   .react-binary-status {
-    @apply text-slate-600 text-sm leading-6;
+    @apply text-sm leading-6;
+    padding: 0.8rem 0.95rem;
+    border: 1px solid rgb(var(--stroke) / 0.72);
+    border-radius: 18px;
+    background: rgb(var(--surface) / 0.74);
     color: rgb(var(--muted));
+    transition:
+      border-color 180ms ease,
+      background 180ms ease,
+      color 180ms ease;
+  }
+
+  .react-binary-status[data-stage="react"] {
+    border-color: rgb(var(--accent) / 0.24);
+    background: linear-gradient(135deg, rgb(var(--accent) / 0.08), rgb(var(--surface) / 0.78));
+    color: rgb(var(--ink-soft));
+  }
+
+  .react-binary-status[data-stage="binary"] {
+    border-color: rgb(var(--accent) / 0.32);
+    background: linear-gradient(135deg, rgb(var(--accent) / 0.12), rgb(var(--surface) / 0.78));
+    color: rgb(var(--ink));
+  }
+
+  .react-binary-status[data-stage="qwik"] {
+    border-color: rgb(var(--signal) / 0.3);
+    background: linear-gradient(135deg, rgb(var(--signal) / 0.11), rgb(var(--surface) / 0.78));
+    color: rgb(var(--ink-soft));
   }
 
   .react-binary-steps {
@@ -84,30 +163,37 @@
   }
 
   .react-binary-step {
-    @apply inline-flex items-center gap-2 bg-white px-3 py-1 border border-slate-200 rounded-full;
-    @apply font-mono text-[10px] text-slate-500 uppercase tracking-[0.35em];
+    @apply inline-flex items-center gap-2 border px-3 py-1 rounded-full;
+    @apply font-mono text-[10px] uppercase tracking-[0.35em];
     justify-content: center;
     line-height: 1;
+    border-color: rgb(var(--stroke));
+    background: linear-gradient(160deg, rgb(var(--surface) / 0.48), rgb(var(--surface-soft) / 0.24));
     transition:
       border-color 160ms ease,
-      background-color 160ms ease,
-      transform 160ms ease;
-    background-color: rgb(var(--surface));
-    border-color: rgb(var(--stroke));
+      background 160ms ease,
+      transform 160ms ease,
+      color 160ms ease;
   }
 
   .react-binary-step:hover {
-    @apply border-amber-200/80 text-amber-700;
     transform: translateY(-1px);
     border-color: rgb(var(--accent) / 0.28);
     color: rgb(var(--accent-strong));
   }
 
+  .react-binary-step[data-state="done"] {
+    border-color: rgb(var(--signal) / 0.3);
+    background: linear-gradient(160deg, rgb(var(--surface) / 0.46), rgb(var(--signal) / 0.1));
+    color: rgb(var(--ink-soft));
+  }
+
   .react-binary-step[aria-selected="true"] {
-    @apply border-amber-200/80 bg-amber-50 text-amber-700;
-    background-color: rgb(var(--accent) / 0.12);
-    border-color: rgb(var(--accent) / 0.3);
+    transform: translateY(-1px);
+    border-color: rgb(var(--accent) / 0.34);
+    background: linear-gradient(160deg, rgb(var(--surface) / 0.44), rgb(var(--accent) / 0.18));
     color: rgb(var(--accent-strong));
+    box-shadow: 0 10px 18px rgba(249, 115, 22, 0.16);
   }
 
   .react-binary-step-dot {
@@ -117,15 +203,20 @@
     background: rgb(var(--muted-faint) / 0.7);
   }
 
+  .react-binary-step[data-state="done"] .react-binary-step-dot {
+    background: rgb(var(--signal));
+    box-shadow: 0 0 8px rgba(20, 184, 166, 0.2);
+  }
+
   .react-binary-step[aria-selected="true"] .react-binary-step-dot {
     background: rgb(var(--accent));
-    box-shadow: 0 0 8px rgba(249, 115, 22, 0.35);
+    box-shadow: 0 0 10px rgba(249, 115, 22, 0.4);
   }
 
   .react-binary-track {
     display: grid;
-    gap: 10px;
-    grid-template-columns: minmax(0, 1fr) 18px minmax(0, 1fr) 18px minmax(0, 1fr);
+    gap: 12px;
+    grid-template-columns: minmax(0, 1fr) 20px minmax(0, 1fr) 20px minmax(0, 1fr);
     align-items: stretch;
   }
 
@@ -139,53 +230,88 @@
     top: 50%;
     left: 0;
     right: 0;
-    height: 1px;
-    background: rgb(var(--muted-faint) / 0.6);
+    height: 2px;
+    border-radius: 999px;
+    background: rgb(var(--muted-faint) / 0.45);
+    transform: translateY(-50%);
+    transition:
+      background 180ms ease,
+      box-shadow 180ms ease;
   }
 
   .react-binary-connector::after {
     content: "";
     position: absolute;
     top: 50%;
-    right: -2px;
-    width: 6px;
-    height: 6px;
-    border-top: 2px solid rgb(var(--muted-faint) / 0.6);
-    border-right: 2px solid rgb(var(--muted-faint) / 0.6);
+    right: -1px;
+    width: 7px;
+    height: 7px;
+    border-top: 2px solid rgb(var(--muted-faint) / 0.55);
+    border-right: 2px solid rgb(var(--muted-faint) / 0.55);
     transform: translateY(-50%) rotate(45deg);
+    transition:
+      border-color 180ms ease,
+      transform 180ms ease;
+  }
+
+  .react-binary-connector[data-state="active"]::before {
+    background: linear-gradient(90deg, rgb(var(--accent)), rgb(var(--signal)));
+    box-shadow: 0 0 12px rgba(20, 184, 166, 0.16);
+  }
+
+  .react-binary-connector[data-state="active"]::after {
+    border-color: rgb(var(--signal) / 0.7);
+    transform: translateY(-50%) rotate(45deg) scale(1.04);
   }
 
   .react-binary-panel {
-    @apply rounded-2xl border border-slate-200/70 bg-white/80 p-3;
+    @apply border p-4;
     position: relative;
     display: grid;
-    gap: 8px;
+    gap: 10px;
     justify-items: center;
-    min-height: 150px;
+    min-height: 172px;
     overflow: hidden;
+    border-radius: 24px;
+    border-color: rgb(var(--stroke) / 0.72);
+    background: linear-gradient(160deg, rgb(var(--surface) / 0.7), rgb(var(--surface-soft) / 0.28));
+    box-shadow: 0 14px 24px rgba(15, 23, 42, 0.08);
+    opacity: 0.78;
+    transform: translateY(0) scale(0.985);
+    filter: saturate(0.84);
     transition:
       border-color 180ms ease,
       transform 180ms ease,
-      background-color 180ms ease;
-    background-color: rgb(var(--surface) / 0.85);
-    border-color: rgb(var(--stroke) / 0.7);
-    box-shadow: 0 10px 18px rgba(15, 23, 42, 0.08);
+      background 180ms ease,
+      opacity 180ms ease,
+      filter 180ms ease,
+      box-shadow 180ms ease;
   }
 
-  .react-binary-panel::after {
+  .react-binary-panel::before {
     content: "";
     position: absolute;
     inset: 0;
     border-radius: inherit;
     background:
-      radial-gradient(circle at 20% 12%, var(--react-binary-panel-glow, transparent), transparent 60%),
-      linear-gradient(135deg, var(--react-binary-panel-surface, transparent), transparent 72%);
+      radial-gradient(circle at 18% 14%, var(--react-binary-panel-glow, transparent), transparent 58%),
+      linear-gradient(140deg, var(--react-binary-panel-surface, transparent), transparent 74%);
     opacity: 0;
-    pointer-events: none;
-    transform: translateY(4px);
+    transform: translateY(6px);
     transition:
       opacity 180ms ease,
       transform 180ms ease;
+  }
+
+  .react-binary-panel::after {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto;
+    height: 3px;
+    border-radius: inherit;
+    background: var(--react-binary-panel-line, rgb(var(--stroke) / 0.2));
+    opacity: 0.24;
+    transition: opacity 180ms ease;
   }
 
   .react-binary-panel > * {
@@ -193,76 +319,91 @@
     z-index: 1;
   }
 
-  .react-binary-panel-title {
-    @apply font-mono text-[10px] text-slate-500 uppercase tracking-[0.35em];
-    text-align: center;
-  }
-
-  .react-binary-demo[data-stage="react"] .react-binary-panel[data-panel="react"] {
-    border-color: rgb(var(--accent) / 0.5);
-    background: linear-gradient(135deg, rgb(var(--accent) / 0.08), rgb(var(--surface) / 0.95));
-    opacity: 1;
-    transform: translateY(-2px);
-    --react-binary-panel-glow: rgb(var(--accent) / 0.16);
+  .react-binary-panel[data-panel="react"] {
+    --react-binary-panel-line: linear-gradient(90deg, rgb(var(--accent)), rgb(var(--accent) / 0.25));
+    --react-binary-panel-glow: rgb(var(--accent) / 0.18);
     --react-binary-panel-surface: rgb(var(--accent) / 0.12);
   }
 
-  .react-binary-demo[data-stage="binary"] .react-binary-panel[data-panel="binary"] {
-    border-color: rgb(var(--accent) / 0.55);
-    background: linear-gradient(135deg, rgb(var(--accent) / 0.1), rgb(var(--surface) / 0.95));
-    opacity: 1;
-    transform: translateY(-2px);
-    --react-binary-panel-glow: rgb(var(--accent) / 0.2);
+  .react-binary-panel[data-panel="binary"] {
+    --react-binary-panel-line: linear-gradient(90deg, rgb(var(--accent)), rgb(var(--signal)));
+    --react-binary-panel-glow: rgb(var(--accent) / 0.22);
     --react-binary-panel-surface: rgb(var(--accent) / 0.14);
   }
 
-  .react-binary-panel[data-panel="binary"] .react-binary-panel-title,
-  .react-binary-panel[data-panel="binary"] .react-binary-bits,
-  .react-binary-panel[data-panel="binary"] .react-binary-bits span,
-  .react-binary-panel[data-panel="binary"] .react-binary-caption {
-    color: rgb(var(--ink-soft));
-  }
-
-  .react-binary-demo[data-stage="qwik"] .react-binary-panel[data-panel="qwik"] {
-    border-color: rgb(var(--signal) / 0.55);
-    background: linear-gradient(135deg, rgb(var(--signal) / 0.12), rgb(var(--surface) / 0.95));
-    opacity: 1;
-    transform: translateY(-2px);
-    --react-binary-panel-glow: rgb(var(--signal) / 0.18);
+  .react-binary-panel[data-panel="qwik"] {
+    --react-binary-panel-line: linear-gradient(90deg, rgb(var(--signal)), rgb(var(--signal) / 0.25));
+    --react-binary-panel-glow: rgb(var(--signal) / 0.2);
     --react-binary-panel-surface: rgb(var(--signal) / 0.14);
   }
 
-  .react-binary-demo[data-stage="react"] .react-binary-panel[data-panel="react"]::after,
-  .react-binary-demo[data-stage="binary"] .react-binary-panel[data-panel="binary"]::after,
-  .react-binary-demo[data-stage="qwik"] .react-binary-panel[data-panel="qwik"]::after {
+  .react-binary-panel[data-state="done"] {
+    opacity: 0.9;
+    filter: saturate(0.95);
+  }
+
+  .react-binary-panel[data-state="active"] {
+    opacity: 1;
+    transform: translateY(-4px) scale(1.01);
+    filter: none;
+    border-color: rgb(var(--stroke) / 0.78);
+    box-shadow: 0 18px 30px rgba(15, 23, 42, 0.12);
+    animation: react-binary-panel-pulse 1.7s ease-in-out 1;
+  }
+
+  .react-binary-panel[data-state="active"]::before {
     opacity: 1;
     transform: translateY(0);
   }
 
-  .react-binary-demo[data-stage="binary"] .react-binary-connector::before {
-    background: rgb(var(--accent) / 0.6);
+  .react-binary-panel[data-state="active"]::after {
+    opacity: 0.88;
   }
 
-  .react-binary-demo[data-stage="binary"] .react-binary-connector::after {
-    border-color: rgb(var(--accent) / 0.6);
+  .react-binary-panel-title {
+    @apply font-mono text-[10px] uppercase tracking-[0.35em];
+    text-align: center;
+    transition: color 180ms ease;
+  }
+
+  .react-binary-panel[data-state="active"] .react-binary-panel-title {
+    color: rgb(var(--ink));
   }
 
   .react-binary-node-tree {
+    position: relative;
     display: grid;
-    gap: 6px;
+    gap: 8px;
     justify-items: center;
     width: 100%;
+    padding-block: 4px;
+  }
+
+  .react-binary-node-tree::before {
+    content: "";
+    position: absolute;
+    top: 14px;
+    bottom: 18px;
+    width: 1px;
+    background: linear-gradient(180deg, rgb(var(--accent) / 0.18), rgb(var(--signal) / 0.16));
   }
 
   .react-binary-node {
-    @apply inline-flex items-center gap-2 bg-white px-3 py-1 border border-slate-200 rounded-full;
-    @apply font-mono text-[10px] text-slate-600 uppercase tracking-[0.35em];
+    @apply inline-flex items-center gap-2 border rounded-full px-3 py-2;
+    @apply font-mono text-[10px] uppercase tracking-[0.35em];
     justify-content: center;
     line-height: 1;
-    width: fit-content;
-    background-color: rgb(var(--surface));
+    width: min(100%, 13rem);
+    background: linear-gradient(160deg, rgb(var(--surface) / 0.48), rgb(var(--surface-soft) / 0.22));
     border-color: rgb(var(--stroke));
     color: rgb(var(--muted));
+    transition:
+      border-color 180ms ease,
+      background 180ms ease,
+      color 180ms ease,
+      transform 180ms ease,
+      box-shadow 180ms ease,
+      opacity 180ms ease;
   }
 
   .react-binary-node::before {
@@ -270,71 +411,135 @@
     width: 6px;
     height: 6px;
     border-radius: 9999px;
-    background: rgb(var(--accent) / 0.6);
-    box-shadow: 0 0 8px rgba(249, 115, 22, 0.35);
+    background: rgb(var(--accent) / 0.58);
+    box-shadow: 0 0 8px rgba(249, 115, 22, 0.24);
   }
 
   .react-binary-node.is-child {
     margin-left: 0;
   }
 
+  .react-binary-node[data-state="ready"] {
+    opacity: 0.92;
+  }
+
+  .react-binary-demo[data-stage="react"] .react-binary-node[data-state="active"],
+  .react-binary-demo[data-stage="react"] .react-binary-node[data-state="ready"] {
+    border-color: rgb(var(--accent) / 0.28);
+    background: linear-gradient(160deg, rgb(var(--surface) / 0.42), rgb(var(--accent) / 0.14));
+    color: rgb(var(--ink-soft));
+    box-shadow: 0 12px 18px rgba(249, 115, 22, 0.14);
+  }
+
+  .react-binary-demo[data-stage="react"] .react-binary-node[data-node-index="0"] {
+    transform: translateY(-2px) scale(1.02);
+    box-shadow: 0 16px 24px rgba(249, 115, 22, 0.18);
+  }
+
+  .react-binary-demo[data-stage="react"] .react-binary-node.is-child[data-node-index="2"],
+  .react-binary-demo[data-stage="react"] .react-binary-node.is-child[data-node-index="4"] {
+    transform: translateX(4px);
+  }
+
   .react-binary-bits {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(44px, 1fr));
-    gap: 6px;
-    justify-items: center;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
     width: 100%;
+  }
+
+  .react-binary-bit {
+    @apply inline-flex items-center justify-center;
+    min-height: 42px;
+    width: 100%;
+    border: 1px solid rgb(var(--stroke) / 0.72);
+    border-radius: 14px;
+    background: linear-gradient(160deg, rgb(var(--surface) / 0.48), rgb(var(--surface-soft) / 0.22));
+    color: rgb(var(--muted));
     font-family: var(--font-mono);
     font-size: 11px;
+    letter-spacing: 0.28em;
     text-transform: uppercase;
-    letter-spacing: 0.25em;
-    color: rgb(var(--muted));
-  }
-
-  .react-binary-bits span {
-    @apply bg-slate-100 px-2 py-1 rounded-lg text-center;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
     line-height: 1;
-    max-width: 100%;
-    width: fit-content;
-    background-color: rgb(var(--surface-soft));
-    border: 1px solid rgb(var(--stroke) / 0.7);
+    transition:
+      border-color 180ms ease,
+      background 180ms ease,
+      color 180ms ease,
+      transform 180ms ease,
+      box-shadow 180ms ease,
+      opacity 180ms ease;
   }
 
-  .react-binary-demo[data-stage="binary"] .react-binary-bits span[data-anim="true"] {
+  .react-binary-bit[data-state="ready"] {
+    opacity: 0.88;
+  }
+
+  .react-binary-bit[data-state="active"] {
+    border-color: rgb(var(--accent) / 0.3);
+    background: linear-gradient(160deg, rgb(var(--surface) / 0.42), rgb(var(--accent) / 0.16));
     color: rgb(var(--accent-strong));
-    background: rgb(var(--accent) / 0.12);
-    border-color: rgb(var(--accent) / 0.25);
-    animation: binary-flash 1.6s ease-in-out infinite;
+    box-shadow: 0 12px 18px rgba(249, 115, 22, 0.14);
+  }
+
+  .react-binary-bit[data-anim="true"] {
+    animation: binary-flash 1.25s ease-in-out infinite;
+    animation-delay: var(--react-binary-bit-delay, 0ms);
+  }
+
+  .react-binary-demo[data-stage="qwik"] .react-binary-bit[data-state="ready"] {
+    border-color: rgb(var(--signal) / 0.24);
+    background: linear-gradient(160deg, rgb(var(--surface) / 0.44), rgb(var(--signal) / 0.08));
+    color: rgb(var(--ink-soft));
   }
 
   .react-binary-dom {
     @apply flex flex-wrap gap-2;
     justify-content: center;
     width: 100%;
-    font-family: var(--font-mono);
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.25em;
-    color: rgb(var(--muted));
   }
 
-  .react-binary-dom span {
-    @apply bg-white px-2 py-1 border border-slate-200 rounded-full;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+  .react-binary-dom-token {
+    @apply inline-flex items-center justify-center rounded-full border px-3 py-2;
+    background: linear-gradient(160deg, rgb(var(--surface) / 0.48), rgb(var(--surface-soft) / 0.22));
+    border-color: rgb(var(--stroke) / 0.72);
+    color: rgb(var(--muted));
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
     line-height: 1;
-    max-width: 100%;
-    background-color: rgb(var(--surface));
-    border-color: rgb(var(--stroke));
+    transition:
+      border-color 180ms ease,
+      background 180ms ease,
+      color 180ms ease,
+      transform 180ms ease,
+      box-shadow 180ms ease,
+      opacity 180ms ease;
+  }
+
+  .react-binary-dom-token[data-state="ready"] {
+    opacity: 0.88;
+  }
+
+  .react-binary-dom-token[data-state="active"] {
+    border-color: rgb(var(--signal) / 0.34);
+    background: linear-gradient(160deg, rgb(var(--surface) / 0.42), rgb(var(--signal) / 0.16));
+    color: rgb(var(--ink-soft));
+    transform: translateY(-2px);
+    box-shadow: 0 12px 18px rgba(20, 184, 166, 0.14);
+    animation: react-binary-token-rise 420ms ease both;
+    animation-delay: var(--react-binary-dom-delay, 0ms);
   }
 
   .react-binary-caption {
-    @apply text-slate-500 text-xs;
+    @apply text-xs;
     text-align: center;
+    color: rgb(var(--muted));
+    transition: color 180ms ease;
+  }
+
+  .react-binary-panel[data-state="active"] .react-binary-caption {
+    color: rgb(var(--ink-soft));
   }
 
   .react-binary-footer {
@@ -342,12 +547,30 @@
   }
 
   .react-binary-chip {
-    @apply inline-flex items-center gap-2 bg-white px-3 py-1 border border-slate-200 rounded-full;
-    @apply font-mono text-[10px] text-slate-500 uppercase tracking-[0.35em];
+    @apply inline-flex items-center gap-2 rounded-full border px-3 py-1;
+    @apply font-mono text-[10px] uppercase tracking-[0.35em];
     justify-content: center;
     line-height: 1;
-    background-color: rgb(var(--surface));
     border-color: rgb(var(--stroke));
+    background: linear-gradient(160deg, rgb(var(--surface) / 0.48), rgb(var(--surface-soft) / 0.22));
+    transition:
+      border-color 180ms ease,
+      background 180ms ease,
+      color 180ms ease,
+      transform 180ms ease;
+  }
+
+  .react-binary-chip[data-state="active"] {
+    transform: translateY(-1px);
+    border-color: rgb(var(--accent) / 0.28);
+    background: linear-gradient(160deg, rgb(var(--surface) / 0.44), rgb(var(--accent) / 0.12));
+    color: rgb(var(--accent-strong));
+  }
+
+  .react-binary-demo[data-stage="qwik"] .react-binary-chip[data-state="active"] {
+    border-color: rgb(var(--signal) / 0.28);
+    background: linear-gradient(160deg, rgb(var(--surface) / 0.44), rgb(var(--signal) / 0.12));
+    color: rgb(var(--ink-soft));
   }
 
   @media (max-width: 720px) {
@@ -362,58 +585,22 @@
     .react-binary-panel {
       min-height: 0;
     }
+
+    .react-binary-bits {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .react-binary-demo [data-anim="true"] {
-      animation: none;
+    .react-binary-panel,
+    .react-binary-step,
+    .react-binary-action,
+    .react-binary-bit,
+    .react-binary-dom-token,
+    .react-binary-chip {
+      animation: none !important;
+      transition: none;
+      transform: none;
     }
-  }
-}
-@layer components {
-  .react-binary-demo {
-    background:
-      linear-gradient(160deg, rgb(var(--surface) / 0.58), rgb(var(--surface-soft) / 0.34));
-  }
-
-  .react-binary-action {
-    background:
-      linear-gradient(160deg, rgb(var(--surface) / 0.46), rgb(var(--accent) / 0.1));
-  }
-
-  .react-binary-action:hover {
-    background:
-      linear-gradient(160deg, rgb(var(--surface) / 0.56), rgb(var(--surface-soft) / 0.32));
-  }
-
-  .react-binary-step,
-  .react-binary-node,
-  .react-binary-chip,
-  .react-binary-bits span,
-  .react-binary-dom span {
-    background:
-      linear-gradient(160deg, rgb(var(--surface) / 0.48), rgb(var(--surface-soft) / 0.26));
-  }
-
-  .react-binary-step[aria-selected="true"],
-  .react-binary-demo[data-stage="binary"] .react-binary-bits span[data-anim="true"] {
-    background:
-      linear-gradient(160deg, rgb(var(--surface) / 0.46), rgb(var(--accent) / 0.1));
-  }
-
-  .react-binary-panel {
-    background:
-      linear-gradient(160deg, rgb(var(--surface) / 0.5), rgb(var(--surface-soft) / 0.28));
-  }
-
-  .react-binary-demo[data-stage="react"] .react-binary-panel[data-panel="react"],
-  .react-binary-demo[data-stage="binary"] .react-binary-panel[data-panel="binary"] {
-    background:
-      linear-gradient(135deg, rgb(var(--accent) / 0.08), rgb(var(--surface) / 0.58));
-  }
-
-  .react-binary-demo[data-stage="qwik"] .react-binary-panel[data-panel="qwik"] {
-    background:
-      linear-gradient(135deg, rgb(var(--signal) / 0.1), rgb(var(--surface) / 0.56));
   }
 }
