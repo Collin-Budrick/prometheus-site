@@ -16,6 +16,8 @@ const cliConfigDir = path.join(root, 'infra', 'spacetimedb', 'config')
 const rustCacheDir = path.join(root, '.cache', 'spacetimedb-rust')
 const rustCargoRegistryDir = path.join(rustCacheDir, 'cargo-registry')
 const rustCargoGitDir = path.join(rustCacheDir, 'cargo-git')
+const rustRustupDir = path.join(rustCacheDir, 'rustup')
+const rustupCacheHome = '/var/cache/rustup'
 const publicKeyPath = path.join(keysDir, 'jwt.pub')
 const privateKeyPath = path.join(keysDir, 'jwt.key')
 const modulePath = 'extras/spacetimedb-module'
@@ -26,7 +28,7 @@ const localDockerHosts = new Set(['127.0.0.1', 'localhost', '::1'])
 
 const toDockerMountPath = (value: string) => value.replace(/\\/g, '/')
 const sleep = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
-const defaultComposeProjectName = path.basename(root).replace(/[^a-zA-Z0-9_-]/g, '') || templateBranding.composeProjectName
+const defaultComposeProjectName = templateBranding.composeProjectName
 const resolveComposeProjectName = () =>
   process.env.COMPOSE_PROJECT_NAME?.trim() || defaultComposeProjectName || templateBranding.composeProjectName
 const isLocalComposeServer = (serverUri: string) => {
@@ -143,13 +145,19 @@ const runDockerSpacetime = (
 const runDockerRust = (args: string[]) => {
   mkdirSync(rustCargoRegistryDir, { recursive: true })
   mkdirSync(rustCargoGitDir, { recursive: true })
+  mkdirSync(rustRustupDir, { recursive: true })
   runDocker(
     defaultRustImage,
     args,
-    {},
+    {
+      CARGO_HOME: '/usr/local/cargo',
+      CARGO_BUILD_JOBS: process.env.SPACETIMEDB_CARGO_BUILD_JOBS?.trim() || '1',
+      RUSTUP_HOME: rustupCacheHome
+    },
     [
       [rustCargoRegistryDir, '/usr/local/cargo/registry'],
-      [rustCargoGitDir, '/usr/local/cargo/git']
+      [rustCargoGitDir, '/usr/local/cargo/git'],
+      [rustRustupDir, rustupCacheHome]
     ]
   )
 }
@@ -261,7 +269,18 @@ export const buildSpacetimeModule = () =>
   runDockerRust([
     'sh',
     '-lc',
-    `export PATH=/usr/local/cargo/bin:$PATH && rustup target add wasm32-unknown-unknown && cargo build --manifest-path ${moduleManifestPath} --locked --target wasm32-unknown-unknown --release`
+    [
+      'export PATH=/usr/local/cargo/bin:$PATH',
+      `mkdir -p "${rustupCacheHome}"`,
+      [
+        `if [ ! -d "${rustupCacheHome}/toolchains" ]`,
+        `|| ! find "${rustupCacheHome}/toolchains" -mindepth 1 -maxdepth 1 -type d | grep -q .`,
+        `|| ! grep -q '^default_toolchain = ' "${rustupCacheHome}/settings.toml" 2>/dev/null;`,
+        `then cp -a /usr/local/rustup/. "${rustupCacheHome}/"; fi`
+      ].join(' '),
+      "if ! rustup target list --installed | grep -qx 'wasm32-unknown-unknown'; then rustup target add wasm32-unknown-unknown; fi",
+      `cargo build --manifest-path ${moduleManifestPath} --locked --target wasm32-unknown-unknown --release`
+    ].join(' && ')
   ])
 
 export const generateSpacetimeBindings = () => {
