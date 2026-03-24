@@ -87,7 +87,7 @@ export const installFragmentStaticEntry = ({
   releaseReadyStagger = releaseQueuedReadyStaggerWithin,
   schedulePaintReady = scheduleStaticRoutePaintReady
 }: InstallFragmentStaticEntryOptions = {}) => {
-  if (!win || !doc) {
+  if (!win || !doc || win.__PROM_STATIC_FRAGMENT_ENTRY__) {
     return () => undefined
   }
 
@@ -109,6 +109,8 @@ export const installFragmentStaticEntry = ({
 
   const passiveEventOptions: AddEventListenerOptions = { capture: true, passive: true }
   const clickEventOptions: AddEventListenerOptions = { capture: true, passive: false }
+  const isFragmentBootstrapped = () =>
+    fragmentBootstrapped || Boolean(win.__PROM_STATIC_FRAGMENT_BOOTSTRAP__)
   const readBootstrapRoot = () => doc.querySelector<HTMLElement>('[data-static-fragment-root]')
   const readWidgetRoot = () =>
     doc.querySelector<HTMLElement>(
@@ -182,7 +184,8 @@ export const installFragmentStaticEntry = ({
   }
 
   const startFragmentBootstrap = () => {
-    if (fragmentBootstrapped || fragmentBootstrapPromise || win.__PROM_STATIC_FRAGMENT_BOOTSTRAP__) {
+    if (isFragmentBootstrapped() || fragmentBootstrapPromise) {
+      fragmentBootstrapped = true
       return fragmentBootstrapPromise ?? Promise.resolve()
     }
 
@@ -222,7 +225,10 @@ export const installFragmentStaticEntry = ({
     if (!(target instanceof Element)) return
 
     if (target.closest(STATIC_SHELL_INTERACTIVE_SELECTOR)) {
-      if (fragmentBootstrapped) return
+      if (isFragmentBootstrapped()) {
+        fragmentBootstrapped = true
+        return
+      }
       event.preventDefault()
       event.stopImmediatePropagation()
       requestFragmentBootstrap()
@@ -238,7 +244,10 @@ export const installFragmentStaticEntry = ({
 
     if (!target.closest(STATIC_FRAGMENT_INTERACTIVE_SELECTOR)) return
 
-    if (fragmentBootstrapped) return
+    if (isFragmentBootstrapped()) {
+      fragmentBootstrapped = true
+      return
+    }
     event.preventDefault()
     event.stopImmediatePropagation()
     void startWidgetRuntime(target)
@@ -254,10 +263,11 @@ export const installFragmentStaticEntry = ({
 
   const observeBootstrapRoot = () => {
     if (
-      fragmentBootstrapped ||
+      isFragmentBootstrapped() ||
       fragmentBootstrapPromise ||
       win.__PROM_STATIC_FRAGMENT_BOOTSTRAP__
     ) {
+      fragmentBootstrapped = true
       return
     }
 
@@ -298,7 +308,12 @@ export const installFragmentStaticEntry = ({
   }
 
   const setupBootstrapTriggers = () => {
-    if (armed || fragmentBootstrapped || fragmentBootstrapPromise || win.__PROM_STATIC_FRAGMENT_BOOTSTRAP__) return
+    if (isFragmentBootstrapped() || fragmentBootstrapPromise) {
+      fragmentBootstrapped = true
+      cleanupBootstrapObservation()
+      return
+    }
+    if (armed) return
     armed = true
     FRAGMENT_BOOTSTRAP_INTENT_EVENTS.forEach((eventName) => {
       win.addEventListener(eventName, handleBootstrapIntent, passiveEventOptions)
@@ -347,11 +362,19 @@ export const installFragmentStaticEntry = ({
     win.addEventListener('load', loadHandler, { once: true })
   }
 
-  return cleanupTriggers
+  return () => {
+    cleanupTriggers()
+    win.__PROM_STATIC_FRAGMENT_ENTRY__ = false
+  }
 }
 
 if (typeof window !== 'undefined') {
-  installFragmentStaticEntry()
+  const cleanup = installFragmentStaticEntry()
+  if (import.meta.hot) {
+    import.meta.hot.dispose(() => {
+      cleanup()
+    })
+  }
 }
 
 export {}

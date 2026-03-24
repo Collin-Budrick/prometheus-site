@@ -18,6 +18,7 @@ type SiteCspOptions = {
   currentOrigin: string
   pathname?: string
   config?: PublicAppConfig
+  allowDevServer?: boolean
 }
 
 const resolveHttpOrigin = (value: string | undefined, fallbackOrigin: string) => {
@@ -57,6 +58,9 @@ const toSocketOrigin = (origin: string | null) => {
 const uniqueValues = (values: Array<string | null | undefined>) =>
   Array.from(new Set(values.filter((value): value is string => Boolean(value))))
 
+const shouldAllowViteDevServer = (allowDevServer?: boolean) =>
+  allowDevServer ?? import.meta.env.VITE_STATIC_SHELL_DEV_SOURCE === '1'
+
 export const generateCspNonce = () => randomBytes(18).toString('base64')
 
 export const getOrCreateRequestCspNonce = (requestLike: RequestLike | RequestEvent) => {
@@ -72,8 +76,10 @@ export const getOrCreateRequestCspNonce = (requestLike: RequestLike | RequestEve
 
 export const buildSiteConnectSrc = (
   currentOrigin: string,
-  config: PublicAppConfig = appConfig
+  config: PublicAppConfig = appConfig,
+  options?: Pick<SiteCspOptions, 'allowDevServer'>
 ) => {
+  const allowDevServer = shouldAllowViteDevServer(options?.allowDevServer)
   const apiOrigin = resolveHttpOrigin(config.apiBase, currentOrigin)
   const spacetimeDbOrigin = resolveHttpOrigin(config.spacetimeDbUri, currentOrigin)
   const webTransportOrigin =
@@ -88,6 +94,7 @@ export const buildSiteConnectSrc = (
   return uniqueValues([
     "'self'",
     currentOrigin,
+    allowDevServer ? toSocketOrigin(currentOrigin) : null,
     apiOrigin,
     toSocketOrigin(apiOrigin),
     spacetimeDbOrigin,
@@ -107,19 +114,21 @@ export const buildSiteCsp = ({
   nonce,
   currentOrigin,
   pathname,
-  config = appConfig
+  config = appConfig,
+  allowDevServer
 }: SiteCspOptions) => {
+  const enableViteDevScripts = shouldAllowViteDevServer(allowDevServer)
   const relaxedScriptPolicy = requiresDynamicScriptEvaluation(config)
   const requiresWasmCompilation = requiresWebAssemblyCompilation(pathname)
-  const scriptSrcTokens = [`'nonce-${nonce}'`, `'strict-dynamic'`, `'unsafe-inline'`, 'https:', 'http:', "'inline-speculation-rules'"]
-
-  if (relaxedScriptPolicy) {
-    scriptSrcTokens.splice(3, 0, "'unsafe-eval'")
-  }
-
-  if (requiresWasmCompilation) {
-    scriptSrcTokens.splice(relaxedScriptPolicy ? 4 : 3, 0, "'wasm-unsafe-eval'")
-  }
+  const scriptSrcTokens = [
+    ...(enableViteDevScripts ? ["'self'"] : [`'nonce-${nonce}'`, "'strict-dynamic'"]),
+    "'unsafe-inline'",
+    ...(relaxedScriptPolicy ? ["'unsafe-eval'"] : []),
+    ...(requiresWasmCompilation ? ["'wasm-unsafe-eval'"] : []),
+    'https:',
+    'http:',
+    "'inline-speculation-rules'"
+  ]
 
   const directives = [
     `default-src 'self'`,
@@ -132,12 +141,17 @@ export const buildSiteCsp = ({
     `style-src 'self' 'unsafe-inline'`,
     `img-src 'self' data: blob: https:`,
     `font-src 'self' data:`,
-    `connect-src ${buildSiteConnectSrc(currentOrigin, config).join(' ')}`,
+    `connect-src ${buildSiteConnectSrc(currentOrigin, config, { allowDevServer }).join(' ')}`,
     `worker-src 'self'`,
-    `manifest-src 'self'`,
-    `trusted-types ${TRUSTED_TYPES_SERVER_POLICY_NAME} ${TRUSTED_TYPES_TEMPLATE_POLICY_NAME} ${TRUSTED_TYPES_RUNTIME_SCRIPT_POLICY_NAME}`,
-    `require-trusted-types-for 'script'`
+    `manifest-src 'self'`
   ]
+
+  if (!enableViteDevScripts) {
+    directives.push(
+      `trusted-types ${TRUSTED_TYPES_SERVER_POLICY_NAME} ${TRUSTED_TYPES_TEMPLATE_POLICY_NAME} ${TRUSTED_TYPES_RUNTIME_SCRIPT_POLICY_NAME}`,
+      `require-trusted-types-for 'script'`
+    )
+  }
 
   return directives.join('; ')
 }

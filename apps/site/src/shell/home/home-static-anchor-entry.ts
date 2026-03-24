@@ -24,5 +24,10 @@ export const installHomeStaticAnchorEntry = (
 }
 
 if (typeof window !== 'undefined') {
-  installHomeStaticAnchorEntry()
+  const cleanup = installHomeStaticAnchorEntry()
+  if (import.meta.hot) {
+    import.meta.hot.dispose(() => {
+      cleanup()
+    })
+  }
 }

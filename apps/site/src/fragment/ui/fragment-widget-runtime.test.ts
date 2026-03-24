@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { createFragmentWidgetRuntime } from './fragment-widget-runtime'
 
 const FRAGMENT_WIDGET_SELECTOR = '[data-fragment-widget]'
-const FRAGMENT_WIDGET_PROPS_SELECTOR = 'script[data-fragment-widget-props]'
+const FRAGMENT_WIDGET_PROPS_SELECTOR =
+  'template[data-fragment-widget-props],script[data-fragment-widget-props]'
 
 type MockIntersectionEntry = {
   target: Element

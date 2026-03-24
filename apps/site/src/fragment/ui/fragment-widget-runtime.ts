@@ -2,7 +2,8 @@ import type { AttachHomeCollabRootOptions } from '../../shell/home/home-collab-e
 import type { HomeDemoKind } from '../../shell/home/home-demo-activate'
 
 const FRAGMENT_WIDGET_SELECTOR = '[data-fragment-widget]'
-const FRAGMENT_WIDGET_PROPS_SELECTOR = 'script[data-fragment-widget-props]'
+const FRAGMENT_WIDGET_PROPS_SELECTOR =
+  'template[data-fragment-widget-props],script[data-fragment-widget-props]'
 const FRAGMENT_WIDGET_WARM_MARGIN = '300px 0px'
 
 type WidgetPriority = 'critical' | 'visible' | 'normal' | 'deferred'

@@ -175,6 +175,17 @@ export const installHomeStaticAnchorEntry = ({
       ?.click()
   }
 
+  const resolveSettingsReplayTarget = (target: EventTarget | null) => {
+    if (!isSettingsTriggerTarget(target)) {
+      return null
+    }
+
+    return (
+      settingsRoot?.querySelector<HTMLButtonElement>('[data-static-settings-toggle]') ??
+      (target instanceof Element ? target : null)
+    )
+  }
+
   const startDeferredEntry = () => {
     if (deferredEntryPromise) {
       return deferredEntryPromise
@@ -283,7 +294,8 @@ export const installHomeStaticAnchorEntry = ({
   }
 
   function handleSettingsEntryInteraction(event: Event) {
-    if (!isSettingsTriggerTarget(event.target)) {
+    const settingsTarget = resolveSettingsReplayTarget(event.target)
+    if (!settingsTarget) {
       return
     }
     const nextDeferredEntry = startDeferredEntry()
@@ -293,7 +305,7 @@ export const installHomeStaticAnchorEntry = ({
     void nextDeferredEntry.then(() => {
       void loadDeferredEntry().then((module) => {
         if (module.primeHomeSettingsInteraction) {
-          return module.primeHomeSettingsInteraction(event.target)
+          return module.primeHomeSettingsInteraction(settingsTarget)
         }
         replaySettingsToggle()
       })
@@ -313,6 +325,8 @@ export const installHomeStaticAnchorEntry = ({
     lcpGateCleanup?.()
     lcpGateCleanup = null
     disposeSharedRuntime(liveWin)
+    liveWin.__PROM_STATIC_HOME_ANCHOR_ENTRY__ = false
+    liveWin.__PROM_STATIC_HOME_LCP_RELEASED__ = false
   }
 
   const setupBootstrapTriggers = () => {

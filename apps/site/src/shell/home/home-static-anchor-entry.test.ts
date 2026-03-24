@@ -346,5 +346,7 @@ describe('installHomeStaticAnchorEntry', () => {
     expect(win.listeners.size).toBe(0)
     expect(doc.listeners.size).toBe(0)
     expect(manualGate.cleanupCalls()).toBe(1)
+    expect(win.__PROM_STATIC_HOME_ANCHOR_ENTRY__).toBe(false)
+    expect(win.__PROM_STATIC_HOME_LCP_RELEASED__).toBe(false)
   })
 })

@@ -60,5 +60,10 @@ export const primeHomeSettingsInteraction = async (
 }
 
 if (typeof window !== 'undefined') {
-  void waitForHomeStaticEntryInstallation()
+  const cleanup = installHomeStaticEntry()
+  if (import.meta.hot) {
+    import.meta.hot.dispose(() => {
+      cleanup()
+    })
+  }
 }

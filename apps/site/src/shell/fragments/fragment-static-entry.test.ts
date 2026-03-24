@@ -346,4 +346,33 @@ describe('installFragmentStaticEntry', () => {
 
     cleanup()
   })
+
+  it('does not re-arm capture listeners when the fragment shell is already bootstrapped', async () => {
+    const win = new MockWindow()
+    const doc = new MockDocument('/store')
+    win.__PROM_STATIC_FRAGMENT_BOOTSTRAP__ = true
+    let loadRuntimeCount = 0
+
+    const cleanup = installFragmentStaticEntry({
+      win: win as never,
+      doc: doc as never,
+      loadRuntime: async () => {
+        loadRuntimeCount += 1
+        return {
+          bootstrapStaticFragmentShell: async () => undefined
+        }
+      }
+    })
+
+    await flushMicrotasks()
+
+    expect(loadRuntimeCount).toBe(0)
+    expect(doc.listeners.size).toBe(0)
+    expect(win.listeners.size).toBe(0)
+    expect(win.__PROM_STATIC_FRAGMENT_ENTRY__).toBe(true)
+
+    cleanup()
+
+    expect(win.__PROM_STATIC_FRAGMENT_ENTRY__).toBe(false)
+  })
 })

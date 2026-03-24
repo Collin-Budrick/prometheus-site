@@ -16,6 +16,9 @@ const normalizeProps = (props?: Record<string, unknown>) => props ?? {}
 
 const toScriptJson = (props?: Record<string, unknown>) =>
   JSON.stringify(normalizeProps(props))
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
 
 const hasRenderableProps = (props?: Record<string, unknown>) =>
   Object.keys(normalizeProps(props)).length > 0
@@ -51,9 +54,8 @@ export const createFragmentWidgetMarkerNode = ({
       ...(hasRenderableProps(props)
         ? [
             h(
-              'script',
+              'template',
               {
-                type: 'application/json',
                 'data-fragment-widget-props': 'true'
               },
               [toScriptJson(props)]

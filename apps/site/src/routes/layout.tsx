@@ -14,9 +14,10 @@ import { didAuthSessionChange, revalidateClientAuthSession } from '../features/a
 import { resolveRequestLang } from './fragment-resource'
 import { appConfig } from '../site-config'
 import { buildFragmentCssLinks } from '../fragment/fragment-css'
+import { FRAGMENT_WIDGET_RUNTIME_ASSET_PATH } from '../fragment/ui/fragment-widget-runtime-loader'
 import { fragmentPlanCache } from '../fragment/plan-cache'
 import type { FragmentPlan } from '../fragment/types'
-import { appendStaticAssetVersion } from '../shell/core/asset-version'
+import { resolveStaticAssetPublicHref, shouldUseStaticShellSourceModules } from '../shell/core/static-asset-url'
 import { setPreference } from '../native/preferences'
 import { loadLanguageResources, prefetchLanguageResources } from '../lang/client'
 import { mergeLanguageSelections, resolveRouteLanguageSelection, shellLanguageSelection } from '../lang/selection'
@@ -255,6 +256,168 @@ const buildConditionalHomeManifestScript = (href: string) => {
 })();`
 }
 
+const buildHomeStaticDevBootstrapScript = (href: string, widgetRuntimeHref: string) => {
+  const escapedHref = JSON.stringify(href)
+  const escapedWidgetRuntimeHref = JSON.stringify(widgetRuntimeHref)
+  return `(function () {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+  var attempts = 0;
+  var installing = false;
+  var installed = false;
+  var eventOptions = { capture: true, passive: true };
+  var pendingClickTarget = null;
+  var widgetRuntimeModulePromise = null;
+  var widgetRuntime = null;
+  var widgetRuntimeRoot = null;
+  var eagerWidgetSelector = '[data-fragment-widget="planner-demo"]';
+  var readWidgetRoot = function () {
+    return document.querySelector('[data-static-shell-region="main"]')
+      || document.querySelector('[data-static-home-root]')
+      || document.querySelector('[data-static-route="home"]');
+  };
+  var resolveReplayTarget = function (target) {
+    if (!target || typeof target !== 'object') return null;
+    if (target instanceof Element) {
+      return target.closest('button, a, [role="button"], [tabindex]') || target;
+    }
+    var parentElement = target.parentElement;
+    return parentElement
+      ? parentElement.closest('button, a, [role="button"], [tabindex]') || parentElement
+      : null;
+  };
+  var removeIntentListeners = function () {
+    window.removeEventListener('pointerdown', installFromIntent, eventOptions);
+    window.removeEventListener('touchstart', installFromIntent, eventOptions);
+    window.removeEventListener('keydown', installFromIntent, eventOptions);
+    document.removeEventListener('focusin', installFromIntent, eventOptions);
+    window.removeEventListener('click', bridgeClickUntilInstalled, true);
+  };
+  var loadWidgetRuntime = function () {
+    if (!widgetRuntimeModulePromise) {
+      widgetRuntimeModulePromise = import(/* @vite-ignore */ ${escapedWidgetRuntimeHref}).catch(function (error) {
+        widgetRuntimeModulePromise = null;
+        throw error;
+      });
+    }
+    return widgetRuntimeModulePromise;
+  };
+  var waitForWidgetHydration = function (widgets, remainingAttempts) {
+    if (!widgets || remainingAttempts <= 0) return Promise.resolve();
+    var hasPending = Array.prototype.some.call(widgets, function (widget) {
+      return widget && widget.getAttribute('data-fragment-widget-hydrated') !== 'true';
+    });
+    if (!hasPending) {
+      return Promise.resolve();
+    }
+    return new Promise(function (resolve) {
+      window.setTimeout(resolve, 16);
+    }).then(function () {
+      return waitForWidgetHydration(widgets, remainingAttempts - 1);
+    });
+  };
+  var hydrateWidgets = function () {
+    var root = readWidgetRoot();
+    if (!root) {
+      return Promise.resolve();
+    }
+    return loadWidgetRuntime()
+      .then(function (module) {
+        if (!module || typeof module.createFragmentWidgetRuntime !== 'function') {
+          return undefined;
+        }
+        if (widgetRuntimeRoot !== root) {
+          if (widgetRuntime && typeof widgetRuntime.destroy === 'function') {
+            widgetRuntime.destroy();
+          }
+          widgetRuntime = module.createFragmentWidgetRuntime({
+            root: root,
+            observeMutations: true
+          });
+          widgetRuntimeRoot = root;
+        }
+        var widgets = root.querySelectorAll(eagerWidgetSelector);
+        if (!widgets.length) {
+          return undefined;
+        }
+        Array.prototype.forEach.call(widgets, function (widget) {
+          widgetRuntime.handleInteraction(widget);
+        });
+        return waitForWidgetHydration(widgets, 24);
+      })
+      .catch(function (error) {
+        console.error('Static home widget hydration failed:', error);
+      });
+  };
+  var install = function () {
+    if (installing || installed) return;
+    if (!document.querySelector('[data-static-route="home"]')) {
+      if (attempts < 600) {
+        attempts += 1;
+        window.setTimeout(install, 16);
+      }
+      return;
+    }
+    installing = true;
+    void import(/* @vite-ignore */ ${escapedHref})
+      .then(function (module) {
+        var installHomeEntry =
+          module && typeof module.installHomeStaticAnchorEntry === 'function'
+            ? module.installHomeStaticAnchorEntry
+            : module && typeof module.installHomeStaticEntry === 'function'
+              ? module.installHomeStaticEntry
+              : null;
+        if (!installHomeEntry) {
+          installing = false;
+          return undefined;
+        }
+        installHomeEntry();
+        return Promise.resolve(hydrateWidgets()).then(function () {
+          installed = true;
+          installing = false;
+          removeIntentListeners();
+          if (pendingClickTarget && pendingClickTarget.isConnected) {
+            var target = pendingClickTarget;
+            pendingClickTarget = null;
+            window.requestAnimationFrame(function () {
+              if (target.isConnected) {
+                target.click();
+              }
+            });
+          }
+          return undefined;
+        });
+      })
+      .catch(function (error) {
+        installing = false;
+        console.error('Static home dev bootstrap failed:', error);
+      });
+  };
+  var installFromIntent = function () {
+    install();
+  };
+  var bridgeClickUntilInstalled = function (event) {
+    if (installed || !event.isTrusted) return;
+    if (!document.querySelector('[data-static-route="home"]')) return;
+    var target = resolveReplayTarget(event.target);
+    if (!target) return;
+    pendingClickTarget = target;
+    install();
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  };
+  window.addEventListener('pointerdown', installFromIntent, eventOptions);
+  window.addEventListener('touchstart', installFromIntent, eventOptions);
+  window.addEventListener('keydown', installFromIntent, eventOptions);
+  document.addEventListener('focusin', installFromIntent, eventOptions);
+  window.addEventListener('click', bridgeClickUntilInstalled, true);
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', install, { once: true });
+    return;
+  }
+  install();
+})();`
+}
+
 type EarlyHint = {
   href: string
   as?: string
@@ -376,9 +539,10 @@ const buildStaticBootstrapEarlyHints = (pathName: string, buildVersion: string |
       normalizedPath as keyof typeof STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS
     ] ?? [])
   ].map((path) => ({
-    href: buildVersion
-      ? appendStaticAssetVersion(`${STATIC_PUBLIC_BASE}${path}`, buildVersion)
-      : `${STATIC_PUBLIC_BASE}${path}`,
+    href: resolveStaticAssetPublicHref(path, {
+      publicBase: STATIC_PUBLIC_BASE,
+      version: buildVersion
+    }),
     rel: 'modulepreload' as const,
     crossorigin: 'anonymous' as const
   }))
@@ -863,6 +1027,8 @@ export const RouterHead = component$(() => {
   const initialFade = (head.htmlAttributes as Record<string, string> | undefined)?.['data-initial-fade']
   const isHomeStaticRoute = isHomeStaticPath(location.url.pathname)
   const shouldUseConditionalHomeManifest = isHomeStaticRoute
+  const shouldBootstrapHomeStaticDev =
+    isHomeStaticRoute && shouldUseStaticShellSourceModules()
   const shouldDeferManifest =
     isStaticShellPath(location.url.pathname) && !isHomeStaticRoute
   const currentOrigin = location.url?.origin ?? null
@@ -877,6 +1043,17 @@ export const RouterHead = component$(() => {
   const normalizedBase = base.endsWith('/') ? base : `${base}/`
   const withBase = (path: string) => `${normalizedBase}${path.replace(/^\/+/, '')}`
   const manifestHref = withBase('manifest.webmanifest')
+  const homeStaticDevBootstrapHref = resolveStaticAssetPublicHref(HOME_STATIC_ANCHOR_ENTRY_ASSET_PATH, {
+    publicBase: STATIC_PUBLIC_BASE,
+    version: null
+  })
+  const homeStaticWidgetRuntimeHref = resolveStaticAssetPublicHref(
+    FRAGMENT_WIDGET_RUNTIME_ASSET_PATH,
+    {
+      publicBase: STATIC_PUBLIC_BASE,
+      version: null
+    }
+  )
   const pwaEnabled = appConfig.template.features.pwa
   const partytownScript = buildPartytownHeadScript({
     config: appConfig.partytown,
@@ -942,6 +1119,15 @@ export const RouterHead = component$(() => {
         ) : (
           <link rel="manifest" href={manifestHref} />
         )
+      ) : null}
+      {shouldBootstrapHomeStaticDev ? (
+        <script
+          nonce={nonce || undefined}
+          dangerouslySetInnerHTML={buildHomeStaticDevBootstrapScript(
+            homeStaticDevBootstrapHref,
+            homeStaticWidgetRuntimeHref
+          )}
+        />
       ) : null}
       <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
       <meta name="theme-color" content={siteBrand.themeColor} />

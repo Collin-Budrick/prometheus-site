@@ -94,6 +94,28 @@ describe('security/server', () => {
     ])
   })
 
+  it('relaxes script and connect policies for the host Vite dev server when requested', () => {
+    const csp = buildSiteCsp({
+      nonce: 'nonce-123',
+      currentOrigin: 'https://prometheus.dev',
+      pathname: '/',
+      allowDevServer: true,
+      config: resolvePublicAppConfig({
+        spacetimeDbUri: '',
+        spacetimeDbModule: ''
+      })
+    })
+
+    expect(csp).toContain(
+      `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https: http: 'inline-speculation-rules'`
+    )
+    expect(csp).not.toContain(`'strict-dynamic'`)
+    expect(csp).not.toContain(`'nonce-nonce-123'`)
+    expect(csp).toContain(`connect-src 'self' https://prometheus.dev wss://prometheus.dev`)
+    expect(csp).not.toContain(`trusted-types prometheus-server-html`)
+    expect(csp).not.toContain(`require-trusted-types-for 'script'`)
+  })
+
   it('creates and reuses a request-scoped nonce', () => {
     const sharedMap = new Map<string, unknown>()
     const requestLike = { sharedMap }

@@ -17,6 +17,8 @@ const HOME_SETTINGS_BRIDGE_EVENTS = [
   'click',
   'focusin'
 ] as const
+const HOME_WIDGET_SELECTOR = '[data-fragment-widget]'
+const HOME_INTERACTIVE_SELECTOR = 'button, a, [role="button"], input, select, textarea, summary, [tabindex]'
 
 type HomeStaticEntryWindow = Window & {
   __PROM_STATIC_HOME_ENTRY__?: boolean
@@ -74,6 +76,65 @@ const resolveInteractionCard = (target: EventTarget | null) => {
   return element?.closest<HTMLElement>(HOME_FRAGMENT_CARD_SELECTOR) ?? null
 }
 
+const resolveInteractiveTarget = (target: EventTarget | null) => {
+  if (!target || typeof target !== 'object') {
+    return null
+  }
+
+  const element =
+    'closest' in target && typeof target.closest === 'function'
+      ? (target as Element)
+      : 'parentElement' in target &&
+          (target as { parentElement?: Element | null }).parentElement &&
+          typeof (target as { parentElement?: Element | null }).parentElement?.closest === 'function'
+        ? (target as { parentElement: Element }).parentElement
+        : null
+  return element?.closest<HTMLElement>(HOME_INTERACTIVE_SELECTOR) ?? null
+}
+
+const resolveWidgetTarget = (target: EventTarget | null) => {
+  if (!target || typeof target !== 'object') {
+    return null
+  }
+
+  const element =
+    'closest' in target && typeof target.closest === 'function'
+      ? (target as Element)
+      : 'parentElement' in target &&
+          (target as { parentElement?: Element | null }).parentElement &&
+          typeof (target as { parentElement?: Element | null }).parentElement?.closest === 'function'
+        ? (target as { parentElement: Element }).parentElement
+        : null
+  return element?.closest<HTMLElement>(HOME_WIDGET_SELECTOR) ?? null
+}
+
+const resolveReplaySelector = (target: HTMLElement) => {
+  if (target.id) {
+    return `#${globalThis.CSS?.escape?.(target.id) ?? target.id}`
+  }
+
+  if (typeof target.getAttribute !== 'function') {
+    return null
+  }
+
+  const dataAction = target.getAttribute('data-action')
+  if (dataAction) {
+    return `[data-action="${globalThis.CSS?.escape?.(dataAction) ?? dataAction}"]`
+  }
+
+  const cacheId = target.getAttribute('data-cache-id')
+  if (cacheId) {
+    return `[data-cache-id="${globalThis.CSS?.escape?.(cacheId) ?? cacheId}"]`
+  }
+
+  const ariaLabel = target.getAttribute('aria-label')
+  if (ariaLabel) {
+    return `[aria-label="${globalThis.CSS?.escape?.(ariaLabel) ?? ariaLabel}"]`
+  }
+
+  return null
+}
+
 const primeHomeSettingsRuntime = (target: EventTarget | null = null) =>
   loadHomeSettingsInteractionRuntime().then(({ primeHomeSettingsInteraction }) =>
     primeHomeSettingsInteraction(target)
@@ -111,8 +172,10 @@ export const installHomeStaticEntry = ({
   let homeDemoWarmupPromise: Promise<void> | null = null
   let deferredRuntimePromise: Promise<void> | null = null
   let cancelDeferredRuntimeStart: (() => void) | null = null
+  let cancelPendingClickReplay: (() => void) | null = null
 
   const eventOptions: AddEventListenerOptions = { capture: true, passive: true }
+  const clickReplayOptions: AddEventListenerOptions = { capture: true }
   const settingsBridgeEventOptions: AddEventListenerOptions = { capture: true }
   const readWidgetRoot = () =>
     liveDoc.querySelector<HTMLElement>('[data-static-shell-region="main"]') ??
@@ -123,6 +186,17 @@ export const installHomeStaticEntry = ({
       return false
     }
     return Boolean(target.closest('[data-static-settings-toggle]'))
+  }
+
+  const resolveSettingsReplayTarget = (target: EventTarget | null) => {
+    if (!isSettingsTriggerTarget(target)) {
+      return null
+    }
+
+    return (
+      settingsRoot?.querySelector<HTMLButtonElement>('[data-static-settings-toggle]') ??
+      (target instanceof Element ? target : null)
+    )
   }
 
   const cleanupEarlySettingsBridge = () => {
@@ -206,24 +280,26 @@ export const installHomeStaticEntry = ({
   }
 
   function handleEarlySettingsInteraction(event: Event) {
-    if (!isSettingsTriggerTarget(event.target)) {
+    const settingsTarget = resolveSettingsReplayTarget(event.target)
+    if (!settingsTarget) {
       return
     }
     void startDeferredRuntime({
       eagerLifecycleRuntime: true,
-      postLcpIntentTarget: event.target
+      postLcpIntentTarget: settingsTarget
     })
-    void primeHomeSettingsRuntime(event.target)
+    void primeHomeSettingsRuntime(settingsTarget)
   }
 
   primeHomeSettingsInteractionHandler = async (
     target: EventTarget | null = null
   ) => {
+    const settingsTarget = resolveSettingsReplayTarget(target)
     void startDeferredRuntime({
       eagerLifecycleRuntime: true,
-      postLcpIntentTarget: target
+      postLcpIntentTarget: settingsTarget
     })
-    await primeHomeSettingsRuntime(target)
+    await primeHomeSettingsRuntime(settingsTarget)
   }
 
   const scheduleDeferredRuntime = () => {
@@ -268,10 +344,85 @@ export const installHomeStaticEntry = ({
         console.error('Static home widget runtime failed:', error)
       })
 
+  const clearPendingClickReplay = () => {
+    cancelPendingClickReplay?.()
+    cancelPendingClickReplay = null
+  }
+
+  const waitForWidgetHydration = (widget: HTMLElement, remainingAttempts = 12): Promise<void> => {
+    if (widget.dataset.fragmentWidgetHydrated === 'true' || remainingAttempts <= 0) {
+      return Promise.resolve()
+    }
+
+    return new Promise((resolve) => {
+      globalThis.setTimeout(() => {
+        void waitForWidgetHydration(widget, remainingAttempts - 1).then(resolve)
+      }, 16)
+    })
+  }
+
+  const bridgePendingClick = (target: EventTarget | null) => {
+    const replayTarget = resolveInteractiveTarget(target)
+    const widget = resolveWidgetTarget(target)
+
+    if (
+      !replayTarget ||
+      !widget ||
+      widget.dataset.fragmentWidgetHydrated === 'true' ||
+      typeof replayTarget.click !== 'function'
+    ) {
+      return
+    }
+
+    const replaySelector = resolveReplaySelector(replayTarget)
+
+    clearPendingClickReplay()
+
+    const suppressInitialClick = (event: Event) => {
+      if (resolveInteractiveTarget(event.target) !== replayTarget) {
+        return
+      }
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      clearPendingClickReplay()
+    }
+
+    liveWin.addEventListener('click', suppressInitialClick, clickReplayOptions)
+    cancelPendingClickReplay = () => {
+      liveWin.removeEventListener('click', suppressInitialClick, clickReplayOptions)
+    }
+
+    void startWidgetRuntime(target)
+      .then(() => waitForWidgetHydration(widget))
+      .then(() => {
+        if (
+          widget.dataset.fragmentWidgetHydrated !== 'true' ||
+          'isConnected' in replayTarget && replayTarget.isConnected === false && !replaySelector
+        ) {
+          return
+        }
+
+        const nextTarget =
+          replaySelector && ('isConnected' in replayTarget && replayTarget.isConnected === false)
+            ? widget.querySelector<HTMLElement>(replaySelector)
+            : replayTarget
+
+        if (!nextTarget || typeof nextTarget.click !== 'function') {
+          return
+        }
+
+        clearPendingClickReplay()
+        globalThis.setTimeout(() => {
+          nextTarget.click()
+        }, 0)
+      })
+  }
+
   function handlePointerDown(event: Event) {
     if (!resolveInteractionCard(event.target)) {
       return
     }
+    bridgePendingClick(event.target)
     void startWidgetRuntime(event.target)
   }
 
@@ -322,7 +473,9 @@ export const installHomeStaticEntry = ({
     primeHomeSettingsInteractionHandler = undefined
     cancelDeferredRuntimeStart?.()
     cancelDeferredRuntimeStart = null
+    clearPendingClickReplay()
     widgetRuntime?.destroy()
     widgetRuntime = null
+    liveWin.__PROM_STATIC_HOME_ENTRY__ = false
   }
 }

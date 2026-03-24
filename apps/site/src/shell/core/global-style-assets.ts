@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs'
-import path from 'node:path'
 import { type DocumentLink } from '@builder.io/qwik-city'
 import globalDeferredStylesheetHref from '@prometheus/ui/global-deferred.css?url'
 
@@ -7,6 +5,14 @@ type HeadLink = DocumentLink
 
 const globalDeferredStylesheetName = 'global-deferred.css'
 const globalDeferredStylesheetCache = new Map<string, string>()
+
+const resolveCwd = () =>
+  typeof process !== 'undefined' && typeof process.cwd === 'function'
+    ? process.cwd()
+    : ''
+
+const resolveNodeRequire = () =>
+  typeof require === 'function' ? (require as (id: string) => unknown) : null
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null
@@ -23,10 +29,19 @@ const resolveManifestAssetHref = (assets: unknown) => {
   return null
 }
 
-export const resolveBuiltGlobalDeferredStylesheetHref = (cwd = process.cwd()) => {
-  const manifestPath = path.resolve(cwd, 'dist', 'q-manifest.json')
+export const resolveBuiltGlobalDeferredStylesheetHref = (cwd = resolveCwd()) => {
+  if (typeof document !== 'undefined') {
+    return null
+  }
 
   try {
+    const requireModule = resolveNodeRequire()
+    if (!requireModule) {
+      return null
+    }
+    const { readFileSync } = requireModule(['node', 'fs'].join(':')) as typeof import('node:fs')
+    const path = requireModule(['node', 'path'].join(':')) as typeof import('node:path')
+    const manifestPath = path.resolve(cwd, 'dist', 'q-manifest.json')
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>
     const nestedAssetHref = resolveManifestAssetHref(manifest.assets)
     if (nestedAssetHref) return nestedAssetHref
@@ -40,7 +55,7 @@ export const resolveBuiltGlobalDeferredStylesheetHref = (cwd = process.cwd()) =>
   return null
 }
 
-export const resolveGlobalDeferredStylesheetHref = (cwd = process.cwd()) => {
+export const resolveGlobalDeferredStylesheetHref = (cwd = resolveCwd()) => {
   const cachedHref = globalDeferredStylesheetCache.get(cwd)
   if (cachedHref) return cachedHref
 
@@ -53,7 +68,7 @@ export const resetGlobalDeferredStylesheetHrefCacheForTests = () => {
   globalDeferredStylesheetCache.clear()
 }
 
-export const buildGlobalStylesheetLinks = (links: HeadLink[] = [], cwd = process.cwd()): HeadLink[] => [
+export const buildGlobalStylesheetLinks = (links: HeadLink[] = [], cwd = resolveCwd()): HeadLink[] => [
   {
     rel: 'stylesheet',
     href: resolveGlobalDeferredStylesheetHref(cwd)

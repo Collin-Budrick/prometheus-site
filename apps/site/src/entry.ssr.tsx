@@ -31,9 +31,12 @@ import {
   TRUSTED_TYPES_RUNTIME_SCRIPT_POLICY_NAME,
 } from "./security/shared";
 import { existsSync } from "node:fs";
-import { appendStaticAssetVersion } from "./shell/core/asset-version";
 import { getStaticShellBuildVersion } from "./shell/core/build-version.server";
 import { expandStaticShellPreloadPaths } from "./shell/core/build-manifest.server";
+import {
+  resolveStaticAssetPublicHref,
+  shouldUseStaticShellSourceModules,
+} from "./shell/core/static-asset-url";
 import {
   HOME_STATIC_ANCHOR_ENTRY_ASSET_PATH,
 } from "./shell/home/runtime-loaders";
@@ -161,6 +164,9 @@ const resolveRenderManifest = () => {
 const hasStaticBootstrapBundle = (pathname: string) => {
   const routeConfig = getStaticShellRouteConfig(pathname);
   if (!routeConfig) return false;
+  if (shouldUseStaticShellSourceModules()) {
+    return true;
+  }
   return existsSync(STATIC_BOOTSTRAP_BUNDLE_URLS[routeConfig.bootstrapMode]);
 };
 
@@ -426,10 +432,10 @@ const stripNonCriticalStaticRouteStyles = (html: string, pathname: string) => {
 };
 
 const buildStaticBootstrapPreloadTag = (path: string, publicBase: string) => {
-  const href = appendStaticAssetVersion(
-    `${publicBase}${path}`,
-    STATIC_SHELL_BUILD_VERSION,
-  );
+  const href = resolveStaticAssetPublicHref(path, {
+    publicBase,
+    version: STATIC_SHELL_BUILD_VERSION,
+  });
   if (path === HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH) {
     return `<link rel="modulepreload" href="${href}" data-home-demo-startup-attach="true">`;
   }
@@ -448,18 +454,18 @@ export const injectStaticBootstrap = (
 ) => {
   const bundlePath = resolveStaticBootstrapBundlePath(pathname);
   if (!bundlePath) return html;
-  const bundleHref = appendStaticAssetVersion(
-    `${publicBase}${bundlePath}`,
-    STATIC_SHELL_BUILD_VERSION,
-  );
-  const workerHref = appendStaticAssetVersion(
-    `${publicBase}${FRAGMENT_RUNTIME_WORKER_ASSET_PATH}`,
-    STATIC_SHELL_BUILD_VERSION,
-  );
-  const decodeWorkerHref = appendStaticAssetVersion(
-    `${publicBase}${FRAGMENT_RUNTIME_DECODE_WORKER_ASSET_PATH}`,
-    STATIC_SHELL_BUILD_VERSION,
-  );
+  const bundleHref = resolveStaticAssetPublicHref(bundlePath, {
+    publicBase,
+    version: STATIC_SHELL_BUILD_VERSION,
+  });
+  const workerHref = resolveStaticAssetPublicHref(FRAGMENT_RUNTIME_WORKER_ASSET_PATH, {
+    publicBase,
+    version: STATIC_SHELL_BUILD_VERSION,
+  });
+  const decodeWorkerHref = resolveStaticAssetPublicHref(FRAGMENT_RUNTIME_DECODE_WORKER_ASSET_PATH, {
+    publicBase,
+    version: STATIC_SHELL_BUILD_VERSION,
+  });
   const preloadTags = resolveStaticBootstrapPreloadPaths(pathname)
     .map((path) => buildStaticBootstrapPreloadTag(path, publicBase))
     .join("");

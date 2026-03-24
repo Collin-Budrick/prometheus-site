@@ -392,6 +392,7 @@ const siteEnv: NodeJS.ProcessEnv = {
   ...composeEnv,
   PROMETHEUS_DEVICE_HOST: resolvedDeviceHost || '',
   PROMETHEUS_DEVICE_WEB_PORT: devSitePort,
+  VITE_STATIC_SHELL_DEV_SOURCE: '1',
   VITE_DEV_HOST: useDeviceHost ? resolvedDeviceHost : devWebHost,
   VITE_API_BASE: resolvedClientApiBase,
   API_BASE: process.env.API_BASE?.trim() || `http://127.0.0.1:${devApiPort}`,

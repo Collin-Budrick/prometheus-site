@@ -641,14 +641,16 @@ const staticShellHtmlTrimPlugin = (): Plugin => {
 
     res.end = ((chunk?: unknown, encoding?: unknown, callback?: unknown) => {
       const shouldCapture =
-        captureBody || isHtmlContentType(res.getHeader('Content-Type'))
+        captureBody || (!res.headersSent && isHtmlContentType(res.getHeader('Content-Type')))
       if (!shouldCapture) {
         return originalEnd(chunk as never, encoding as never, callback as never)
       }
 
       appendChunk(chunk, typeof encoding === 'string' ? encoding : null)
       const nextBody = stripStaticShellSharedStyleBundle(Buffer.concat(chunks).toString('utf8'), pathname)
-      res.removeHeader('Content-Length')
+      if (!res.headersSent) {
+        res.removeHeader('Content-Length')
+      }
 
       if (typeof chunk === 'function') {
         callback = chunk

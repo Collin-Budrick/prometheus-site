@@ -203,6 +203,7 @@ describe('installHomeStaticEntry', () => {
 
     expect(win.listeners.size).toBe(0)
     expect(doc.listeners.size).toBe(0)
+    expect(win.__PROM_STATIC_HOME_ENTRY__).toBe(false)
   })
 
   it('starts the widget runtime on fragment-card pointer interaction and reuses it', async () => {
@@ -317,6 +318,82 @@ describe('installHomeStaticEntry', () => {
 
     expect(loadWidgetRuntimeCalls).toBe(1)
     expect(handledTargets).toEqual([keyboardTarget, focusTarget])
+
+    cleanup()
+  })
+
+  it('replays the first click after widget hydration finishes', async () => {
+    const win = new MockWindow()
+    const doc = new MockDocument()
+    const widget = {
+      dataset: {
+        fragmentWidgetHydrated: 'false'
+      }
+    }
+    let loadWidgetRuntimeCalls = 0
+    let prevented = false
+    let stopped = false
+
+    const interactiveTarget = {
+      isConnected: true,
+      clickCalls: 0,
+      click() {
+        this.clickCalls += 1
+      },
+      closest(selector: string) {
+        if (selector === '[data-static-fragment-card]') {
+          return {}
+        }
+        if (selector === '[data-fragment-widget]') {
+          return widget
+        }
+        if (selector.includes('button')) {
+          return interactiveTarget
+        }
+        return null
+      }
+    }
+
+    const cleanup = installHomeStaticEntry({
+      win: win as never,
+      doc: doc as never,
+      scheduleTask: (() => () => undefined) as never,
+      loadDeferredRuntime: async () => ({
+        installHomeBootstrapDeferredRuntime: async () => undefined
+      }) as never,
+      resumeDeferredHydration: () => true,
+      warmDemoAssets: async () => undefined,
+      loadWidgetRuntime: async () => {
+        loadWidgetRuntimeCalls += 1
+        return {
+          createFragmentWidgetRuntime: () => ({
+            handleInteraction() {
+              widget.dataset.fragmentWidgetHydrated = 'true'
+            },
+            destroy() {}
+          })
+        } as never
+      }
+    })
+
+    win.emit('pointerdown', { target: interactiveTarget })
+    win.emit('click', {
+      target: interactiveTarget,
+      preventDefault() {
+        prevented = true
+      },
+      stopImmediatePropagation() {
+        stopped = true
+      }
+    })
+
+    await flushMicrotasks()
+    await new Promise((resolve) => setTimeout(resolve, 40))
+
+    expect(loadWidgetRuntimeCalls).toBe(1)
+    expect(prevented).toBe(true)
+    expect(stopped).toBe(true)
+    expect(interactiveTarget.clickCalls).toBe(1)
 
     cleanup()
   })
