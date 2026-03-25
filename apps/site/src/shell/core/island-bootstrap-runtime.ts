@@ -1,1 +1,1 @@
-export { bootstrapStaticIslandShell } from './island-bootstrap'
+export { bootstrapStaticIslandShell, disposeStaticIslandShell } from './island-bootstrap'

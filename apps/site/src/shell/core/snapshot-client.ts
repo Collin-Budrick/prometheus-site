@@ -37,6 +37,60 @@ const readJson = async <T,>(input: RequestInfo | URL) => {
   return (await response.json()) as T
 }
 
+const readText = async (input: RequestInfo | URL) => {
+  const response = await fetch(input, {
+    credentials: 'same-origin',
+    headers: {
+      accept: 'text/html'
+    }
+  })
+  if (!response.ok) {
+    throw new Error(`Snapshot HTML fetch failed: ${response.status}`)
+  }
+  return await response.text()
+}
+
+const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+const extractHtmlTitle = (html: string) => {
+  const match = html.match(/<title>([\s\S]*?)<\/title>/i)
+  return match?.[1]?.trim() ?? ''
+}
+
+const extractElementByAttribute = (html: string, attributeName: string, attributeValue: string) => {
+  const opener = new RegExp(
+    `<([a-zA-Z][\\w:-]*)\\b[^>]*\\b${escapeRegex(attributeName)}=(["'])${escapeRegex(attributeValue)}\\2[^>]*>`,
+    'i'
+  )
+  const match = opener.exec(html)
+  if (!match || !match[1]) return null
+
+  const tagName = match[1]
+  const tagPattern = new RegExp(`<(/?)${escapeRegex(tagName)}\\b[^>]*>`, 'gi')
+  tagPattern.lastIndex = match.index
+  let depth = 0
+
+  for (;;) {
+    const tagMatch = tagPattern.exec(html)
+    if (!tagMatch) break
+    const source = tagMatch[0]
+    const closing = tagMatch[1] === '/'
+    const selfClosing = source.endsWith('/>')
+
+    if (!closing && !selfClosing) {
+      depth += 1
+    } else if (closing) {
+      depth -= 1
+    }
+
+    if (depth === 0) {
+      return html.slice(match.index, tagPattern.lastIndex)
+    }
+  }
+
+  return null
+}
+
 const readCookieValue = (key: string) => {
   const parts = document.cookie.split(';')
   for (const part of parts) {
@@ -52,6 +106,44 @@ const readCookieValue = (key: string) => {
 }
 
 const toSnapshotUrl = (assetPath: string) => resolveStaticAssetUrl(assetPath)
+
+const resolveSnapshotRouteBase = () => {
+  if (typeof window === 'undefined') {
+    return 'http://localhost/'
+  }
+  if (typeof window.location?.href === 'string') {
+    return window.location.href
+  }
+  if (typeof window.location?.origin === 'string') {
+    return `${window.location.origin}/`
+  }
+  return 'http://localhost/'
+}
+
+const loadStaticShellSnapshotFromRoute = async (snapshotKey: string, lang: Lang) => {
+  const normalizedSnapshotKey = toStaticSnapshotKey(snapshotKey)
+  const routeUrl = new URL(normalizedSnapshotKey, resolveSnapshotRouteBase())
+  routeUrl.searchParams.set('lang', lang)
+  const html = await readText(routeUrl)
+  const header = extractElementByAttribute(html, STATIC_SHELL_REGION_ATTR, STATIC_SHELL_HEADER_REGION)
+  const main = extractElementByAttribute(html, STATIC_SHELL_REGION_ATTR, STATIC_SHELL_MAIN_REGION)
+  const dock = extractElementByAttribute(html, STATIC_SHELL_REGION_ATTR, STATIC_SHELL_DOCK_REGION)
+
+  if (!header || !main || !dock) {
+    throw new Error(`Snapshot HTML extraction failed for ${normalizedSnapshotKey} (${lang})`)
+  }
+
+  return {
+    path: normalizedSnapshotKey,
+    lang,
+    title: extractHtmlTitle(html),
+    regions: {
+      header,
+      main,
+      dock
+    }
+  } satisfies StaticShellSnapshot
+}
 
 const parseHtmlFragment = (html: string) => {
   const template = document.createElement('template')
@@ -142,7 +234,11 @@ export const loadStaticShellSnapshot = async (snapshotKey: string, lang: Lang) =
 
   const nextPromise = (async () => {
     const assetPath = await resolveSnapshotAssetPath(normalizedSnapshotKey, lang)
-    return await readJson<StaticShellSnapshot>(toSnapshotUrl(assetPath))
+    try {
+      return await readJson<StaticShellSnapshot>(toSnapshotUrl(assetPath))
+    } catch {
+      return await loadStaticShellSnapshotFromRoute(normalizedSnapshotKey, lang)
+    }
   })()
   snapshotCache.set(cacheKey, nextPromise)
   return await nextPromise

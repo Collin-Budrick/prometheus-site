@@ -5,6 +5,7 @@ const ISLAND_BOOTSTRAP_RUNTIME_ASSET_PATH =
 
 export type IslandBootstrapRuntimeModule = {
   bootstrapStaticIslandShell: () => Promise<void>
+  disposeStaticIslandShell?: () => Promise<void>
 }
 
 type LoadIslandBootstrapRuntimeOptions = {

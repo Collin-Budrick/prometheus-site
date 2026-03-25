@@ -16,6 +16,7 @@ import { isNativeShellRuntime } from './native/runtime'
 import {
   STATIC_FRAGMENT_DATA_SCRIPT_ID,
   STATIC_HOME_DATA_SCRIPT_ID,
+  STATIC_ISLAND_DATA_SCRIPT_ID,
   STATIC_PAGE_ROOT_ATTR,
   STATIC_ROUTE_ATTR
 } from './shell/core/constants'
@@ -31,6 +32,58 @@ const OUTBOX_SYNC_TAG = 'p2p-outbox'
 const HEALTH_CHECK_TIMEOUT_MS = 4000
 const pwaEnabled = appConfig.template.features.pwa
 const serviceWorkerSeed = readServiceWorkerSeedFromDocument()
+
+type StaticRouteBootstrapKind = 'home' | 'fragment' | 'island'
+
+const resolveStaticRouteBootstrapKind = () => {
+  if (typeof document === 'undefined') return null
+  const routeRoot = document.querySelector<HTMLElement>(`[${STATIC_ROUTE_ATTR}]`)
+  const routeKind = routeRoot?.getAttribute(STATIC_ROUTE_ATTR)
+  if (routeKind === 'home' || routeKind === 'fragment' || routeKind === 'island') {
+    return routeKind satisfies StaticRouteBootstrapKind
+  }
+  if (document.getElementById(STATIC_HOME_DATA_SCRIPT_ID)) {
+    return 'home' satisfies StaticRouteBootstrapKind
+  }
+  if (document.getElementById(STATIC_FRAGMENT_DATA_SCRIPT_ID)) {
+    return 'fragment' satisfies StaticRouteBootstrapKind
+  }
+  if (
+    document.getElementById(STATIC_ISLAND_DATA_SCRIPT_ID) ||
+    document.querySelector<HTMLElement>(`[${STATIC_PAGE_ROOT_ATTR}]`)
+  ) {
+    return 'island' satisfies StaticRouteBootstrapKind
+  }
+  return null
+}
+
+const loadStaticRouteBootstrap = (kind: StaticRouteBootstrapKind) => {
+  switch (kind) {
+    case 'fragment':
+      return import('./shell/fragments/fragment-static-entry')
+    case 'island':
+      return import('./shell/core/island-static-entry')
+    case 'home':
+    default:
+      return import('./shell/home/home-static-entry')
+  }
+}
+
+const bootstrapStaticRouteShell = (
+  hasStaticOnlyRoute: boolean,
+  onBootstrapFailure: () => void
+) => {
+  const kind = resolveStaticRouteBootstrapKind()
+  if (!kind) return
+
+  void loadStaticRouteBootstrap(kind).catch((error) => {
+    console.error('Static shell bootstrap failed.', error)
+    if (hasStaticOnlyRoute) {
+      onBootstrapFailure()
+    }
+  })
+}
+
 const initNativeFeelTelemetryDeferred = async () => {
   const telemetry = await import('./native/telemetry')
   telemetry.initNativeFeelTelemetry()
@@ -60,18 +113,22 @@ export default function (opts: RenderOptions) {
     ? Boolean(
         document.getElementById(STATIC_HOME_DATA_SCRIPT_ID) ||
           document.getElementById(STATIC_FRAGMENT_DATA_SCRIPT_ID) ||
+          document.getElementById(STATIC_ISLAND_DATA_SCRIPT_ID) ||
           document.querySelector<HTMLElement>(`[${STATIC_PAGE_ROOT_ATTR}]`)
       )
     : false
-
-  if (hasStaticShell) {
-    void import('./shell/home/home-static-entry')
-      .catch((error) => {
-        console.error('Static shell bootstrap failed.', error)
-        if (hasStaticOnlyRoute) {
+  if (import.meta.env.DEV && typeof document !== 'undefined') {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => {
+        bootstrapStaticRouteShell(hasStaticOnlyRoute, () => {
           void renderFullApp()
-        }
+        })
+      }, { once: true })
+    } else {
+      bootstrapStaticRouteShell(hasStaticOnlyRoute, () => {
+        void renderFullApp()
       })
+    }
   }
 
   if (!hasStaticOnlyRoute) {

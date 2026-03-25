@@ -227,4 +227,63 @@ describe('snapshot-client', () => {
     expect(cachedSnapshot).toEqual(snapshot)
     expect(calls).toEqual([manifestUrl, snapshotUrl])
   })
+
+  it('falls back to the localized route HTML when snapshot json is unavailable', async () => {
+    const calls: string[] = []
+    const manifestUrl = new URL(STATIC_SHELL_SNAPSHOT_MANIFEST_PATH, 'https://prometheus.test/').toString()
+    const snapshotUrl = new URL(toStaticSnapshotAssetPath('/chat', 'ja'), 'https://prometheus.test/').toString()
+    const routeUrl = 'https://prometheus.test/chat?lang=ja'
+
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url
+      calls.push(url)
+
+      if (url === manifestUrl || url === snapshotUrl) {
+        return new Response('Not found', { status: 404 })
+      }
+
+      if (url === routeUrl) {
+        return new Response(
+          [
+            '<!doctype html>',
+            '<html lang="ja">',
+            '<head><title>Prometheus | Chat</title></head>',
+            '<body>',
+            `<header ${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_HEADER_REGION}">header ja</header>`,
+            `<main ${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_MAIN_REGION}">main ja</main>`,
+            `<div ${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_DOCK_REGION}" ${STATIC_DOCK_ROOT_ATTR}="true">dock ja</div>`,
+            '</body>',
+            '</html>'
+          ].join(''),
+          {
+            status: 200,
+            headers: {
+              'content-type': 'text/html'
+            }
+          }
+        )
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`)
+    }) as typeof fetch
+
+    const snapshot = await loadStaticShellSnapshot('/chat', 'ja')
+
+    expect(snapshot).toEqual({
+      path: '/chat',
+      lang: 'ja',
+      title: 'Prometheus | Chat',
+      regions: {
+        header: `<header ${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_HEADER_REGION}">header ja</header>`,
+        main: `<main ${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_MAIN_REGION}">main ja</main>`,
+        dock: `<div ${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_DOCK_REGION}" ${STATIC_DOCK_ROOT_ATTR}="true">dock ja</div>`
+      }
+    })
+    expect(calls).toEqual([manifestUrl, snapshotUrl, routeUrl])
+  })
 })

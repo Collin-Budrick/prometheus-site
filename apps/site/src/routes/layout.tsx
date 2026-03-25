@@ -34,6 +34,7 @@ import { StaticShellLayout } from '../shell/core/StaticShellLayout'
 import {
   FRAGMENT_STATIC_ROUTE_KIND,
   HOME_STATIC_ROUTE_KIND,
+  ISLAND_STATIC_ROUTE_KIND,
   HOME_STATIC_ROUTE_PATH,
   getStaticShellRouteConfig,
   isHomeStaticPath,
@@ -410,6 +411,27 @@ const buildHomeStaticDevBootstrapScript = (href: string, widgetRuntimeHref: stri
   window.addEventListener('keydown', installFromIntent, eventOptions);
   document.addEventListener('focusin', installFromIntent, eventOptions);
   window.addEventListener('click', bridgeClickUntilInstalled, true);
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', install, { once: true });
+    return;
+  }
+  install();
+})();`
+}
+
+const buildStaticRouteDevBootstrapScript = (href: string, label: string) => {
+  const escapedHref = JSON.stringify(href)
+  const escapedLabel = JSON.stringify(label)
+  return `(function () {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+  var started = false;
+  var install = function () {
+    if (started) return;
+    started = true;
+    void import(/* @vite-ignore */ ${escapedHref}).catch(function (error) {
+      console.error(${escapedLabel} + ' dev bootstrap failed:', error);
+    });
+  };
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', install, { once: true });
     return;
@@ -1029,6 +1051,12 @@ export const RouterHead = component$(() => {
   const shouldUseConditionalHomeManifest = isHomeStaticRoute
   const shouldBootstrapHomeStaticDev =
     isHomeStaticRoute && shouldUseStaticShellSourceModules()
+  const staticRouteConfig = getStaticShellRouteConfig(location.url.pathname)
+  const shouldBootstrapGenericStaticDev = Boolean(
+    staticRouteConfig &&
+      staticRouteConfig.bootstrapMode !== 'home-static' &&
+      shouldUseStaticShellSourceModules()
+  )
   const shouldDeferManifest =
     isStaticShellPath(location.url.pathname) && !isHomeStaticRoute
   const currentOrigin = location.url?.origin ?? null
@@ -1054,6 +1082,16 @@ export const RouterHead = component$(() => {
       version: null
     }
   )
+  const genericStaticDevBootstrapHref =
+    shouldBootstrapGenericStaticDev && staticRouteConfig
+      ? resolveStaticAssetPublicHref(
+          STATIC_BOOTSTRAP_BUNDLE_PATHS[staticRouteConfig.bootstrapMode],
+          {
+            publicBase: STATIC_PUBLIC_BASE,
+            version: null
+          }
+        )
+      : null
   const pwaEnabled = appConfig.template.features.pwa
   const partytownScript = buildPartytownHeadScript({
     config: appConfig.partytown,
@@ -1126,6 +1164,15 @@ export const RouterHead = component$(() => {
           dangerouslySetInnerHTML={buildHomeStaticDevBootstrapScript(
             homeStaticDevBootstrapHref,
             homeStaticWidgetRuntimeHref
+          )}
+        />
+      ) : null}
+      {shouldBootstrapGenericStaticDev && genericStaticDevBootstrapHref ? (
+        <script
+          nonce={nonce || undefined}
+          dangerouslySetInnerHTML={buildStaticRouteDevBootstrapScript(
+            genericStaticDevBootstrapHref,
+            staticRouteConfig?.routeKind === ISLAND_STATIC_ROUTE_KIND ? 'Static island' : 'Static fragment'
           )}
         />
       ) : null}

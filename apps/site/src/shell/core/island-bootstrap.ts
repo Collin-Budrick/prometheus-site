@@ -356,6 +356,13 @@ const destroyController = async (controller: StaticIslandController | null) => {
   controller.cleanupFns.splice(0).forEach((cleanup) => cleanup())
 }
 
+export const disposeStaticIslandShell = async () => {
+  if (!activeController) return
+  const controller = activeController
+  activeController = null
+  await destroyController(controller)
+}
+
 const scheduleProtectedAuthUpgrade = (controller: StaticIslandController) => {
   void (async () => {
     try {
@@ -413,7 +420,7 @@ export const bootstrapStaticIslandShell = async () => {
 
   seedLanguageResources(shellSeed.lang, shellSeed.languageSeed ?? {})
   setDocumentLang(shellSeed.lang)
-  await destroyController(activeController)
+  await disposeStaticIslandShell()
 
   const routeData = readRouteData(shellSeed)
   const controller: StaticIslandController = {

@@ -7,6 +7,7 @@ import {
   loadStaticShellSnapshot,
   updateStaticShellUrlLang
 } from '../core/snapshot-client'
+import { shouldUseStaticShellSourceModules } from '../core/static-asset-url'
 
 const STATIC_LANG_STORAGE_KEY = 'prometheus-lang'
 const STATIC_LANG_COOKIE_KEY = 'prometheus-lang'
@@ -15,6 +16,8 @@ const STATIC_LANG_PREFERENCE_KEY = 'prometheus:pref:locale'
 type HomeLanguageRuntimeOptions = {
   bootstrapStaticHome: () => Promise<void>
   destroyActiveController: () => Promise<void>
+  preferLocalizedNavigation?: boolean
+  navigateToLanguage?: (nextLang: Lang) => void
 }
 
 type RestorePreferredStaticHomeLanguageOptions = HomeLanguageRuntimeOptions & {
@@ -49,11 +52,56 @@ const persistStaticLang = (value: Lang) => {
   setLangCookie(value)
 }
 
+const shouldUseLocalizedNavigation = (preferLocalizedNavigation?: boolean) =>
+  preferLocalizedNavigation ?? shouldUseStaticShellSourceModules()
+
+export const resolveStaticHomeLanguageUrl = (locationHref: string, nextLang: Lang) => {
+  const url = new URL(locationHref)
+  url.searchParams.set('lang', nextLang)
+  return url.toString()
+}
+
+const navigateToStaticHomeLanguage = (nextLang: Lang) => {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  const locationHref =
+    typeof window.location?.href === 'string'
+      ? window.location.href
+      : typeof window.location?.origin === 'string'
+        ? `${window.location.origin}/`
+        : '/'
+  const nextUrl = resolveStaticHomeLanguageUrl(locationHref, nextLang)
+
+  if (typeof window.location.replace === 'function') {
+    window.location.replace(nextUrl)
+    return
+  }
+
+  window.location.href = nextUrl
+}
+
 const applyStaticHomeLanguage = async (
   nextLang: Lang,
   current: HomeStaticBootstrapData,
-  { bootstrapStaticHome, destroyActiveController }: HomeLanguageRuntimeOptions
+  {
+    bootstrapStaticHome,
+    destroyActiveController,
+    preferLocalizedNavigation,
+    navigateToLanguage
+  }: HomeLanguageRuntimeOptions
 ) => {
+  if (shouldUseLocalizedNavigation(preferLocalizedNavigation)) {
+    persistStaticLang(nextLang)
+    if (navigateToLanguage) {
+      navigateToLanguage(nextLang)
+    } else {
+      navigateToStaticHomeLanguage(nextLang)
+    }
+    return
+  }
+
   const snapshot = await loadStaticShellSnapshot(current.snapshotKey, nextLang)
   const languageSeed = await loadStaticShellLanguageSeed(current.currentPath, nextLang)
 
