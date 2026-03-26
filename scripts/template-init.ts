@@ -1,26 +1,11 @@
 import { spawnSync } from 'node:child_process'
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { templateBranding, type TemplateInitConfig } from '../packages/template-config/src/index.ts'
+import { renderUnifiedDiff } from './template-diff-utils.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
-
-const SKIP_DIRS = new Set([
-  '.cache',
-  '.codex',
-  '.git',
-  'android',
-  'artifacts',
-  'build',
-  'coverage',
-  'dist',
-  'node_modules',
-  'server',
-  'storybook-static',
-  'target',
-  'test-results'
-])
 
 const TEXT_EXTENSIONS = new Set([
   '.css',
@@ -152,32 +137,37 @@ const shouldProcessFile = (absolutePath: string) => {
   return TEXT_EXTENSIONS.has(path.extname(absolutePath).toLowerCase())
 }
 
-const collectFiles = (directory: string, output: string[]) => {
-  for (const entry of readdirSync(directory, { withFileTypes: true })) {
-    const absolutePath = path.join(directory, entry.name)
-    if (entry.isDirectory()) {
-      if (SKIP_DIRS.has(entry.name)) continue
-      collectFiles(absolutePath, output)
-      continue
-    }
-    if (!entry.isFile() || !shouldProcessFile(absolutePath)) continue
-    output.push(absolutePath)
+const collectTrackedFiles = () => {
+  const result = spawnSync('git', ['ls-files'], {
+    cwd: root,
+    encoding: 'utf8',
+    shell: false
+  })
+  if (result.status !== 0) {
+    throw new Error(result.stderr?.trim() || 'Failed to enumerate tracked files for template init.')
   }
+  return result.stdout
+    .split(/\r?\n/)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((relativePath) => path.join(root, relativePath))
+    .filter((absolutePath) => shouldProcessFile(absolutePath))
 }
 
-const files: string[] = []
-collectFiles(root, files)
+const changedFiles: Array<{ relativePath: string; original: string; next: string }> = []
 
-const changedFiles: string[] = []
-
-for (const filePath of files) {
+for (const filePath of collectTrackedFiles()) {
   const original = readFileSync(filePath, 'utf8')
   let next = original
   for (const [from, to] of replacementEntries) {
     next = next.split(from).join(to)
   }
   if (next === original) continue
-  changedFiles.push(path.relative(root, filePath).split(path.sep).join('/'))
+  changedFiles.push({
+    relativePath: path.relative(root, filePath).split(path.sep).join('/'),
+    original,
+    next
+  })
   if (!config.dryRun) {
     writeFileSync(filePath, next, 'utf8')
   }
@@ -194,14 +184,21 @@ const summary = [
   `- SpaceTimeDB module: ${config.spacetimeModule}`,
   `- auth client id: ${config.authClientId}`,
   `- native bundle id: ${config.nativeBundleId}`,
-  `- changed files: ${changedFiles.length}`
+  `- changed files: ${changedFiles.length}`,
+  `- rewrite scope: tracked text files only`
 ]
 
 process.stdout.write(`${summary.join('\n')}\n`)
 
 if (config.dryRun) {
   if (changedFiles.length > 0) {
-    process.stdout.write(`${changedFiles.map((file) => `- ${file}`).join('\n')}\n`)
+    process.stdout.write(`${changedFiles.map((entry) => `- ${entry.relativePath}`).join('\n')}\n\n`)
+    process.stdout.write(
+      `${changedFiles
+        .map((entry) => renderUnifiedDiff(entry.relativePath, entry.original, entry.next))
+        .filter(Boolean)
+        .join('\n\n')}\n`
+    )
   }
   process.exit(0)
 }

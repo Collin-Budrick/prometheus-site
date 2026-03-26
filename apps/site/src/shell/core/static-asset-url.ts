@@ -24,14 +24,23 @@ type ResolveStaticAssetHrefOptions = {
   version?: string | null
 } & StaticAssetModeOptions
 
+type StaticShellImportMetaEnv = {
+  VITE_STATIC_SHELL_DEV_SOURCE?: string
+}
+
 const withTrailingSlash = (value: string) => (value.endsWith('/') ? value : `${value}/`)
 const normalizePublicBase = (value: string) =>
   value === './' ? './' : withTrailingSlash(value.startsWith('/') ? value : `/${value}`)
 
 const readScriptSrc = (script: ScriptLike) => script.src ?? script.getAttribute?.('src') ?? ''
 
+const readStaticShellDevSourceFlag = () =>
+  (typeof import.meta !== 'undefined'
+    ? (import.meta as ImportMeta & { env?: StaticShellImportMetaEnv }).env?.VITE_STATIC_SHELL_DEV_SOURCE
+    : undefined) === '1'
+
 const shouldUseStaticShellSourceModules = (preferSourceModules?: boolean) =>
-  preferSourceModules ?? import.meta.env.VITE_STATIC_SHELL_DEV_SOURCE === '1'
+  preferSourceModules ?? readStaticShellDevSourceFlag()
 
 const toStaticShellSourceModulePath = (assetPath: string) => {
   const normalizedAssetPath = assetPath.replace(/^\/+/, '')

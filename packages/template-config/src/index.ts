@@ -16,13 +16,26 @@ export const templateFeatureIds = [
 
 export type TemplateFeatureId = (typeof templateFeatureIds)[number]
 
-export const templatePresetIds = ['full', 'core'] as const
+export const templatePresetIds = ['full', 'core', 'marketing', 'saas', 'commerce', 'community'] as const
 
 export type TemplatePreset = (typeof templatePresetIds)[number]
 
 export const templateHomeModes = ['showcase', 'starter'] as const
 
 export type TemplateHomeMode = (typeof templateHomeModes)[number]
+
+export type TemplatePresetFamily = 'showcase' | 'starter' | 'vertical'
+
+export type TemplateRuntimeProfile = 'site-only' | 'web' | 'full-stack'
+
+export type TemplateQualityGate =
+  | 'build'
+  | 'typecheck'
+  | 'browser'
+  | 'storybook'
+  | 'a11y'
+  | 'lighthouse'
+  | 'desktop'
 
 export const templateNavLabelKeys = [
   'navHome',
@@ -66,6 +79,10 @@ export type TemplatePresetDescriptor = {
   description: string
   homeMode: TemplateHomeMode
   features: readonly TemplateFeatureId[]
+  family: TemplatePresetFamily
+  runtime: TemplateRuntimeProfile
+  audiences: readonly string[]
+  highlights: readonly string[]
 }
 
 export type TemplateBrandingConfig = {
@@ -143,6 +160,12 @@ export type FeatureBundleManifest = {
   apiRegistrations?: readonly string[]
   demoSections?: readonly string[]
   starterData?: readonly string[]
+  owners?: readonly string[]
+  requiredSecrets?: readonly string[]
+  docs?: readonly string[]
+  migrations?: readonly string[]
+  qualityGates?: readonly TemplateQualityGate[]
+  adapters?: readonly string[]
   visibility: TemplateBundleVisibility
   placement: TemplateBundlePlacement
   defaultEnabledIn: readonly TemplatePreset[]
@@ -155,6 +178,26 @@ export type ResolvedTemplateFeatures = {
   enabledFeatureIds: TemplateFeatureId[]
   composeProfiles: string[]
   featureBundles: FeatureBundleManifest[]
+}
+
+export type TemplateRouteOwnership = {
+  route: string
+  bundleId: TemplateFeatureId
+  visibility: TemplateBundleVisibility
+  placement: TemplateBundlePlacement
+  defaultEnabledIn: TemplatePreset[]
+}
+
+export type TemplateBundleDependencyEdge = {
+  from: TemplateFeatureId
+  to: TemplateFeatureId
+}
+
+export type TemplateEnvOwnership = {
+  envKey: string
+  bundleIds: TemplateFeatureId[]
+  requiredByDefaultIn: TemplatePreset[]
+  secret: boolean
 }
 
 export type TemplateEnv = Record<string, string | boolean | undefined>
@@ -514,8 +557,19 @@ export const templateBranding: TemplateBrandingConfig = {
 export const templateGeneratedArtifacts = [
   'apps/site/public/fragments/',
   'apps/site/src/fragment/fragment-css.generated.ts',
-  'infra/caddy/Caddyfile'
-] as const
+  'apps/site/public/manifest.webmanifest',
+  'infra/caddy/Caddyfile',
+  'docs/template-reference.md',
+  'docs/template-preset-guide.md',
+  'docs/template-bundle-cookbook.md',
+  'docs/template-site/index.html',
+  'docs/template-report.json',
+  'docs/template-route-map.json',
+  'docs/template-bundle-graph.json',
+  'docs/template-env-ownership.json',
+  ...templatePresetIds.map((preset) => `.env.${preset}.example`),
+  '.env.example'
+] satisfies readonly string[]
 
 export const templateBuildOutputs = [
   'apps/site/dist/',
@@ -546,6 +600,10 @@ export const templatePresetDescriptors: Record<TemplatePreset, TemplatePresetDes
     title: 'Full Showcase',
     description: 'The default branch preset with the complete reusable showcase surface enabled.',
     homeMode: 'showcase',
+    family: 'showcase',
+    runtime: 'full-stack',
+    audiences: ['Showcase branches', 'Capability demos'],
+    highlights: ['All built-in demos', 'Realtime stack', 'PWA and analytics'],
     features: [
       'auth',
       'store',
@@ -566,7 +624,55 @@ export const templatePresetDescriptors: Record<TemplatePreset, TemplatePresetDes
     title: 'Lean Starter',
     description: 'A minimal template preset that keeps auth, account, and a starter home composition.',
     homeMode: 'starter',
+    family: 'starter',
+    runtime: 'web',
+    audiences: ['Product starters', 'Smaller forks'],
+    highlights: ['Auth and account', 'Starter-safe home route', 'Reduced surface area'],
     features: ['auth', 'account', 'demo-home']
+  },
+  marketing: {
+    id: 'marketing',
+    title: 'Marketing Starter',
+    description: 'A site-first preset for branded marketing pages without authenticated product flows.',
+    homeMode: 'starter',
+    family: 'vertical',
+    runtime: 'site-only',
+    audiences: ['Marketing sites', 'Landing pages'],
+    highlights: ['Home route only', 'No auth dependency', 'PWA-ready shell'],
+    features: ['demo-home', 'pwa']
+  },
+  saas: {
+    id: 'saas',
+    title: 'SaaS Starter',
+    description: 'A product shell preset with auth, account, starter home content, and optional analytics.',
+    homeMode: 'starter',
+    family: 'vertical',
+    runtime: 'web',
+    audiences: ['B2B SaaS products', 'Dashboard-style apps'],
+    highlights: ['Auth and account', 'Starter home content', 'Analytics and PWA hooks'],
+    features: ['auth', 'account', 'demo-home', 'pwa', 'analytics']
+  },
+  commerce: {
+    id: 'commerce',
+    title: 'Commerce Starter',
+    description: 'A commerce-oriented preset with account, catalog, starter home content, and installability.',
+    homeMode: 'starter',
+    family: 'vertical',
+    runtime: 'web',
+    audiences: ['Catalog apps', 'Commerce pilots'],
+    highlights: ['Store route', 'Account surface', 'PWA-ready starter flow'],
+    features: ['auth', 'store', 'account', 'demo-home', 'pwa', 'analytics']
+  },
+  community: {
+    id: 'community',
+    title: 'Community Starter',
+    description: 'A communication-first preset with auth, messaging, starter home content, and realtime hooks.',
+    homeMode: 'starter',
+    family: 'vertical',
+    runtime: 'full-stack',
+    audiences: ['Member communities', 'Realtime collaboration products'],
+    highlights: ['Messaging route', 'Realtime bundle', 'Authenticated account surface'],
+    features: ['auth', 'messaging', 'account', 'demo-home', 'realtime', 'pwa']
   }
 }
 
@@ -642,9 +748,15 @@ export const featureBundleManifests: Record<TemplateFeatureId, FeatureBundleMani
     navItems: [{ href: '/login', labelKey: 'navLogin', feature: 'auth', order: 40 }],
     tests: ['apps/site/src/features/auth/**/*.test.ts', 'apps/site/src/routes/login/**/*.test.tsx'],
     apiRegistrations: ['auth routes', 'auth bootstrap verification'],
+    owners: ['template', 'auth'],
+    requiredSecrets: ['AUTH_BOOTSTRAP_PRIVATE_KEY'],
+    docs: ['docs/template-bundle-cookbook.md#auth'],
+    migrations: ['Auth authority and bootstrap keys must stay in sync across client and server.'],
+    qualityGates: ['build', 'typecheck', 'browser'],
+    adapters: ['SpacetimeAuth'],
     visibility: 'public',
     placement: 'starter-safe',
-    defaultEnabledIn: ['full', 'core']
+    defaultEnabledIn: ['full', 'core', 'saas', 'commerce', 'community']
   },
   store: {
     id: 'store',
@@ -661,9 +773,14 @@ export const featureBundleManifests: Record<TemplateFeatureId, FeatureBundleMani
     staticShellEntries: ['apps/site/src/shell/store/store-static-runtime.ts'],
     apiRegistrations: ['store mutation routes'],
     starterData: ['starter-store-items'],
+    owners: ['template', 'store'],
+    docs: ['docs/template-bundle-cookbook.md#store'],
+    migrations: ['Store bundle expects matching catalog and mutation support.'],
+    qualityGates: ['build', 'typecheck', 'browser'],
+    adapters: ['SpaceTimeDB', 'starter data'],
     visibility: 'public',
     placement: 'starter-safe',
-    defaultEnabledIn: ['full']
+    defaultEnabledIn: ['full', 'commerce']
   },
   lab: {
     id: 'lab',
@@ -673,6 +790,10 @@ export const featureBundleManifests: Record<TemplateFeatureId, FeatureBundleMani
     navItems: [{ href: '/lab', labelKey: 'navLab', feature: 'lab', order: 30 }],
     tests: ['apps/site/src/features/lab/**/*.test.ts', 'apps/site/src/routes/lab/**/*.test.tsx'],
     starterData: ['starter-lab-cards'],
+    owners: ['template'],
+    docs: ['docs/template-bundle-cookbook.md#lab'],
+    migrations: ['Lab is intentionally starter-safe and should remain optional.'],
+    qualityGates: ['build', 'typecheck'],
     visibility: 'public',
     placement: 'starter-safe',
     defaultEnabledIn: ['full']
@@ -696,9 +817,15 @@ export const featureBundleManifests: Record<TemplateFeatureId, FeatureBundleMani
     ],
     apiRegistrations: ['messaging HTTP routes', 'messaging websocket routes', 'push delivery'],
     starterData: ['starter-contact-invites'],
+    owners: ['template', 'messaging'],
+    requiredSecrets: [...PUSH_ENV_KEYS],
+    docs: ['docs/template-bundle-cookbook.md#messaging'],
+    migrations: ['Push provider env keys must match the enabled delivery adapters.'],
+    qualityGates: ['build', 'typecheck', 'browser'],
+    adapters: ['Push API', 'relay signaling', 'SpaceTimeDB'],
     visibility: 'authenticated',
     placement: 'showcase-only',
-    defaultEnabledIn: ['full']
+    defaultEnabledIn: ['full', 'community']
   },
   account: {
     id: 'account',
@@ -713,9 +840,13 @@ export const featureBundleManifests: Record<TemplateFeatureId, FeatureBundleMani
     ],
     tests: ['apps/site/src/routes/profile/**/*.test.tsx', 'apps/site/src/routes/settings/**/*.test.tsx'],
     staticShellEntries: ['apps/site/src/shell/core/controllers/profile-static-controller.ts'],
+    owners: ['template', 'account'],
+    docs: ['docs/template-bundle-cookbook.md#account'],
+    migrations: ['Account routes assume auth bundle remains enabled.'],
+    qualityGates: ['build', 'typecheck', 'browser'],
     visibility: 'authenticated',
     placement: 'starter-safe',
-    defaultEnabledIn: ['full', 'core']
+    defaultEnabledIn: ['full', 'core', 'saas', 'commerce', 'community']
   },
   'demo-home': {
     id: 'demo-home',
@@ -732,9 +863,13 @@ export const featureBundleManifests: Record<TemplateFeatureId, FeatureBundleMani
     ],
     demoSections: ['home-manifesto', 'home-planner'],
     starterData: ['starter-home-copy'],
+    owners: ['template'],
+    docs: ['docs/template-bundle-cookbook.md#demo-home'],
+    migrations: ['Starter-safe home copy should remain editable through template-config.'],
+    qualityGates: ['build', 'typecheck', 'browser', 'storybook'],
     visibility: 'public',
     placement: 'starter-safe',
-    defaultEnabledIn: ['full', 'core']
+    defaultEnabledIn: ['full', 'core', 'marketing', 'saas', 'commerce', 'community']
   },
   'demo-react': {
     id: 'demo-react',
@@ -744,6 +879,11 @@ export const featureBundleManifests: Record<TemplateFeatureId, FeatureBundleMani
     stories: ['apps/site/src/components/HomeDemoPreview.react.stories.tsx'],
     tests: ['apps/site/src/fragment/definitions/react.server.test.ts'],
     demoSections: ['home-react'],
+    owners: ['template'],
+    docs: ['docs/template-bundle-cookbook.md#demo-react'],
+    migrations: ['Keep React authoring server-only and out of the client ownership path.'],
+    qualityGates: ['build', 'typecheck', 'storybook'],
+    adapters: ['React authoring'],
     visibility: 'public',
     placement: 'showcase-only',
     defaultEnabledIn: ['full']
@@ -755,6 +895,11 @@ export const featureBundleManifests: Record<TemplateFeatureId, FeatureBundleMani
     dependsOn: ['demo-home'],
     stories: ['apps/site/src/components/HomeDemoPreview.preact.stories.tsx'],
     demoSections: ['home-preact'],
+    owners: ['template'],
+    docs: ['docs/template-bundle-cookbook.md#demo-preact'],
+    migrations: ['Islands should stay isolated from shell ownership.'],
+    qualityGates: ['build', 'typecheck', 'storybook'],
+    adapters: ['Preact island'],
     visibility: 'public',
     placement: 'showcase-only',
     defaultEnabledIn: ['full']
@@ -766,6 +911,11 @@ export const featureBundleManifests: Record<TemplateFeatureId, FeatureBundleMani
     dependsOn: ['demo-home'],
     stories: ['apps/site/src/components/HomeDemoPreview.wasm.stories.tsx'],
     demoSections: ['home-wasm'],
+    owners: ['template'],
+    docs: ['docs/template-bundle-cookbook.md#demo-wasm'],
+    migrations: ['WASM demo assets must remain deterministic across builds.'],
+    qualityGates: ['build', 'typecheck', 'storybook'],
+    adapters: ['WASM renderer'],
     visibility: 'public',
     placement: 'showcase-only',
     defaultEnabledIn: ['full']
@@ -780,9 +930,14 @@ export const featureBundleManifests: Record<TemplateFeatureId, FeatureBundleMani
     staticShellEntries: ['apps/site/src/shell/home/home-collab-entry.ts'],
     apiRegistrations: ['home collaboration routes', 'fragment update broadcasting'],
     demoSections: ['home-collab'],
+    owners: ['template', 'realtime'],
+    docs: ['docs/template-bundle-cookbook.md#realtime'],
+    migrations: ['Realtime profile changes require matching API, relay, and client env updates.'],
+    qualityGates: ['build', 'typecheck', 'browser'],
+    adapters: ['WebTransport', 'Garnet', 'relay signaling'],
     visibility: 'infrastructure',
     placement: 'showcase-only',
-    defaultEnabledIn: ['full']
+    defaultEnabledIn: ['full', 'community']
   },
   pwa: {
     id: 'pwa',
@@ -792,18 +947,27 @@ export const featureBundleManifests: Record<TemplateFeatureId, FeatureBundleMani
     envKeys: ['VITE_DISABLE_SW'],
     tests: ['apps/site/src/service-worker.ts', 'apps/site/src/routes/offline/**/*.test.tsx'],
     staticShellEntries: ['apps/site/src/service-worker.ts'],
+    owners: ['template'],
+    docs: ['docs/template-bundle-cookbook.md#pwa'],
+    migrations: ['Service worker and manifest changes should ship together.'],
+    qualityGates: ['build', 'browser', 'lighthouse'],
     visibility: 'public',
     placement: 'starter-safe',
-    defaultEnabledIn: ['full']
+    defaultEnabledIn: ['full', 'marketing', 'saas', 'commerce', 'community']
   },
   analytics: {
     id: 'analytics',
     title: 'Analytics',
     description: 'Analytics beacon, Highlight, and Partytown integrations.',
     envKeys: ANALYTICS_ENV_KEYS,
+    owners: ['template'],
+    docs: ['docs/template-bundle-cookbook.md#analytics'],
+    migrations: ['Analytics integrations stay opt-in and should never become hard requirements.'],
+    qualityGates: ['build', 'typecheck', 'lighthouse'],
+    adapters: ['Highlight', 'Partytown', 'custom beacon'],
     visibility: 'infrastructure',
     placement: 'showcase-only',
-    defaultEnabledIn: ['full']
+    defaultEnabledIn: ['full', 'saas', 'commerce']
   },
   native: {
     id: 'native',
@@ -811,6 +975,11 @@ export const featureBundleManifests: Record<TemplateFeatureId, FeatureBundleMani
     description: 'Native shell affordances and mobile-only entry points.',
     tests: ['apps/site/src/native/**/*.test.ts'],
     staticShellEntries: ['apps/site/src/native/affordances.ts', 'apps/site/src/native/haptics.ts'],
+    owners: ['template'],
+    docs: ['docs/template-bundle-cookbook.md#native'],
+    migrations: ['Native affordances must preserve browser fallbacks.'],
+    qualityGates: ['build', 'typecheck', 'desktop'],
+    adapters: ['Electrobun'],
     visibility: 'internal',
     placement: 'showcase-only',
     defaultEnabledIn: []
@@ -1000,3 +1169,57 @@ export const collectTemplateDemoSectionIds = (resolved: ResolvedTemplateSelectio
 
 export const collectTemplateStarterDataKeys = (resolved: ResolvedTemplateSelection) =>
   collectUniqueStrings(getEnabledFeatureBundles(resolved).map((bundle) => bundle.starterData))
+
+export const collectTemplateRoutes = (resolved: ResolvedTemplateSelection) =>
+  collectUniqueStrings(getEnabledFeatureBundles(resolved).map((bundle) => bundle.routes))
+
+export const collectTemplateRouteOwnership = (
+  resolved?: ResolvedTemplateSelection
+): TemplateRouteOwnership[] => {
+  const bundles = resolved ? getEnabledFeatureBundles(resolved) : featureBundles
+  return bundles
+    .flatMap((bundle) =>
+      (bundle.routes ?? []).map((route) => ({
+        route,
+        bundleId: bundle.id,
+        visibility: bundle.visibility,
+        placement: bundle.placement,
+        defaultEnabledIn: [...bundle.defaultEnabledIn]
+      }))
+    )
+    .sort((left, right) => left.route.localeCompare(right.route) || left.bundleId.localeCompare(right.bundleId))
+}
+
+export const collectTemplateBundleDependencyGraph = (): TemplateBundleDependencyEdge[] =>
+  featureBundles
+    .flatMap((bundle) => (bundle.dependsOn ?? []).map((dependency) => ({ from: bundle.id, to: dependency })))
+    .sort((left, right) => left.from.localeCompare(right.from) || left.to.localeCompare(right.to))
+
+const isLikelySecretKey = (envKey: string) =>
+  /PRIVATE|SECRET|TOKEN|PASSWORD|KEY|EMAIL/i.test(envKey) && !/^VITE_/.test(envKey)
+
+export const collectTemplateEnvOwnership = (): TemplateEnvOwnership[] => {
+  const envToBundles = new Map<string, Set<TemplateFeatureId>>()
+  const envToPresets = new Map<string, Set<TemplatePreset>>()
+
+  featureBundles.forEach((bundle) => {
+    ;(bundle.envKeys ?? []).forEach((envKey) => {
+      const bundleIds = envToBundles.get(envKey) ?? new Set<TemplateFeatureId>()
+      bundleIds.add(bundle.id)
+      envToBundles.set(envKey, bundleIds)
+
+      const presets = envToPresets.get(envKey) ?? new Set<TemplatePreset>()
+      bundle.defaultEnabledIn.forEach((preset) => presets.add(preset))
+      envToPresets.set(envKey, presets)
+    })
+  })
+
+  return Array.from(envToBundles.entries())
+    .map(([envKey, bundleIds]) => ({
+      envKey,
+      bundleIds: [...bundleIds].sort(),
+      requiredByDefaultIn: [...(envToPresets.get(envKey) ?? new Set<TemplatePreset>())].sort(),
+      secret: isLikelySecretKey(envKey)
+    }))
+    .sort((left, right) => left.envKey.localeCompare(right.envKey))
+}

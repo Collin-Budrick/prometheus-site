@@ -1,0 +1,1687 @@
+{
+  "branding": {
+    "projectName": "prometheus-site",
+    "packageScope": "@prometheus",
+    "composeProjectName": "prometheus",
+    "site": {
+      "name": "Prometheus",
+      "shortName": "Prometheus",
+      "product": "Binary Fragment Platform",
+      "tagline": "Binary-first rendering, fragment-native delivery.",
+      "metaDescription": "Binary-first rendering pipeline with fragment-addressable delivery, edge-ready caching, and zero-hydration UX.",
+      "themeColor": "#f97316",
+      "backgroundColor": "#f8f2e7",
+      "manifestDescription": "Binary fragment experience for Prometheus."
+    },
+    "domains": {
+      "web": "prometheus.dev",
+      "webProd": "prometheus.prod",
+      "db": "db.prometheus.dev",
+      "dbProd": "db.prometheus.prod"
+    },
+    "ids": {
+      "spacetimeModule": "prometheus-site-local",
+      "authClientId": "prometheus-site-dev",
+      "nativeBundleId": "com.prometheus.site",
+      "manifestId": "/?source=pwa",
+      "cachePrefix": "fragment-prime"
+    },
+    "notifications": {
+      "contactEmail": "notifications@prometheus.dev",
+      "onlineTitle": "Fragment Prime is back online",
+      "onlineBody": "Open Fragment Prime to reconnect.",
+      "syncBody": "Open Fragment Prime to sync."
+    }
+  },
+  "generatedAt": "managed-by-bun-run-template-sync",
+  "presets": [
+    {
+      "id": "full",
+      "title": "Full Showcase",
+      "description": "The default branch preset with the complete reusable showcase surface enabled.",
+      "family": "showcase",
+      "runtime": "full-stack",
+      "homeMode": "showcase",
+      "audiences": [
+        "Showcase branches",
+        "Capability demos"
+      ],
+      "highlights": [
+        "All built-in demos",
+        "Realtime stack",
+        "PWA and analytics"
+      ],
+      "features": [
+        "auth",
+        "store",
+        "lab",
+        "messaging",
+        "account",
+        "demo-home",
+        "demo-react",
+        "demo-preact",
+        "demo-wasm",
+        "realtime",
+        "pwa",
+        "analytics"
+      ],
+      "composeProfiles": [
+        "realtime"
+      ],
+      "routes": [
+        "/",
+        "/chat",
+        "/dashboard",
+        "/lab",
+        "/login",
+        "/offline",
+        "/profile",
+        "/settings",
+        "/store"
+      ],
+      "envKeys": [
+        "ANALYTICS_BEACON_URL",
+        "AUTH_BOOTSTRAP_PRIVATE_KEY",
+        "AUTH_BOOTSTRAP_PUBLIC_KEY",
+        "ENABLE_PARTYTOWN",
+        "ENABLE_WEBTRANSPORT_FRAGMENTS",
+        "P2P_CRDT_SIGNALING",
+        "P2P_ICE_SERVERS",
+        "P2P_NOSTR_RELAYS",
+        "P2P_PEERJS_SERVER",
+        "P2P_RELAY_BASES",
+        "P2P_WAKU_RELAYS",
+        "PARTYTOWN_FORWARD",
+        "PROMETHEUS_WEBTRANSPORT_PORT",
+        "PUSH_APNS_BUNDLE_ID",
+        "PUSH_APNS_KEY_ID",
+        "PUSH_APNS_PRIVATE_KEY",
+        "PUSH_APNS_TEAM_ID",
+        "PUSH_APNS_USE_SANDBOX",
+        "PUSH_FCM_CLIENT_EMAIL",
+        "PUSH_FCM_PRIVATE_KEY",
+        "PUSH_FCM_PROJECT_ID",
+        "PUSH_VAPID_PRIVATE_KEY",
+        "PUSH_VAPID_PUBLIC_KEY",
+        "PUSH_VAPID_SUBJECT",
+        "SPACETIMEAUTH_AUTHORITY",
+        "SPACETIMEAUTH_CLIENT_ID",
+        "SPACETIMEAUTH_JWKS_URI",
+        "SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI",
+        "VITE_ANALYTICS_BEACON_URL",
+        "VITE_AUTH_BOOTSTRAP_PUBLIC_KEY",
+        "VITE_DISABLE_SW",
+        "VITE_ENABLE_ANALYTICS",
+        "VITE_ENABLE_HIGHLIGHT",
+        "VITE_ENABLE_PARTYTOWN",
+        "VITE_HIGHLIGHT_CANVAS_SAMPLING",
+        "VITE_HIGHLIGHT_PRIVACY",
+        "VITE_HIGHLIGHT_PROJECT_ID",
+        "VITE_HIGHLIGHT_SAMPLE_RATE",
+        "VITE_HIGHLIGHT_SESSION_RECORDING",
+        "VITE_P2P_CRDT_SIGNALING",
+        "VITE_P2P_ICE_SERVERS",
+        "VITE_P2P_NOSTR_RELAYS",
+        "VITE_P2P_PEERJS_SERVER",
+        "VITE_P2P_RELAY_BASES",
+        "VITE_P2P_WAKU_RELAYS",
+        "VITE_PARTYTOWN_FORWARD",
+        "VITE_WEBTRANSPORT_BASE",
+        "WEBTRANSPORT_API_BASE",
+        "WEBTRANSPORT_ENABLE_DATAGRAMS",
+        "WEBTRANSPORT_LISTEN_ADDR",
+        "WEBTRANSPORT_MAX_DATAGRAM_SIZE"
+      ]
+    },
+    {
+      "id": "core",
+      "title": "Lean Starter",
+      "description": "A minimal template preset that keeps auth, account, and a starter home composition.",
+      "family": "starter",
+      "runtime": "web",
+      "homeMode": "starter",
+      "audiences": [
+        "Product starters",
+        "Smaller forks"
+      ],
+      "highlights": [
+        "Auth and account",
+        "Starter-safe home route",
+        "Reduced surface area"
+      ],
+      "features": [
+        "auth",
+        "account",
+        "demo-home"
+      ],
+      "composeProfiles": [],
+      "routes": [
+        "/",
+        "/dashboard",
+        "/login",
+        "/profile",
+        "/settings"
+      ],
+      "envKeys": [
+        "AUTH_BOOTSTRAP_PRIVATE_KEY",
+        "AUTH_BOOTSTRAP_PUBLIC_KEY",
+        "SPACETIMEAUTH_AUTHORITY",
+        "SPACETIMEAUTH_CLIENT_ID",
+        "SPACETIMEAUTH_JWKS_URI",
+        "SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI",
+        "VITE_AUTH_BOOTSTRAP_PUBLIC_KEY"
+      ]
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing Starter",
+      "description": "A site-first preset for branded marketing pages without authenticated product flows.",
+      "family": "vertical",
+      "runtime": "site-only",
+      "homeMode": "starter",
+      "audiences": [
+        "Marketing sites",
+        "Landing pages"
+      ],
+      "highlights": [
+        "Home route only",
+        "No auth dependency",
+        "PWA-ready shell"
+      ],
+      "features": [
+        "demo-home",
+        "pwa"
+      ],
+      "composeProfiles": [],
+      "routes": [
+        "/",
+        "/offline"
+      ],
+      "envKeys": [
+        "VITE_DISABLE_SW"
+      ]
+    },
+    {
+      "id": "saas",
+      "title": "SaaS Starter",
+      "description": "A product shell preset with auth, account, starter home content, and optional analytics.",
+      "family": "vertical",
+      "runtime": "web",
+      "homeMode": "starter",
+      "audiences": [
+        "B2B SaaS products",
+        "Dashboard-style apps"
+      ],
+      "highlights": [
+        "Auth and account",
+        "Starter home content",
+        "Analytics and PWA hooks"
+      ],
+      "features": [
+        "auth",
+        "account",
+        "demo-home",
+        "pwa",
+        "analytics"
+      ],
+      "composeProfiles": [],
+      "routes": [
+        "/",
+        "/dashboard",
+        "/login",
+        "/offline",
+        "/profile",
+        "/settings"
+      ],
+      "envKeys": [
+        "ANALYTICS_BEACON_URL",
+        "AUTH_BOOTSTRAP_PRIVATE_KEY",
+        "AUTH_BOOTSTRAP_PUBLIC_KEY",
+        "ENABLE_PARTYTOWN",
+        "PARTYTOWN_FORWARD",
+        "SPACETIMEAUTH_AUTHORITY",
+        "SPACETIMEAUTH_CLIENT_ID",
+        "SPACETIMEAUTH_JWKS_URI",
+        "SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI",
+        "VITE_ANALYTICS_BEACON_URL",
+        "VITE_AUTH_BOOTSTRAP_PUBLIC_KEY",
+        "VITE_DISABLE_SW",
+        "VITE_ENABLE_ANALYTICS",
+        "VITE_ENABLE_HIGHLIGHT",
+        "VITE_ENABLE_PARTYTOWN",
+        "VITE_HIGHLIGHT_CANVAS_SAMPLING",
+        "VITE_HIGHLIGHT_PRIVACY",
+        "VITE_HIGHLIGHT_PROJECT_ID",
+        "VITE_HIGHLIGHT_SAMPLE_RATE",
+        "VITE_HIGHLIGHT_SESSION_RECORDING",
+        "VITE_PARTYTOWN_FORWARD"
+      ]
+    },
+    {
+      "id": "commerce",
+      "title": "Commerce Starter",
+      "description": "A commerce-oriented preset with account, catalog, starter home content, and installability.",
+      "family": "vertical",
+      "runtime": "web",
+      "homeMode": "starter",
+      "audiences": [
+        "Catalog apps",
+        "Commerce pilots"
+      ],
+      "highlights": [
+        "Store route",
+        "Account surface",
+        "PWA-ready starter flow"
+      ],
+      "features": [
+        "auth",
+        "store",
+        "account",
+        "demo-home",
+        "pwa",
+        "analytics"
+      ],
+      "composeProfiles": [],
+      "routes": [
+        "/",
+        "/dashboard",
+        "/login",
+        "/offline",
+        "/profile",
+        "/settings",
+        "/store"
+      ],
+      "envKeys": [
+        "ANALYTICS_BEACON_URL",
+        "AUTH_BOOTSTRAP_PRIVATE_KEY",
+        "AUTH_BOOTSTRAP_PUBLIC_KEY",
+        "ENABLE_PARTYTOWN",
+        "PARTYTOWN_FORWARD",
+        "SPACETIMEAUTH_AUTHORITY",
+        "SPACETIMEAUTH_CLIENT_ID",
+        "SPACETIMEAUTH_JWKS_URI",
+        "SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI",
+        "VITE_ANALYTICS_BEACON_URL",
+        "VITE_AUTH_BOOTSTRAP_PUBLIC_KEY",
+        "VITE_DISABLE_SW",
+        "VITE_ENABLE_ANALYTICS",
+        "VITE_ENABLE_HIGHLIGHT",
+        "VITE_ENABLE_PARTYTOWN",
+        "VITE_HIGHLIGHT_CANVAS_SAMPLING",
+        "VITE_HIGHLIGHT_PRIVACY",
+        "VITE_HIGHLIGHT_PROJECT_ID",
+        "VITE_HIGHLIGHT_SAMPLE_RATE",
+        "VITE_HIGHLIGHT_SESSION_RECORDING",
+        "VITE_PARTYTOWN_FORWARD"
+      ]
+    },
+    {
+      "id": "community",
+      "title": "Community Starter",
+      "description": "A communication-first preset with auth, messaging, starter home content, and realtime hooks.",
+      "family": "vertical",
+      "runtime": "full-stack",
+      "homeMode": "starter",
+      "audiences": [
+        "Member communities",
+        "Realtime collaboration products"
+      ],
+      "highlights": [
+        "Messaging route",
+        "Realtime bundle",
+        "Authenticated account surface"
+      ],
+      "features": [
+        "auth",
+        "messaging",
+        "account",
+        "demo-home",
+        "realtime",
+        "pwa"
+      ],
+      "composeProfiles": [
+        "realtime"
+      ],
+      "routes": [
+        "/",
+        "/chat",
+        "/dashboard",
+        "/login",
+        "/offline",
+        "/profile",
+        "/settings"
+      ],
+      "envKeys": [
+        "AUTH_BOOTSTRAP_PRIVATE_KEY",
+        "AUTH_BOOTSTRAP_PUBLIC_KEY",
+        "ENABLE_WEBTRANSPORT_FRAGMENTS",
+        "P2P_CRDT_SIGNALING",
+        "P2P_ICE_SERVERS",
+        "P2P_NOSTR_RELAYS",
+        "P2P_PEERJS_SERVER",
+        "P2P_RELAY_BASES",
+        "P2P_WAKU_RELAYS",
+        "PROMETHEUS_WEBTRANSPORT_PORT",
+        "PUSH_APNS_BUNDLE_ID",
+        "PUSH_APNS_KEY_ID",
+        "PUSH_APNS_PRIVATE_KEY",
+        "PUSH_APNS_TEAM_ID",
+        "PUSH_APNS_USE_SANDBOX",
+        "PUSH_FCM_CLIENT_EMAIL",
+        "PUSH_FCM_PRIVATE_KEY",
+        "PUSH_FCM_PROJECT_ID",
+        "PUSH_VAPID_PRIVATE_KEY",
+        "PUSH_VAPID_PUBLIC_KEY",
+        "PUSH_VAPID_SUBJECT",
+        "SPACETIMEAUTH_AUTHORITY",
+        "SPACETIMEAUTH_CLIENT_ID",
+        "SPACETIMEAUTH_JWKS_URI",
+        "SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI",
+        "VITE_AUTH_BOOTSTRAP_PUBLIC_KEY",
+        "VITE_DISABLE_SW",
+        "VITE_P2P_CRDT_SIGNALING",
+        "VITE_P2P_ICE_SERVERS",
+        "VITE_P2P_NOSTR_RELAYS",
+        "VITE_P2P_PEERJS_SERVER",
+        "VITE_P2P_RELAY_BASES",
+        "VITE_P2P_WAKU_RELAYS",
+        "VITE_WEBTRANSPORT_BASE",
+        "WEBTRANSPORT_API_BASE",
+        "WEBTRANSPORT_ENABLE_DATAGRAMS",
+        "WEBTRANSPORT_LISTEN_ADDR",
+        "WEBTRANSPORT_MAX_DATAGRAM_SIZE"
+      ]
+    }
+  ],
+  "bundles": [
+    {
+      "id": "auth",
+      "title": "Auth",
+      "description": "Hosted auth flows, bootstrap tokens, and the login route.",
+      "visibility": "public",
+      "placement": "starter-safe",
+      "dependsOn": [],
+      "defaultEnabledIn": [
+        "full",
+        "core",
+        "saas",
+        "commerce",
+        "community"
+      ],
+      "routes": [
+        "/login"
+      ],
+      "envKeys": [
+        "SPACETIMEAUTH_AUTHORITY",
+        "SPACETIMEAUTH_CLIENT_ID",
+        "SPACETIMEAUTH_JWKS_URI",
+        "SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI",
+        "AUTH_BOOTSTRAP_PRIVATE_KEY",
+        "VITE_AUTH_BOOTSTRAP_PUBLIC_KEY",
+        "AUTH_BOOTSTRAP_PUBLIC_KEY"
+      ],
+      "owners": [
+        "template",
+        "auth"
+      ],
+      "requiredSecrets": [
+        "AUTH_BOOTSTRAP_PRIVATE_KEY"
+      ],
+      "docs": [
+        "docs/template-bundle-cookbook.md#auth"
+      ],
+      "migrations": [
+        "Auth authority and bootstrap keys must stay in sync across client and server."
+      ],
+      "qualityGates": [
+        "build",
+        "typecheck",
+        "browser"
+      ],
+      "adapters": [
+        "SpacetimeAuth"
+      ]
+    },
+    {
+      "id": "store",
+      "title": "Store",
+      "description": "Catalog, cart, and store mutation routes backed by starter data or live inventory.",
+      "visibility": "public",
+      "placement": "starter-safe",
+      "dependsOn": [
+        "auth"
+      ],
+      "defaultEnabledIn": [
+        "full",
+        "commerce"
+      ],
+      "routes": [
+        "/store"
+      ],
+      "envKeys": [],
+      "owners": [
+        "template",
+        "store"
+      ],
+      "requiredSecrets": [],
+      "docs": [
+        "docs/template-bundle-cookbook.md#store"
+      ],
+      "migrations": [
+        "Store bundle expects matching catalog and mutation support."
+      ],
+      "qualityGates": [
+        "build",
+        "typecheck",
+        "browser"
+      ],
+      "adapters": [
+        "SpaceTimeDB",
+        "starter data"
+      ]
+    },
+    {
+      "id": "lab",
+      "title": "Lab",
+      "description": "Reusable experimentation surface for prototyping new fragments and UI ideas.",
+      "visibility": "public",
+      "placement": "starter-safe",
+      "dependsOn": [],
+      "defaultEnabledIn": [
+        "full"
+      ],
+      "routes": [
+        "/lab"
+      ],
+      "envKeys": [],
+      "owners": [
+        "template"
+      ],
+      "requiredSecrets": [],
+      "docs": [
+        "docs/template-bundle-cookbook.md#lab"
+      ],
+      "migrations": [
+        "Lab is intentionally starter-safe and should remain optional."
+      ],
+      "qualityGates": [
+        "build",
+        "typecheck"
+      ],
+      "adapters": []
+    },
+    {
+      "id": "messaging",
+      "title": "Messaging",
+      "description": "Protected chat routes, P2P mailbox flows, and push notifications.",
+      "visibility": "authenticated",
+      "placement": "showcase-only",
+      "dependsOn": [
+        "auth"
+      ],
+      "defaultEnabledIn": [
+        "full",
+        "community"
+      ],
+      "routes": [
+        "/chat"
+      ],
+      "envKeys": [
+        "PUSH_VAPID_PUBLIC_KEY",
+        "PUSH_VAPID_PRIVATE_KEY",
+        "PUSH_VAPID_SUBJECT",
+        "PUSH_FCM_PROJECT_ID",
+        "PUSH_FCM_CLIENT_EMAIL",
+        "PUSH_FCM_PRIVATE_KEY",
+        "PUSH_APNS_KEY_ID",
+        "PUSH_APNS_TEAM_ID",
+        "PUSH_APNS_BUNDLE_ID",
+        "PUSH_APNS_PRIVATE_KEY",
+        "PUSH_APNS_USE_SANDBOX"
+      ],
+      "owners": [
+        "template",
+        "messaging"
+      ],
+      "requiredSecrets": [
+        "PUSH_VAPID_PUBLIC_KEY",
+        "PUSH_VAPID_PRIVATE_KEY",
+        "PUSH_VAPID_SUBJECT",
+        "PUSH_FCM_PROJECT_ID",
+        "PUSH_FCM_CLIENT_EMAIL",
+        "PUSH_FCM_PRIVATE_KEY",
+        "PUSH_APNS_KEY_ID",
+        "PUSH_APNS_TEAM_ID",
+        "PUSH_APNS_BUNDLE_ID",
+        "PUSH_APNS_PRIVATE_KEY",
+        "PUSH_APNS_USE_SANDBOX"
+      ],
+      "docs": [
+        "docs/template-bundle-cookbook.md#messaging"
+      ],
+      "migrations": [
+        "Push provider env keys must match the enabled delivery adapters."
+      ],
+      "qualityGates": [
+        "build",
+        "typecheck",
+        "browser"
+      ],
+      "adapters": [
+        "Push API",
+        "relay signaling",
+        "SpaceTimeDB"
+      ]
+    },
+    {
+      "id": "account",
+      "title": "Account",
+      "description": "Profile, settings, and dashboard routes for authenticated users.",
+      "visibility": "authenticated",
+      "placement": "starter-safe",
+      "dependsOn": [
+        "auth"
+      ],
+      "defaultEnabledIn": [
+        "full",
+        "core",
+        "saas",
+        "commerce",
+        "community"
+      ],
+      "routes": [
+        "/profile",
+        "/settings",
+        "/dashboard"
+      ],
+      "envKeys": [],
+      "owners": [
+        "template",
+        "account"
+      ],
+      "requiredSecrets": [],
+      "docs": [
+        "docs/template-bundle-cookbook.md#account"
+      ],
+      "migrations": [
+        "Account routes assume auth bundle remains enabled."
+      ],
+      "qualityGates": [
+        "build",
+        "typecheck",
+        "browser"
+      ],
+      "adapters": []
+    },
+    {
+      "id": "demo-home",
+      "title": "Home Demos",
+      "description": "Shared home route composition and starter-safe fragment demos.",
+      "visibility": "public",
+      "placement": "starter-safe",
+      "dependsOn": [],
+      "defaultEnabledIn": [
+        "full",
+        "core",
+        "marketing",
+        "saas",
+        "commerce",
+        "community"
+      ],
+      "routes": [
+        "/"
+      ],
+      "envKeys": [],
+      "owners": [
+        "template"
+      ],
+      "requiredSecrets": [],
+      "docs": [
+        "docs/template-bundle-cookbook.md#demo-home"
+      ],
+      "migrations": [
+        "Starter-safe home copy should remain editable through template-config."
+      ],
+      "qualityGates": [
+        "build",
+        "typecheck",
+        "browser",
+        "storybook"
+      ],
+      "adapters": []
+    },
+    {
+      "id": "demo-react",
+      "title": "React Demo",
+      "description": "Server-only React authoring demo compiled into binary fragments.",
+      "visibility": "public",
+      "placement": "showcase-only",
+      "dependsOn": [
+        "demo-home"
+      ],
+      "defaultEnabledIn": [
+        "full"
+      ],
+      "routes": [],
+      "envKeys": [],
+      "owners": [
+        "template"
+      ],
+      "requiredSecrets": [],
+      "docs": [
+        "docs/template-bundle-cookbook.md#demo-react"
+      ],
+      "migrations": [
+        "Keep React authoring server-only and out of the client ownership path."
+      ],
+      "qualityGates": [
+        "build",
+        "typecheck",
+        "storybook"
+      ],
+      "adapters": [
+        "React authoring"
+      ]
+    },
+    {
+      "id": "demo-preact",
+      "title": "Preact Demo",
+      "description": "Reusable client island demo for progressive enhancement.",
+      "visibility": "public",
+      "placement": "showcase-only",
+      "dependsOn": [
+        "demo-home"
+      ],
+      "defaultEnabledIn": [
+        "full"
+      ],
+      "routes": [],
+      "envKeys": [],
+      "owners": [
+        "template"
+      ],
+      "requiredSecrets": [],
+      "docs": [
+        "docs/template-bundle-cookbook.md#demo-preact"
+      ],
+      "migrations": [
+        "Islands should stay isolated from shell ownership."
+      ],
+      "qualityGates": [
+        "build",
+        "typecheck",
+        "storybook"
+      ],
+      "adapters": [
+        "Preact island"
+      ]
+    },
+    {
+      "id": "demo-wasm",
+      "title": "WASM Demo",
+      "description": "WebAssembly-backed fragment rendering demo content.",
+      "visibility": "public",
+      "placement": "showcase-only",
+      "dependsOn": [
+        "demo-home"
+      ],
+      "defaultEnabledIn": [
+        "full"
+      ],
+      "routes": [],
+      "envKeys": [],
+      "owners": [
+        "template"
+      ],
+      "requiredSecrets": [],
+      "docs": [
+        "docs/template-bundle-cookbook.md#demo-wasm"
+      ],
+      "migrations": [
+        "WASM demo assets must remain deterministic across builds."
+      ],
+      "qualityGates": [
+        "build",
+        "typecheck",
+        "storybook"
+      ],
+      "adapters": [
+        "WASM renderer"
+      ]
+    },
+    {
+      "id": "realtime",
+      "title": "Realtime",
+      "description": "Realtime transport, collaboration, WebTransport, and signaling services.",
+      "visibility": "infrastructure",
+      "placement": "showcase-only",
+      "dependsOn": [],
+      "defaultEnabledIn": [
+        "full",
+        "community"
+      ],
+      "routes": [],
+      "envKeys": [
+        "ENABLE_WEBTRANSPORT_FRAGMENTS",
+        "WEBTRANSPORT_API_BASE",
+        "WEBTRANSPORT_LISTEN_ADDR",
+        "WEBTRANSPORT_ENABLE_DATAGRAMS",
+        "WEBTRANSPORT_MAX_DATAGRAM_SIZE",
+        "PROMETHEUS_WEBTRANSPORT_PORT",
+        "VITE_WEBTRANSPORT_BASE",
+        "VITE_P2P_RELAY_BASES",
+        "P2P_RELAY_BASES",
+        "VITE_P2P_NOSTR_RELAYS",
+        "P2P_NOSTR_RELAYS",
+        "VITE_P2P_WAKU_RELAYS",
+        "P2P_WAKU_RELAYS",
+        "VITE_P2P_CRDT_SIGNALING",
+        "P2P_CRDT_SIGNALING",
+        "VITE_P2P_PEERJS_SERVER",
+        "P2P_PEERJS_SERVER",
+        "VITE_P2P_ICE_SERVERS",
+        "P2P_ICE_SERVERS"
+      ],
+      "owners": [
+        "template",
+        "realtime"
+      ],
+      "requiredSecrets": [],
+      "docs": [
+        "docs/template-bundle-cookbook.md#realtime"
+      ],
+      "migrations": [
+        "Realtime profile changes require matching API, relay, and client env updates."
+      ],
+      "qualityGates": [
+        "build",
+        "typecheck",
+        "browser"
+      ],
+      "adapters": [
+        "WebTransport",
+        "Garnet",
+        "relay signaling"
+      ]
+    },
+    {
+      "id": "pwa",
+      "title": "PWA",
+      "description": "Offline route, manifest, and service worker integration.",
+      "visibility": "public",
+      "placement": "starter-safe",
+      "dependsOn": [],
+      "defaultEnabledIn": [
+        "full",
+        "marketing",
+        "saas",
+        "commerce",
+        "community"
+      ],
+      "routes": [
+        "/offline"
+      ],
+      "envKeys": [
+        "VITE_DISABLE_SW"
+      ],
+      "owners": [
+        "template"
+      ],
+      "requiredSecrets": [],
+      "docs": [
+        "docs/template-bundle-cookbook.md#pwa"
+      ],
+      "migrations": [
+        "Service worker and manifest changes should ship together."
+      ],
+      "qualityGates": [
+        "build",
+        "browser",
+        "lighthouse"
+      ],
+      "adapters": []
+    },
+    {
+      "id": "analytics",
+      "title": "Analytics",
+      "description": "Analytics beacon, Highlight, and Partytown integrations.",
+      "visibility": "infrastructure",
+      "placement": "showcase-only",
+      "dependsOn": [],
+      "defaultEnabledIn": [
+        "full",
+        "saas",
+        "commerce"
+      ],
+      "routes": [],
+      "envKeys": [
+        "VITE_ENABLE_ANALYTICS",
+        "ANALYTICS_BEACON_URL",
+        "VITE_ANALYTICS_BEACON_URL",
+        "VITE_ENABLE_HIGHLIGHT",
+        "VITE_HIGHLIGHT_PROJECT_ID",
+        "VITE_HIGHLIGHT_PRIVACY",
+        "VITE_HIGHLIGHT_SESSION_RECORDING",
+        "VITE_HIGHLIGHT_CANVAS_SAMPLING",
+        "VITE_HIGHLIGHT_SAMPLE_RATE",
+        "ENABLE_PARTYTOWN",
+        "VITE_ENABLE_PARTYTOWN",
+        "PARTYTOWN_FORWARD",
+        "VITE_PARTYTOWN_FORWARD"
+      ],
+      "owners": [
+        "template"
+      ],
+      "requiredSecrets": [],
+      "docs": [
+        "docs/template-bundle-cookbook.md#analytics"
+      ],
+      "migrations": [
+        "Analytics integrations stay opt-in and should never become hard requirements."
+      ],
+      "qualityGates": [
+        "build",
+        "typecheck",
+        "lighthouse"
+      ],
+      "adapters": [
+        "Highlight",
+        "Partytown",
+        "custom beacon"
+      ]
+    },
+    {
+      "id": "native",
+      "title": "Native",
+      "description": "Native shell affordances and mobile-only entry points.",
+      "visibility": "internal",
+      "placement": "showcase-only",
+      "dependsOn": [],
+      "defaultEnabledIn": [],
+      "routes": [],
+      "envKeys": [],
+      "owners": [
+        "template"
+      ],
+      "requiredSecrets": [],
+      "docs": [
+        "docs/template-bundle-cookbook.md#native"
+      ],
+      "migrations": [
+        "Native affordances must preserve browser fallbacks."
+      ],
+      "qualityGates": [
+        "build",
+        "typecheck",
+        "desktop"
+      ],
+      "adapters": [
+        "Electrobun"
+      ]
+    }
+  ],
+  "routes": [
+    {
+      "route": "/",
+      "bundleId": "demo-home",
+      "visibility": "public",
+      "placement": "starter-safe",
+      "defaultEnabledIn": [
+        "full",
+        "core",
+        "marketing",
+        "saas",
+        "commerce",
+        "community"
+      ]
+    },
+    {
+      "route": "/chat",
+      "bundleId": "messaging",
+      "visibility": "authenticated",
+      "placement": "showcase-only",
+      "defaultEnabledIn": [
+        "full",
+        "community"
+      ]
+    },
+    {
+      "route": "/dashboard",
+      "bundleId": "account",
+      "visibility": "authenticated",
+      "placement": "starter-safe",
+      "defaultEnabledIn": [
+        "full",
+        "core",
+        "saas",
+        "commerce",
+        "community"
+      ]
+    },
+    {
+      "route": "/lab",
+      "bundleId": "lab",
+      "visibility": "public",
+      "placement": "starter-safe",
+      "defaultEnabledIn": [
+        "full"
+      ]
+    },
+    {
+      "route": "/login",
+      "bundleId": "auth",
+      "visibility": "public",
+      "placement": "starter-safe",
+      "defaultEnabledIn": [
+        "full",
+        "core",
+        "saas",
+        "commerce",
+        "community"
+      ]
+    },
+    {
+      "route": "/offline",
+      "bundleId": "pwa",
+      "visibility": "public",
+      "placement": "starter-safe",
+      "defaultEnabledIn": [
+        "full",
+        "marketing",
+        "saas",
+        "commerce",
+        "community"
+      ]
+    },
+    {
+      "route": "/profile",
+      "bundleId": "account",
+      "visibility": "authenticated",
+      "placement": "starter-safe",
+      "defaultEnabledIn": [
+        "full",
+        "core",
+        "saas",
+        "commerce",
+        "community"
+      ]
+    },
+    {
+      "route": "/settings",
+      "bundleId": "account",
+      "visibility": "authenticated",
+      "placement": "starter-safe",
+      "defaultEnabledIn": [
+        "full",
+        "core",
+        "saas",
+        "commerce",
+        "community"
+      ]
+    },
+    {
+      "route": "/store",
+      "bundleId": "store",
+      "visibility": "public",
+      "placement": "starter-safe",
+      "defaultEnabledIn": [
+        "full",
+        "commerce"
+      ]
+    }
+  ],
+  "bundleGraph": [
+    {
+      "from": "account",
+      "to": "auth"
+    },
+    {
+      "from": "demo-preact",
+      "to": "demo-home"
+    },
+    {
+      "from": "demo-react",
+      "to": "demo-home"
+    },
+    {
+      "from": "demo-wasm",
+      "to": "demo-home"
+    },
+    {
+      "from": "messaging",
+      "to": "auth"
+    },
+    {
+      "from": "store",
+      "to": "auth"
+    }
+  ],
+  "envOwnership": [
+    {
+      "envKey": "ANALYTICS_BEACON_URL",
+      "bundleIds": [
+        "analytics"
+      ],
+      "requiredByDefaultIn": [
+        "commerce",
+        "full",
+        "saas"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "AUTH_BOOTSTRAP_PRIVATE_KEY",
+      "bundleIds": [
+        "auth"
+      ],
+      "requiredByDefaultIn": [
+        "commerce",
+        "community",
+        "core",
+        "full",
+        "saas"
+      ],
+      "secret": true
+    },
+    {
+      "envKey": "AUTH_BOOTSTRAP_PUBLIC_KEY",
+      "bundleIds": [
+        "auth"
+      ],
+      "requiredByDefaultIn": [
+        "commerce",
+        "community",
+        "core",
+        "full",
+        "saas"
+      ],
+      "secret": true
+    },
+    {
+      "envKey": "ENABLE_PARTYTOWN",
+      "bundleIds": [
+        "analytics"
+      ],
+      "requiredByDefaultIn": [
+        "commerce",
+        "full",
+        "saas"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "ENABLE_WEBTRANSPORT_FRAGMENTS",
+      "bundleIds": [
+        "realtime"
+      ],
+      "requiredByDefaultIn": [
+        "community",
+        "full"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "P2P_CRDT_SIGNALING",
+      "bundleIds": [
+        "realtime"
+      ],
+      "requiredByDefaultIn": [
+        "community",
+        "full"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "P2P_ICE_SERVERS",
+      "bundleIds": [
+        "realtime"
+      ],
+      "requiredByDefaultIn": [
+        "community",
+        "full"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "P2P_NOSTR_RELAYS",
+      "bundleIds": [
+        "realtime"
+      ],
+      "requiredByDefaultIn": [
+        "community",
+        "full"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "P2P_PEERJS_SERVER",
+      "bundleIds": [
+        "realtime"
+      ],
+      "requiredByDefaultIn": [
+        "community",
+        "full"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "P2P_RELAY_BASES",
+      "bundleIds": [
+        "realtime"
+      ],
+      "requiredByDefaultIn": [
+        "community",
+        "full"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "P2P_WAKU_RELAYS",
+      "bundleIds": [
+        "realtime"
+      ],
+      "requiredByDefaultIn": [
+        "community",
+        "full"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "PARTYTOWN_FORWARD",
+      "bundleIds": [
+        "analytics"
+      ],
+      "requiredByDefaultIn": [
+        "commerce",
+        "full",
+        "saas"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "PROMETHEUS_WEBTRANSPORT_PORT",
+      "bundleIds": [
+        "realtime"
+      ],
+      "requiredByDefaultIn": [
+        "community",
+        "full"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "PUSH_APNS_BUNDLE_ID",
+      "bundleIds": [
+        "messaging"
+      ],
+      "requiredByDefaultIn": [
+        "community",
+        "full"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "PUSH_APNS_KEY_ID",
+      "bundleIds": [
+        "messaging"
+      ],
+      "requiredByDefaultIn": [
+        "community",
+        "full"
+      ],
+      "secret": true
+    },
+    {
+      "envKey": "PUSH_APNS_PRIVATE_KEY",
+      "bundleIds": [
+        "messaging"
+      ],
+      "requiredByDefaultIn": [
+        "community",
+        "full"
+      ],
+      "secret": true
+    },
+    {
+      "envKey": "PUSH_APNS_TEAM_ID",
+      "bundleIds": [
+        "messaging"
+      ],
+      "requiredByDefaultIn": [
+        "community",
+        "full"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "PUSH_APNS_USE_SANDBOX",
+      "bundleIds": [
+        "messaging"
+      ],
+      "requiredByDefaultIn": [
+        "community",
+        "full"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "PUSH_FCM_CLIENT_EMAIL",
+      "bundleIds": [
+        "messaging"
+      ],
+      "requiredByDefaultIn": [
+        "community",
+        "full"
+      ],
+      "secret": true
+    },
+    {
+      "envKey": "PUSH_FCM_PRIVATE_KEY",
+      "bundleIds": [
+        "messaging"
+      ],
+      "requiredByDefaultIn": [
+        "community",
+        "full"
+      ],
+      "secret": true
+    },
+    {
+      "envKey": "PUSH_FCM_PROJECT_ID",
+      "bundleIds": [
+        "messaging"
+      ],
+      "requiredByDefaultIn": [
+        "community",
+        "full"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "PUSH_VAPID_PRIVATE_KEY",
+      "bundleIds": [
+        "messaging"
+      ],
+      "requiredByDefaultIn": [
+        "community",
+        "full"
+      ],
+      "secret": true
+    },
+    {
+      "envKey": "PUSH_VAPID_PUBLIC_KEY",
+      "bundleIds": [
+        "messaging"
+      ],
+      "requiredByDefaultIn": [
+        "community",
+        "full"
+      ],
+      "secret": true
+    },
+    {
+      "envKey": "PUSH_VAPID_SUBJECT",
+      "bundleIds": [
+        "messaging"
+      ],
+      "requiredByDefaultIn": [
+        "community",
+        "full"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "SPACETIMEAUTH_AUTHORITY",
+      "bundleIds": [
+        "auth"
+      ],
+      "requiredByDefaultIn": [
+        "commerce",
+        "community",
+        "core",
+        "full",
+        "saas"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "SPACETIMEAUTH_CLIENT_ID",
+      "bundleIds": [
+        "auth"
+      ],
+      "requiredByDefaultIn": [
+        "commerce",
+        "community",
+        "core",
+        "full",
+        "saas"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "SPACETIMEAUTH_JWKS_URI",
+      "bundleIds": [
+        "auth"
+      ],
+      "requiredByDefaultIn": [
+        "commerce",
+        "community",
+        "core",
+        "full",
+        "saas"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI",
+      "bundleIds": [
+        "auth"
+      ],
+      "requiredByDefaultIn": [
+        "commerce",
+        "community",
+        "core",
+        "full",
+        "saas"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "VITE_ANALYTICS_BEACON_URL",
+      "bundleIds": [
+        "analytics"
+      ],
+      "requiredByDefaultIn": [
+        "commerce",
+        "full",
+        "saas"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "VITE_AUTH_BOOTSTRAP_PUBLIC_KEY",
+      "bundleIds": [
+        "auth"
+      ],
+      "requiredByDefaultIn": [
+        "commerce",
+        "community",
+        "core",
+        "full",
+        "saas"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "VITE_DISABLE_SW",
+      "bundleIds": [
+        "pwa"
+      ],
+      "requiredByDefaultIn": [
+        "commerce",
+        "community",
+        "full",
+        "marketing",
+        "saas"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "VITE_ENABLE_ANALYTICS",
+      "bundleIds": [
+        "analytics"
+      ],
+      "requiredByDefaultIn": [
+        "commerce",
+        "full",
+        "saas"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "VITE_ENABLE_HIGHLIGHT",
+      "bundleIds": [
+        "analytics"
+      ],
+      "requiredByDefaultIn": [
+        "commerce",
+        "full",
+        "saas"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "VITE_ENABLE_PARTYTOWN",
+      "bundleIds": [
+        "analytics"
+      ],
+      "requiredByDefaultIn": [
+        "commerce",
+        "full",
+        "saas"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "VITE_HIGHLIGHT_CANVAS_SAMPLING",
+      "bundleIds": [
+        "analytics"
+      ],
+      "requiredByDefaultIn": [
+        "commerce",
+        "full",
+        "saas"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "VITE_HIGHLIGHT_PRIVACY",
+      "bundleIds": [
+        "analytics"
+      ],
+      "requiredByDefaultIn": [
+        "commerce",
+        "full",
+        "saas"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "VITE_HIGHLIGHT_PROJECT_ID",
+      "bundleIds": [
+        "analytics"
+      ],
+      "requiredByDefaultIn": [
+        "commerce",
+        "full",
+        "saas"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "VITE_HIGHLIGHT_SAMPLE_RATE",
+      "bundleIds": [
+        "analytics"
+      ],
+      "requiredByDefaultIn": [
+        "commerce",
+        "full",
+        "saas"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "VITE_HIGHLIGHT_SESSION_RECORDING",
+      "bundleIds": [
+        "analytics"
+      ],
+      "requiredByDefaultIn": [
+        "commerce",
+        "full",
+        "saas"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "VITE_P2P_CRDT_SIGNALING",
+      "bundleIds": [
+        "realtime"
+      ],
+      "requiredByDefaultIn": [
+        "community",
+        "full"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "VITE_P2P_ICE_SERVERS",
+      "bundleIds": [
+        "realtime"
+      ],
+      "requiredByDefaultIn": [
+        "community",
+        "full"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "VITE_P2P_NOSTR_RELAYS",
+      "bundleIds": [
+        "realtime"
+      ],
+      "requiredByDefaultIn": [
+        "community",
+        "full"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "VITE_P2P_PEERJS_SERVER",
+      "bundleIds": [
+        "realtime"
+      ],
+      "requiredByDefaultIn": [
+        "community",
+        "full"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "VITE_P2P_RELAY_BASES",
+      "bundleIds": [
+        "realtime"
+      ],
+      "requiredByDefaultIn": [
+        "community",
+        "full"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "VITE_P2P_WAKU_RELAYS",
+      "bundleIds": [
+        "realtime"
+      ],
+      "requiredByDefaultIn": [
+        "community",
+        "full"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "VITE_PARTYTOWN_FORWARD",
+      "bundleIds": [
+        "analytics"
+      ],
+      "requiredByDefaultIn": [
+        "commerce",
+        "full",
+        "saas"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "VITE_WEBTRANSPORT_BASE",
+      "bundleIds": [
+        "realtime"
+      ],
+      "requiredByDefaultIn": [
+        "community",
+        "full"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "WEBTRANSPORT_API_BASE",
+      "bundleIds": [
+        "realtime"
+      ],
+      "requiredByDefaultIn": [
+        "community",
+        "full"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "WEBTRANSPORT_ENABLE_DATAGRAMS",
+      "bundleIds": [
+        "realtime"
+      ],
+      "requiredByDefaultIn": [
+        "community",
+        "full"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "WEBTRANSPORT_LISTEN_ADDR",
+      "bundleIds": [
+        "realtime"
+      ],
+      "requiredByDefaultIn": [
+        "community",
+        "full"
+      ],
+      "secret": false
+    },
+    {
+      "envKey": "WEBTRANSPORT_MAX_DATAGRAM_SIZE",
+      "bundleIds": [
+        "realtime"
+      ],
+      "requiredByDefaultIn": [
+        "community",
+        "full"
+      ],
+      "secret": false
+    }
+  ],
+  "generatedArtifacts": [
+    "apps/site/public/fragments/",
+    "apps/site/src/fragment/fragment-css.generated.ts",
+    "apps/site/public/manifest.webmanifest",
+    "infra/caddy/Caddyfile",
+    "docs/template-reference.md",
+    "docs/template-preset-guide.md",
+    "docs/template-bundle-cookbook.md",
+    "docs/template-site/index.html",
+    "docs/template-report.json",
+    "docs/template-route-map.json",
+    "docs/template-bundle-graph.json",
+    "docs/template-env-ownership.json",
+    ".env.full.example",
+    ".env.core.example",
+    ".env.marketing.example",
+    ".env.saas.example",
+    ".env.commerce.example",
+    ".env.community.example",
+    ".env.example"
+  ],
+  "buildOutputs": [
+    "apps/site/dist/",
+    "apps/site/server/",
+    "apps/site/storybook-static/",
+    "apps/site/android/",
+    "extras/spacetimedb-module/target/"
+  ]
+}

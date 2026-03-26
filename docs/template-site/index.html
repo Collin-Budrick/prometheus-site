@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Prometheus Template Docs</title>
+    <style>
+      :root { color-scheme: light; --bg:#f8f2e7; --ink:#1f2937; --muted:#6b7280; --card:#fffdf8; --line:#e8dcc8; --accent:#f97316; }
+      body { margin:0; font-family: Georgia, 'Times New Roman', serif; background:linear-gradient(180deg,#fff8ef 0%,var(--bg) 100%); color:var(--ink); }
+      main { max-width:1100px; margin:0 auto; padding:48px 24px 80px; }
+      h1,h2,h3 { margin:0 0 12px; line-height:1.1; }
+      p,li,dd,td,th { font-size:15px; line-height:1.6; }
+      .hero { display:grid; gap:16px; margin-bottom:32px; }
+      .grid { display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); margin:24px 0 40px; }
+      .card { background:var(--card); border:1px solid var(--line); border-radius:18px; padding:18px; box-shadow:0 18px 40px rgba(31,41,55,.06); }
+      .card dl { display:grid; gap:8px; margin:16px 0 0; }
+      .card dt { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; }
+      .card dd { margin:0; }
+      .badge { display:inline-block; padding:6px 10px; border-radius:999px; background:rgba(249,115,22,.12); color:var(--accent); font-size:12px; text-transform:uppercase; letter-spacing:.08em; }
+      table { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line); border-radius:18px; overflow:hidden; }
+      th,td { padding:12px 14px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+      th { background:#fff7eb; }
+      section { margin-top:40px; }
+      code { font-family: 'Cascadia Code', Consolas, monospace; font-size:13px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <span class="badge">Generated Template Docs</span>
+        <h1>Prometheus template control plane</h1>
+        <p>Binary Fragment Platform ships with 6 presets, 13 bundles, and manifest-driven route/env ownership.</p>
+        <p><code>bun run template:new</code> bootstraps branding, <code>bun run template:doctor</code> validates local prerequisites, and <code>bun run template:report -- --json</code> exports the control-plane snapshot.</p>
+      </section>
+      <section>
+        <h2>Presets</h2>
+        <div class="grid">
+      <article class="card">
+        <h3>Full Showcase</h3>
+        <p>The default branch preset with the complete reusable showcase surface enabled.</p>
+        <dl>
+          <div><dt>Preset</dt><dd>full</dd></div>
+          <div><dt>Family</dt><dd>showcase</dd></div>
+          <div><dt>Runtime</dt><dd>full-stack</dd></div>
+          <div><dt>Features</dt><dd>auth, store, lab, messaging, account, demo-home, demo-react, demo-preact, demo-wasm, realtime, pwa, analytics</dd></div>
+        </dl>
+      </article>
+
+      <article class="card">
+        <h3>Lean Starter</h3>
+        <p>A minimal template preset that keeps auth, account, and a starter home composition.</p>
+        <dl>
+          <div><dt>Preset</dt><dd>core</dd></div>
+          <div><dt>Family</dt><dd>starter</dd></div>
+          <div><dt>Runtime</dt><dd>web</dd></div>
+          <div><dt>Features</dt><dd>auth, account, demo-home</dd></div>
+        </dl>
+      </article>
+
+      <article class="card">
+        <h3>Marketing Starter</h3>
+        <p>A site-first preset for branded marketing pages without authenticated product flows.</p>
+        <dl>
+          <div><dt>Preset</dt><dd>marketing</dd></div>
+          <div><dt>Family</dt><dd>vertical</dd></div>
+          <div><dt>Runtime</dt><dd>site-only</dd></div>
+          <div><dt>Features</dt><dd>demo-home, pwa</dd></div>
+        </dl>
+      </article>
+
+      <article class="card">
+        <h3>SaaS Starter</h3>
+        <p>A product shell preset with auth, account, starter home content, and optional analytics.</p>
+        <dl>
+          <div><dt>Preset</dt><dd>saas</dd></div>
+          <div><dt>Family</dt><dd>vertical</dd></div>
+          <div><dt>Runtime</dt><dd>web</dd></div>
+          <div><dt>Features</dt><dd>auth, account, demo-home, pwa, analytics</dd></div>
+        </dl>
+      </article>
+
+      <article class="card">
+        <h3>Commerce Starter</h3>
+        <p>A commerce-oriented preset with account, catalog, starter home content, and installability.</p>
+        <dl>
+          <div><dt>Preset</dt><dd>commerce</dd></div>
+          <div><dt>Family</dt><dd>vertical</dd></div>
+          <div><dt>Runtime</dt><dd>web</dd></div>
+          <div><dt>Features</dt><dd>auth, store, account, demo-home, pwa, analytics</dd></div>
+        </dl>
+      </article>
+
+      <article class="card">
+        <h3>Community Starter</h3>
+        <p>A communication-first preset with auth, messaging, starter home content, and realtime hooks.</p>
+        <dl>
+          <div><dt>Preset</dt><dd>community</dd></div>
+          <div><dt>Family</dt><dd>vertical</dd></div>
+          <div><dt>Runtime</dt><dd>full-stack</dd></div>
+          <div><dt>Features</dt><dd>auth, messaging, account, demo-home, realtime, pwa</dd></div>
+        </dl>
+      </article></div>
+      </section>
+      <section>
+        <h2>Bundles</h2>
+        <table>
+          <thead><tr><th>Bundle</th><th>Visibility</th><th>Placement</th><th>Routes</th><th>Env keys</th></tr></thead>
+          <tbody><tr><td>auth</td><td>public</td><td>starter-safe</td><td>/login</td><td>SPACETIMEAUTH_AUTHORITY, SPACETIMEAUTH_CLIENT_ID, SPACETIMEAUTH_JWKS_URI, SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI, AUTH_BOOTSTRAP_PRIVATE_KEY, VITE_AUTH_BOOTSTRAP_PUBLIC_KEY, AUTH_BOOTSTRAP_PUBLIC_KEY</td></tr>
+<tr><td>store</td><td>public</td><td>starter-safe</td><td>/store</td><td>none</td></tr>
+<tr><td>lab</td><td>public</td><td>starter-safe</td><td>/lab</td><td>none</td></tr>
+<tr><td>messaging</td><td>authenticated</td><td>showcase-only</td><td>/chat</td><td>PUSH_VAPID_PUBLIC_KEY, PUSH_VAPID_PRIVATE_KEY, PUSH_VAPID_SUBJECT, PUSH_FCM_PROJECT_ID, PUSH_FCM_CLIENT_EMAIL, PUSH_FCM_PRIVATE_KEY, PUSH_APNS_KEY_ID, PUSH_APNS_TEAM_ID, PUSH_APNS_BUNDLE_ID, PUSH_APNS_PRIVATE_KEY, PUSH_APNS_USE_SANDBOX</td></tr>
+<tr><td>account</td><td>authenticated</td><td>starter-safe</td><td>/profile, /settings, /dashboard</td><td>none</td></tr>
+<tr><td>demo-home</td><td>public</td><td>starter-safe</td><td>/</td><td>none</td></tr>
+<tr><td>demo-react</td><td>public</td><td>showcase-only</td><td>none</td><td>none</td></tr>
+<tr><td>demo-preact</td><td>public</td><td>showcase-only</td><td>none</td><td>none</td></tr>
+<tr><td>demo-wasm</td><td>public</td><td>showcase-only</td><td>none</td><td>none</td></tr>
+<tr><td>realtime</td><td>infrastructure</td><td>showcase-only</td><td>none</td><td>ENABLE_WEBTRANSPORT_FRAGMENTS, WEBTRANSPORT_API_BASE, WEBTRANSPORT_LISTEN_ADDR, WEBTRANSPORT_ENABLE_DATAGRAMS, WEBTRANSPORT_MAX_DATAGRAM_SIZE, PROMETHEUS_WEBTRANSPORT_PORT, VITE_WEBTRANSPORT_BASE, VITE_P2P_RELAY_BASES, P2P_RELAY_BASES, VITE_P2P_NOSTR_RELAYS, P2P_NOSTR_RELAYS, VITE_P2P_WAKU_RELAYS, P2P_WAKU_RELAYS, VITE_P2P_CRDT_SIGNALING, P2P_CRDT_SIGNALING, VITE_P2P_PEERJS_SERVER, P2P_PEERJS_SERVER, VITE_P2P_ICE_SERVERS, P2P_ICE_SERVERS</td></tr>
+<tr><td>pwa</td><td>public</td><td>starter-safe</td><td>/offline</td><td>VITE_DISABLE_SW</td></tr>
+<tr><td>analytics</td><td>infrastructure</td><td>showcase-only</td><td>none</td><td>VITE_ENABLE_ANALYTICS, ANALYTICS_BEACON_URL, VITE_ANALYTICS_BEACON_URL, VITE_ENABLE_HIGHLIGHT, VITE_HIGHLIGHT_PROJECT_ID, VITE_HIGHLIGHT_PRIVACY, VITE_HIGHLIGHT_SESSION_RECORDING, VITE_HIGHLIGHT_CANVAS_SAMPLING, VITE_HIGHLIGHT_SAMPLE_RATE, ENABLE_PARTYTOWN, VITE_ENABLE_PARTYTOWN, PARTYTOWN_FORWARD, VITE_PARTYTOWN_FORWARD</td></tr>
+<tr><td>native</td><td>internal</td><td>showcase-only</td><td>none</td><td>none</td></tr></tbody>
+        </table>
+      </section>
+      <section>
+        <h2>Route Ownership</h2>
+        <table>
+          <thead><tr><th>Route</th><th>Bundle</th><th>Visibility</th><th>Default presets</th></tr></thead>
+          <tbody><tr><td>/</td><td>demo-home</td><td>public</td><td>full, core, marketing, saas, commerce, community</td></tr>
+<tr><td>/chat</td><td>messaging</td><td>authenticated</td><td>full, community</td></tr>
+<tr><td>/dashboard</td><td>account</td><td>authenticated</td><td>full, core, saas, commerce, community</td></tr>
+<tr><td>/lab</td><td>lab</td><td>public</td><td>full</td></tr>
+<tr><td>/login</td><td>auth</td><td>public</td><td>full, core, saas, commerce, community</td></tr>
+<tr><td>/offline</td><td>pwa</td><td>public</td><td>full, marketing, saas, commerce, community</td></tr>
+<tr><td>/profile</td><td>account</td><td>authenticated</td><td>full, core, saas, commerce, community</td></tr>
+<tr><td>/settings</td><td>account</td><td>authenticated</td><td>full, core, saas, commerce, community</td></tr>
+<tr><td>/store</td><td>store</td><td>public</td><td>full, commerce</td></tr></tbody>
+        </table>
+      </section>
+      <section>
+        <h2>Generated Assets</h2>
+        <p><code>apps/site/public/fragments/</code>, <code>apps/site/src/fragment/fragment-css.generated.ts</code>, <code>apps/site/public/manifest.webmanifest</code>, <code>infra/caddy/Caddyfile</code>, <code>docs/template-reference.md</code>, <code>docs/template-preset-guide.md</code>, <code>docs/template-bundle-cookbook.md</code>, <code>docs/template-site/index.html</code>, <code>docs/template-report.json</code>, <code>docs/template-route-map.json</code>, <code>docs/template-bundle-graph.json</code>, <code>docs/template-env-ownership.json</code>, <code>.env.full.example</code>, <code>.env.core.example</code>, <code>.env.marketing.example</code>, <code>.env.saas.example</code>, <code>.env.commerce.example</code>, <code>.env.community.example</code>, <code>.env.example</code></p>
+      </section>
+    </main>
+  </body>
+</html>

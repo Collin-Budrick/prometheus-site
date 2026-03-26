@@ -21,6 +21,10 @@ type SiteCspOptions = {
   allowDevServer?: boolean
 }
 
+type ServerImportMetaEnv = {
+  VITE_STATIC_SHELL_DEV_SOURCE?: string
+}
+
 const resolveHttpOrigin = (value: string | undefined, fallbackOrigin: string) => {
   if (!value) return null
 
@@ -58,8 +62,13 @@ const toSocketOrigin = (origin: string | null) => {
 const uniqueValues = (values: Array<string | null | undefined>) =>
   Array.from(new Set(values.filter((value): value is string => Boolean(value))))
 
+const readStaticShellDevSourceFlag = () =>
+  (typeof import.meta !== 'undefined'
+    ? (import.meta as ImportMeta & { env?: ServerImportMetaEnv }).env?.VITE_STATIC_SHELL_DEV_SOURCE
+    : undefined) === '1'
+
 const shouldAllowViteDevServer = (allowDevServer?: boolean) =>
-  allowDevServer ?? import.meta.env.VITE_STATIC_SHELL_DEV_SOURCE === '1'
+  allowDevServer ?? readStaticShellDevSourceFlag()
 
 export const generateCspNonce = () => randomBytes(18).toString('base64')
 

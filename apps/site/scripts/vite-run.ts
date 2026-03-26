@@ -2,6 +2,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { patchQwikOptimizerFiles } from './vite-run.patches.ts'
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const siteRoot = path.resolve(scriptDir, '..')
@@ -560,96 +561,6 @@ const patchRolldownIndex = () => {
   }
 }
 
-const restoreQwikOptimizerDevServerData = () => {
-  const legacySerializeMarkers = [
-    /const serverData = JSON\.parse\(\$\{JSON\.stringify\(JSON\.stringify\(serverData\)\)\}\)\s*;?/g,
-    /const serverData = JSON\.parse\(stringifyDevServerData\(serverData\)\)\s*;?/g
-  ]
-  const safeSerializedLine = '        const serverData = JSON.parse(${JSON.stringify(safeServerData)});'
-  const safeServerDataLine = '  const safeServerData = stringifyDevServerData(serverData);'
-  const helperName = 'function stringifyDevServerData(serverData)'
-  const helperTemplate = `
-function stringifyDevServerData(serverData) {
-  const seen = new WeakSet();
-  const replacer = (_key, value) => {
-    if (typeof value === 'function' || typeof value === 'symbol') {
-      return undefined;
-    }
-    if (typeof value === 'bigint') {
-      return value.toString();
-    }
-    if (value && typeof value === 'object') {
-      if (seen.has(value)) {
-        return '[Circular]';
-      }
-      seen.add(value);
-    }
-    return value;
-  };
-
-  try {
-    const serialized = JSON.stringify(serverData, replacer);
-    if (serialized) {
-      return serialized;
-    }
-  } catch (error) {
-    console.warn('Failed to stringify Qwik optimizer payload for dev server data fallback:', error)
-    // continue to fallback payload below
-  }
-
-  const safeServerData = serverData && typeof serverData === "object" ? serverData : {};
-  const fallback = {
-    ...safeServerData,
-    qwikcity: {
-      routeName: safeServerData.qwikcity?.routeName,
-      ev: safeServerData.qwikcity?.ev,
-      params: safeServerData.qwikcity?.params ?? {},
-      loadedRoute: safeServerData.qwikcity?.loadedRoute,
-      response: {
-        status: safeServerData.qwikcity?.response?.status ?? 200,
-        loaders: safeServerData.qwikcity?.response?.loaders ?? {},
-        action: safeServerData.qwikcity?.response?.action,
-        formData: safeServerData.qwikcity?.response?.formData ?? null
-      }
-    }
-  }
-
-  try {
-    return JSON.stringify(fallback)
-  } catch (error) {
-    console.warn('Failed to fallback stringify Qwik optimizer payload:', error)
-    return '{}'
-  }
-}
-
-`
-  const getViteIndexFunction = /\r?\nfunction getViteDevIndexHtml\(entryUrl, serverData\) \{/
-
-  for (const optimizerPath of qwikOptimizerCandidates) {
-    if (!existsSync(optimizerPath)) continue
-    const source = readFileSync(optimizerPath, 'utf8')
-    let next = source
-
-    if (!next.includes(helperName)) {
-      const match = next.match(getViteIndexFunction)
-      if (match) {
-        next = next.replace(match[0], `${helperTemplate}${match[0]}`)
-      }
-    }
-
-    for (const marker of legacySerializeMarkers) {
-      next = next.replace(marker, safeSerializedLine)
-    }
-
-    if (next.includes(helperName) && !next.includes(safeServerDataLine) && next.includes('function getViteDevIndexHtml(entryUrl, serverData) {')) {
-      next = next.replace(getViteIndexFunction, (getMatch) => `${getMatch}\n${safeServerDataLine}`)
-    }
-    if (next !== source) {
-      writeFileSync(optimizerPath, next, 'utf8')
-    }
-  }
-}
-
 const nodeRuntime = resolveNodeRuntime()
 const runtime = nodeRuntime ?? { bin: process.execPath, arch: process.arch }
 const env = { ...process.env }
@@ -667,7 +578,7 @@ if (!existsSync(viteBin)) {
 }
 
 patchRolldownIndex()
-restoreQwikOptimizerDevServerData()
+patchQwikOptimizerFiles(qwikOptimizerCandidates)
 const bindingNodeModulesCandidates = [
   viteNodeModulesDir,
   path.resolve(siteRoot, 'node_modules'),

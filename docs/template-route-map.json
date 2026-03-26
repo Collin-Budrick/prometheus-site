@@ -1,0 +1,110 @@
+[
+  {
+    "route": "/",
+    "bundleId": "demo-home",
+    "visibility": "public",
+    "placement": "starter-safe",
+    "defaultEnabledIn": [
+      "full",
+      "core",
+      "marketing",
+      "saas",
+      "commerce",
+      "community"
+    ]
+  },
+  {
+    "route": "/chat",
+    "bundleId": "messaging",
+    "visibility": "authenticated",
+    "placement": "showcase-only",
+    "defaultEnabledIn": [
+      "full",
+      "community"
+    ]
+  },
+  {
+    "route": "/dashboard",
+    "bundleId": "account",
+    "visibility": "authenticated",
+    "placement": "starter-safe",
+    "defaultEnabledIn": [
+      "full",
+      "core",
+      "saas",
+      "commerce",
+      "community"
+    ]
+  },
+  {
+    "route": "/lab",
+    "bundleId": "lab",
+    "visibility": "public",
+    "placement": "starter-safe",
+    "defaultEnabledIn": [
+      "full"
+    ]
+  },
+  {
+    "route": "/login",
+    "bundleId": "auth",
+    "visibility": "public",
+    "placement": "starter-safe",
+    "defaultEnabledIn": [
+      "full",
+      "core",
+      "saas",
+      "commerce",
+      "community"
+    ]
+  },
+  {
+    "route": "/offline",
+    "bundleId": "pwa",
+    "visibility": "public",
+    "placement": "starter-safe",
+    "defaultEnabledIn": [
+      "full",
+      "marketing",
+      "saas",
+      "commerce",
+      "community"
+    ]
+  },
+  {
+    "route": "/profile",
+    "bundleId": "account",
+    "visibility": "authenticated",
+    "placement": "starter-safe",
+    "defaultEnabledIn": [
+      "full",
+      "core",
+      "saas",
+      "commerce",
+      "community"
+    ]
+  },
+  {
+    "route": "/settings",
+    "bundleId": "account",
+    "visibility": "authenticated",
+    "placement": "starter-safe",
+    "defaultEnabledIn": [
+      "full",
+      "core",
+      "saas",
+      "commerce",
+      "community"
+    ]
+  },
+  {
+    "route": "/store",
+    "bundleId": "store",
+    "visibility": "public",
+    "placement": "starter-safe",
+    "defaultEnabledIn": [
+      "full",
+      "commerce"
+    ]
+  }
+]

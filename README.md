@@ -4,12 +4,16 @@ This repo ships as a Bun-powered template for a Qwik site, a Rust axum + WebTran
 
 The combined runtime entrypoint lives in `packages/platform-rs/src/main.rs`.
 
-The template keeps two presets:
+The template ships with six presets:
 
 - `full`: the default showcase preset.
 - `core`: the lean starter preset.
+- `marketing`: site-only starter for marketing pages.
+- `saas`: auth/account starter with analytics and PWA hooks.
+- `commerce`: store/account starter with installability.
+- `community`: messaging-first starter with realtime support.
 
-Preset and bundle metadata are generated into [docs/template-reference.md](/Users/colli/Documents/Project/prometheus-site/docs/template-reference.md). Maintainer workflow and bundle rules live in [docs/template-maintainer-guide.md](/Users/colli/Documents/Project/prometheus-site/docs/template-maintainer-guide.md).
+Preset and bundle metadata are generated into [docs/template-reference.md](/Users/colli/Documents/Project/prometheus-site/docs/template-reference.md). Preset selection guidance lives in [docs/template-preset-guide.md](/Users/colli/Documents/Project/prometheus-site/docs/template-preset-guide.md), bundle ownership rules live in [docs/template-bundle-cookbook.md](/Users/colli/Documents/Project/prometheus-site/docs/template-bundle-cookbook.md), and the generated docs site lives at [docs/template-site/index.html](/Users/colli/Documents/Project/prometheus-site/docs/template-site/index.html).
 
 ## Quickstart
 
@@ -39,8 +43,14 @@ bun run typecheck:core
 bun run desktop:typecheck
 bun run test
 bun run test:core
+bun run template:new
 bun run template:init -- --site-name "Acme" --product-name "Acme Platform" --package-scope @acme --project-name acme-site --web-host acme.dev --web-host-prod acme.prod --db-host db.acme.dev --db-host-prod db.acme.prod --compose-project-name acme --spacetime-module acme-site-local --auth-client-id acme-site-dev --native-bundle-id com.acme.site --notification-email notifications@acme.dev
 bun run template:sync
+bun run template:doctor
+bun run template:diff
+bun run template:report
+bun run template:upgrade
+bun run template:create-feature -- --feature-id customer-portal --title "Customer Portal" --route customer-portal
 bun run check:template
 ```
 
@@ -65,10 +75,17 @@ bun run test:browser:core
 Do not hand-edit these files for lasting template changes. Update `@prometheus/template-config` and rerun `bun run template:sync`.
 
 - [docs/template-reference.md](/Users/colli/Documents/Project/prometheus-site/docs/template-reference.md)
+- [docs/template-preset-guide.md](/Users/colli/Documents/Project/prometheus-site/docs/template-preset-guide.md)
+- [docs/template-bundle-cookbook.md](/Users/colli/Documents/Project/prometheus-site/docs/template-bundle-cookbook.md)
+- [docs/template-site/index.html](/Users/colli/Documents/Project/prometheus-site/docs/template-site/index.html)
 - [apps/site/public/manifest.webmanifest](/Users/colli/Documents/Project/prometheus-site/apps/site/public/manifest.webmanifest)
 - [.env.example](/Users/colli/Documents/Project/prometheus-site/.env.example)
 - [.env.full.example](/Users/colli/Documents/Project/prometheus-site/.env.full.example)
 - [.env.core.example](/Users/colli/Documents/Project/prometheus-site/.env.core.example)
+- [.env.marketing.example](/Users/colli/Documents/Project/prometheus-site/.env.marketing.example)
+- [.env.saas.example](/Users/colli/Documents/Project/prometheus-site/.env.saas.example)
+- [.env.commerce.example](/Users/colli/Documents/Project/prometheus-site/.env.commerce.example)
+- [.env.community.example](/Users/colli/Documents/Project/prometheus-site/.env.community.example)
 
 Generated build outputs must stay untracked:
 

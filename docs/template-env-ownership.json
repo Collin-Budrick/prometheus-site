@@ -1,0 +1,600 @@
+[
+  {
+    "envKey": "ANALYTICS_BEACON_URL",
+    "bundleIds": [
+      "analytics"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "AUTH_BOOTSTRAP_PRIVATE_KEY",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": true
+  },
+  {
+    "envKey": "AUTH_BOOTSTRAP_PUBLIC_KEY",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": true
+  },
+  {
+    "envKey": "ENABLE_PARTYTOWN",
+    "bundleIds": [
+      "analytics"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "ENABLE_WEBTRANSPORT_FRAGMENTS",
+    "bundleIds": [
+      "realtime"
+    ],
+    "requiredByDefaultIn": [
+      "community",
+      "full"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "P2P_CRDT_SIGNALING",
+    "bundleIds": [
+      "realtime"
+    ],
+    "requiredByDefaultIn": [
+      "community",
+      "full"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "P2P_ICE_SERVERS",
+    "bundleIds": [
+      "realtime"
+    ],
+    "requiredByDefaultIn": [
+      "community",
+      "full"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "P2P_NOSTR_RELAYS",
+    "bundleIds": [
+      "realtime"
+    ],
+    "requiredByDefaultIn": [
+      "community",
+      "full"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "P2P_PEERJS_SERVER",
+    "bundleIds": [
+      "realtime"
+    ],
+    "requiredByDefaultIn": [
+      "community",
+      "full"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "P2P_RELAY_BASES",
+    "bundleIds": [
+      "realtime"
+    ],
+    "requiredByDefaultIn": [
+      "community",
+      "full"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "P2P_WAKU_RELAYS",
+    "bundleIds": [
+      "realtime"
+    ],
+    "requiredByDefaultIn": [
+      "community",
+      "full"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "PARTYTOWN_FORWARD",
+    "bundleIds": [
+      "analytics"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "PROMETHEUS_WEBTRANSPORT_PORT",
+    "bundleIds": [
+      "realtime"
+    ],
+    "requiredByDefaultIn": [
+      "community",
+      "full"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "PUSH_APNS_BUNDLE_ID",
+    "bundleIds": [
+      "messaging"
+    ],
+    "requiredByDefaultIn": [
+      "community",
+      "full"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "PUSH_APNS_KEY_ID",
+    "bundleIds": [
+      "messaging"
+    ],
+    "requiredByDefaultIn": [
+      "community",
+      "full"
+    ],
+    "secret": true
+  },
+  {
+    "envKey": "PUSH_APNS_PRIVATE_KEY",
+    "bundleIds": [
+      "messaging"
+    ],
+    "requiredByDefaultIn": [
+      "community",
+      "full"
+    ],
+    "secret": true
+  },
+  {
+    "envKey": "PUSH_APNS_TEAM_ID",
+    "bundleIds": [
+      "messaging"
+    ],
+    "requiredByDefaultIn": [
+      "community",
+      "full"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "PUSH_APNS_USE_SANDBOX",
+    "bundleIds": [
+      "messaging"
+    ],
+    "requiredByDefaultIn": [
+      "community",
+      "full"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "PUSH_FCM_CLIENT_EMAIL",
+    "bundleIds": [
+      "messaging"
+    ],
+    "requiredByDefaultIn": [
+      "community",
+      "full"
+    ],
+    "secret": true
+  },
+  {
+    "envKey": "PUSH_FCM_PRIVATE_KEY",
+    "bundleIds": [
+      "messaging"
+    ],
+    "requiredByDefaultIn": [
+      "community",
+      "full"
+    ],
+    "secret": true
+  },
+  {
+    "envKey": "PUSH_FCM_PROJECT_ID",
+    "bundleIds": [
+      "messaging"
+    ],
+    "requiredByDefaultIn": [
+      "community",
+      "full"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "PUSH_VAPID_PRIVATE_KEY",
+    "bundleIds": [
+      "messaging"
+    ],
+    "requiredByDefaultIn": [
+      "community",
+      "full"
+    ],
+    "secret": true
+  },
+  {
+    "envKey": "PUSH_VAPID_PUBLIC_KEY",
+    "bundleIds": [
+      "messaging"
+    ],
+    "requiredByDefaultIn": [
+      "community",
+      "full"
+    ],
+    "secret": true
+  },
+  {
+    "envKey": "PUSH_VAPID_SUBJECT",
+    "bundleIds": [
+      "messaging"
+    ],
+    "requiredByDefaultIn": [
+      "community",
+      "full"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "SPACETIMEAUTH_AUTHORITY",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "SPACETIMEAUTH_CLIENT_ID",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "SPACETIMEAUTH_JWKS_URI",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "VITE_ANALYTICS_BEACON_URL",
+    "bundleIds": [
+      "analytics"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "VITE_AUTH_BOOTSTRAP_PUBLIC_KEY",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "VITE_DISABLE_SW",
+    "bundleIds": [
+      "pwa"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "full",
+      "marketing",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "VITE_ENABLE_ANALYTICS",
+    "bundleIds": [
+      "analytics"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "VITE_ENABLE_HIGHLIGHT",
+    "bundleIds": [
+      "analytics"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "VITE_ENABLE_PARTYTOWN",
+    "bundleIds": [
+      "analytics"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "VITE_HIGHLIGHT_CANVAS_SAMPLING",
+    "bundleIds": [
+      "analytics"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "VITE_HIGHLIGHT_PRIVACY",
+    "bundleIds": [
+      "analytics"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "VITE_HIGHLIGHT_PROJECT_ID",
+    "bundleIds": [
+      "analytics"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "VITE_HIGHLIGHT_SAMPLE_RATE",
+    "bundleIds": [
+      "analytics"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "VITE_HIGHLIGHT_SESSION_RECORDING",
+    "bundleIds": [
+      "analytics"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "VITE_P2P_CRDT_SIGNALING",
+    "bundleIds": [
+      "realtime"
+    ],
+    "requiredByDefaultIn": [
+      "community",
+      "full"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "VITE_P2P_ICE_SERVERS",
+    "bundleIds": [
+      "realtime"
+    ],
+    "requiredByDefaultIn": [
+      "community",
+      "full"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "VITE_P2P_NOSTR_RELAYS",
+    "bundleIds": [
+      "realtime"
+    ],
+    "requiredByDefaultIn": [
+      "community",
+      "full"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "VITE_P2P_PEERJS_SERVER",
+    "bundleIds": [
+      "realtime"
+    ],
+    "requiredByDefaultIn": [
+      "community",
+      "full"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "VITE_P2P_RELAY_BASES",
+    "bundleIds": [
+      "realtime"
+    ],
+    "requiredByDefaultIn": [
+      "community",
+      "full"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "VITE_P2P_WAKU_RELAYS",
+    "bundleIds": [
+      "realtime"
+    ],
+    "requiredByDefaultIn": [
+      "community",
+      "full"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "VITE_PARTYTOWN_FORWARD",
+    "bundleIds": [
+      "analytics"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "VITE_WEBTRANSPORT_BASE",
+    "bundleIds": [
+      "realtime"
+    ],
+    "requiredByDefaultIn": [
+      "community",
+      "full"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "WEBTRANSPORT_API_BASE",
+    "bundleIds": [
+      "realtime"
+    ],
+    "requiredByDefaultIn": [
+      "community",
+      "full"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "WEBTRANSPORT_ENABLE_DATAGRAMS",
+    "bundleIds": [
+      "realtime"
+    ],
+    "requiredByDefaultIn": [
+      "community",
+      "full"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "WEBTRANSPORT_LISTEN_ADDR",
+    "bundleIds": [
+      "realtime"
+    ],
+    "requiredByDefaultIn": [
+      "community",
+      "full"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "WEBTRANSPORT_MAX_DATAGRAM_SIZE",
+    "bundleIds": [
+      "realtime"
+    ],
+    "requiredByDefaultIn": [
+      "community",
+      "full"
+    ],
+    "secret": false
+  }
+]
