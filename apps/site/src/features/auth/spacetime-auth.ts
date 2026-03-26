@@ -75,11 +75,35 @@ type SpacetimeAuthConfig = {
   redirectUri: string
 }
 
+export type SpacetimeAuthMode = 'hosted' | 'dev-session' | 'disabled'
+
+type AuthRuntimeEnv = Partial<ImportMetaEnv> & {
+  DEV?: boolean
+  MODE?: string
+  NODE_ENV?: string
+}
+
+type DevSessionRequestBody = {
+  loginMethod: SpacetimeAuthMethod
+  providerId?: Exclude<SpacetimeAuthMethod, 'magic-link'>
+}
+
+type DevLocalAccountRequestBody = {
+  email: string
+  name?: string
+  password: string
+}
+
+type DevSessionResponse = {
+  error?: string
+}
+
 const pendingRequestStorageKey = 'spacetimeauth:pkce:v1'
 const sessionStorageKey = 'spacetimeauth:session:v1'
 const preferredSpacetimeDbUriStorageKey = 'spacetimedb:preferred-uri:v1'
 const preferredSpacetimeDbUriTtlMs = 7 * 24 * 60 * 60 * 1000
 const refreshGraceMs = 30_000
+const defaultSpacetimeAuthAuthority = 'https://auth.spacetimedb.com/oidc'
 
 type StoredPreferredSpacetimeDbUri = {
   moduleName: string
@@ -89,6 +113,11 @@ type StoredPreferredSpacetimeDbUri = {
 }
 
 let discoveryPromise: Promise<SpacetimeAuthDiscovery> | null = null
+
+const authRuntimeEnv =
+  typeof import.meta !== 'undefined'
+    ? (import.meta as ImportMeta & { env?: AuthRuntimeEnv }).env
+    : undefined
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null
@@ -185,7 +214,49 @@ const normalizeAbsoluteUrl = (value: string) => {
   }
 }
 
-const buildConfig = (origin: string): SpacetimeAuthConfig | null => {
+const isDevelopmentRuntime = () => {
+  if (authRuntimeEnv?.DEV === true) return true
+  const mode = normalizeOptionalString(authRuntimeEnv?.MODE)?.toLowerCase()
+  if (mode === 'development') return true
+  return normalizeOptionalString(authRuntimeEnv?.NODE_ENV)?.toLowerCase() === 'development'
+}
+
+const normalizeAuthority = (value: string | undefined) =>
+  normalizeOptionalString(value)?.replace(/\/+$/, '')
+
+export const resolveSpacetimeAuthMode = ({
+  authority,
+  clientId,
+  dev
+}: {
+  authority?: string
+  clientId?: string
+  dev?: boolean
+}): SpacetimeAuthMode => {
+  const normalizedAuthority = normalizeAuthority(authority)
+  const normalizedClientId = normalizeOptionalString(clientId)
+  if (!normalizedAuthority || !normalizedClientId) return 'disabled'
+
+  const usesTemplatePlaceholder =
+    normalizedAuthority === defaultSpacetimeAuthAuthority &&
+    normalizedClientId === templateBranding.ids.authClientId
+
+  if (usesTemplatePlaceholder) {
+    return dev ? 'dev-session' : 'disabled'
+  }
+
+  return 'hosted'
+}
+
+export const getSpacetimeAuthMode = (): SpacetimeAuthMode =>
+  resolveSpacetimeAuthMode({
+    authority: appConfig.spacetimeAuthAuthority,
+    clientId: appConfig.spacetimeAuthClientId,
+    dev: isDevelopmentRuntime()
+  })
+
+const buildHostedConfig = (origin: string): SpacetimeAuthConfig | null => {
+  if (getSpacetimeAuthMode() !== 'hosted') return null
   const authority = normalizeOptionalString(appConfig.spacetimeAuthAuthority)
   const clientId = normalizeOptionalString(appConfig.spacetimeAuthClientId)
   if (!authority || !clientId) return null
@@ -200,7 +271,7 @@ const buildConfig = (origin: string): SpacetimeAuthConfig | null => {
 }
 
 const resolveDiscovery = async (origin: string) => {
-  const config = buildConfig(origin)
+  const config = buildHostedConfig(origin)
   if (!config) {
     throw new Error('SpacetimeAuth is not configured for this site.')
   }
@@ -390,12 +461,99 @@ const withProviderHints = (method: SpacetimeAuthMethod, url: URL) => {
   url.searchParams.set('provider_id', method)
 }
 
+const buildDevSessionBody = (method: SpacetimeAuthMethod): DevSessionRequestBody =>
+  method === 'magic-link'
+    ? { loginMethod: method }
+    : { loginMethod: method, providerId: method }
+
+const shouldAttemptBootstrapRefresh = () =>
+  getSpacetimeAuthMode() === 'hosted' && Boolean(normalizeOptionalString(appConfig.authBootstrapPublicKey))
+
+const refreshBrowserAuthState = async (origin: string, apiBase = appConfig.apiBase) => {
+  clearPendingRequest()
+  clearStoredSpacetimeAuthSession()
+  clearClientAuthSessionCache()
+  await clearBootstrapSession()
+  if (shouldAttemptBootstrapRefresh()) {
+    await attemptBootstrapSession(origin, apiBase)
+  }
+}
+
+const postDevSessionRequest = async (
+  path: string,
+  body: DevSessionRequestBody | DevLocalAccountRequestBody,
+  fallbackMessage: string,
+  apiBase = appConfig.apiBase
+) => {
+  if (typeof window === 'undefined') return
+  const origin = window.location.origin
+  const response = await fetch(buildPublicApiUrl(path, origin, apiBase), {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      accept: 'application/json',
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify(body)
+  })
+
+  if (!response.ok) {
+    const payload = parseJson<DevSessionResponse>(await response.text())
+    throw new Error(payload?.error ?? fallbackMessage)
+  }
+
+  await refreshBrowserAuthState(origin, apiBase)
+}
+
+const startDevSessionLogin = async (
+  method: SpacetimeAuthMethod,
+  next: string,
+  apiBase = appConfig.apiBase
+) => {
+  await postDevSessionRequest(
+    '/auth/dev/session',
+    buildDevSessionBody(method),
+    'Unable to create the local development session.',
+    apiBase
+  )
+  window.location.assign(next)
+}
+
+export const registerDevLocalAccount = async (
+  account: DevLocalAccountRequestBody,
+  apiBase = appConfig.apiBase
+) => {
+  await postDevSessionRequest(
+    '/auth/dev/register',
+    account,
+    'Unable to create the local development account.',
+    apiBase
+  )
+}
+
+export const loginDevLocalAccount = async (
+  account: DevLocalAccountRequestBody,
+  apiBase = appConfig.apiBase
+) => {
+  await postDevSessionRequest(
+    '/auth/dev/login',
+    account,
+    'Unable to sign in to the local development account.',
+    apiBase
+  )
+}
+
 export const startSpacetimeAuthLogin = async (
   method: SpacetimeAuthMethod,
   options: StartLoginOptions = {}
 ) => {
   if (typeof window === 'undefined') return
   const origin = window.location.origin
+  const mode = getSpacetimeAuthMode()
+  if (mode === 'dev-session') {
+    await startDevSessionLogin(method, normalizeNextPath(options.next, origin))
+    return
+  }
   const { config, discovery } = await resolveDiscovery(origin)
   const pending: PendingAuthRequest = {
     codeVerifier: randomToken(48),
@@ -431,7 +589,7 @@ export const completeSpacetimeAuthCallback = async (callbackUrl: string, apiBase
 
   const origin = window.location.origin
   try {
-    const currentConfig = buildConfig(origin)
+    const currentConfig = buildHostedConfig(origin)
     if (!currentConfig) {
       throw new Error('SpacetimeAuth is not configured for this site.')
     }
@@ -669,5 +827,4 @@ export const signOutSpacetimeAuth = async (apiBase = appConfig.apiBase) => {
 }
 
 export const isSpacetimeAuthConfigured = () =>
-  Boolean(normalizeOptionalString(appConfig.spacetimeAuthAuthority)) &&
-  Boolean(normalizeOptionalString(appConfig.spacetimeAuthClientId))
+  getSpacetimeAuthMode() !== 'disabled'

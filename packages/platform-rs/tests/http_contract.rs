@@ -2,6 +2,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use axum::body::Body;
+use http::header::SET_COOKIE;
 use http::{Request, StatusCode};
 use http_body_util::BodyExt;
 use prometheus_platform_rs::app;
@@ -49,6 +50,19 @@ async fn response_json(response: axum::response::Response) -> Value {
     serde_json::from_slice(&bytes).unwrap()
 }
 
+fn response_cookie(response: &axum::response::Response) -> String {
+    response
+        .headers()
+        .get(SET_COOKIE)
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .to_string()
+}
+
 #[tokio::test]
 async fn auth_session_returns_anonymous_payload_without_cookie() {
     let state = AppState::new(test_config()).await.unwrap();
@@ -71,6 +85,283 @@ async fn auth_session_returns_anonymous_payload_without_cookie() {
             "user": Value::Null,
             "session": Value::Null
         })
+    );
+}
+
+#[tokio::test]
+async fn dev_session_sets_a_site_cookie_outside_production() {
+    let state = AppState::new(test_config()).await.unwrap();
+    let router = app::build_router(state);
+
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/auth/dev/session")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "loginMethod": "github",
+                        "providerId": "github"
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let set_cookie = response
+        .headers()
+        .get(SET_COOKIE)
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+    let payload = response_json(response).await;
+    assert_eq!(
+        payload
+            .get("user")
+            .and_then(|value| value.get("id"))
+            .and_then(Value::as_str),
+        Some("dev-github")
+    );
+    assert_eq!(
+        payload
+            .get("user")
+            .and_then(|value| value.get("loginMethod"))
+            .and_then(Value::as_str),
+        Some("github")
+    );
+
+    let request_cookie = set_cookie.split(';').next().unwrap().to_string();
+    let restored = router
+        .oneshot(
+            Request::builder()
+                .uri("/auth/session")
+                .header("cookie", request_cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(restored.status(), StatusCode::OK);
+    assert_eq!(
+        response_json(restored)
+            .await
+            .get("session")
+            .and_then(|value| value.get("userId"))
+            .and_then(Value::as_str),
+        Some("dev-github")
+    );
+}
+
+#[tokio::test]
+async fn dev_session_is_not_available_in_production() {
+    let mut config = test_config();
+    config.environment = "production".to_string();
+    let state = AppState::new(config).await.unwrap();
+    let router = app::build_router(state);
+
+    let response = router
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/auth/dev/session")
+                .header("content-type", "application/json")
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn dev_local_account_can_register_logout_and_login_again() {
+    let state = AppState::new(test_config()).await.unwrap();
+    let router = app::build_router(state);
+    let email = "dev-local@example.com";
+    let password = "password-123";
+    let name = "Local Dev User";
+
+    let register = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/auth/dev/register")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "name": name,
+                        "email": email,
+                        "password": password
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(register.status(), StatusCode::OK);
+    let register_cookie = response_cookie(&register);
+    let register_payload = response_json(register).await;
+    let registered_user = register_payload.get("user").cloned().unwrap_or(Value::Null);
+    let registered_id = registered_user
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap()
+        .to_string();
+    assert!(registered_id.starts_with("dev-local-"));
+    assert_eq!(
+        registered_user.get("name").and_then(Value::as_str),
+        Some(name)
+    );
+    assert_eq!(
+        registered_user.get("email").and_then(Value::as_str),
+        Some(email)
+    );
+    assert_eq!(
+        registered_user
+            .get("providerId")
+            .and_then(Value::as_str),
+        Some("local")
+    );
+
+    let logout = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/auth/logout")
+                .header("cookie", register_cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(logout.status(), StatusCode::OK);
+
+    let login = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/auth/dev/login")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "email": email,
+                        "password": password
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(login.status(), StatusCode::OK);
+    let login_payload = response_json(login).await;
+    assert_eq!(
+        login_payload
+            .get("user")
+            .and_then(|value| value.get("id"))
+            .and_then(Value::as_str),
+        Some(registered_id.as_str())
+    );
+    assert_eq!(
+        login_payload
+            .get("user")
+            .and_then(|value| value.get("name"))
+            .and_then(Value::as_str),
+        Some(name)
+    );
+}
+
+#[tokio::test]
+async fn dev_local_profile_name_updates_persist_across_login() {
+    let state = AppState::new(test_config()).await.unwrap();
+    let router = app::build_router(state);
+    let email = "rename-dev@example.com";
+    let password = "password-123";
+
+    let register = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/auth/dev/register")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "name": "Initial Dev Name",
+                        "email": email,
+                        "password": password
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(register.status(), StatusCode::OK);
+    let register_cookie = response_cookie(&register);
+
+    let rename = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/auth/profile/name")
+                .header("content-type", "application/json")
+                .header("cookie", register_cookie)
+                .body(Body::from(
+                    serde_json::json!({
+                        "name": "Renamed Dev User"
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(rename.status(), StatusCode::OK);
+
+    let login = router
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/auth/dev/login")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "email": email,
+                        "password": password
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(login.status(), StatusCode::OK);
+    assert_eq!(
+        response_json(login)
+            .await
+            .get("user")
+            .and_then(|value| value.get("name"))
+            .and_then(Value::as_str),
+        Some("Renamed Dev User")
     );
 }
 

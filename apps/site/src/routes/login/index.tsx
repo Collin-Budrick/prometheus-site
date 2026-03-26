@@ -23,9 +23,19 @@ const resolveLoginCopy = (seed?: Partial<UiCopy>) => ({
   loginTitle: seed?.loginTitle ?? emptyUiCopy.loginTitle,
   loginDescription: seed?.loginDescription ?? emptyUiCopy.loginDescription,
   loginAction: seed?.loginAction ?? emptyUiCopy.loginAction,
+  loginTab: seed?.loginTab ?? emptyUiCopy.loginTab,
+  signupTab: seed?.signupTab ?? emptyUiCopy.signupTab,
+  signupTitle: seed?.signupTitle ?? emptyUiCopy.signupTitle,
+  signupDescription: seed?.signupDescription ?? emptyUiCopy.signupDescription,
+  signupAction: seed?.signupAction ?? emptyUiCopy.signupAction,
+  authNameLabel: seed?.authNameLabel ?? emptyUiCopy.authNameLabel,
+  authEmailLabel: seed?.authEmailLabel ?? emptyUiCopy.authEmailLabel,
+  authPasswordLabel: seed?.authPasswordLabel ?? emptyUiCopy.authPasswordLabel,
+  authRememberLabel: seed?.authRememberLabel ?? emptyUiCopy.authRememberLabel,
   authSocialSectionLabel: seed?.authSocialSectionLabel ?? emptyUiCopy.authSocialSectionLabel,
   authMethodsLabel: seed?.authMethodsLabel ?? emptyUiCopy.authMethodsLabel,
-  authHostedStatus: seed?.authHostedStatus ?? emptyUiCopy.authHostedStatus
+  authHostedStatus: seed?.authHostedStatus ?? emptyUiCopy.authHostedStatus,
+  authNotConfigured: seed?.authNotConfigured ?? emptyUiCopy.authNotConfigured
 })
 
 export const useLoginResource = routeLoader$<LoginResource>(async ({ request }) => {

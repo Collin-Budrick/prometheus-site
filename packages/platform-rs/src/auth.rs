@@ -15,6 +15,9 @@ use jsonwebtoken::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
+use tokio::sync::RwLock;
+use uuid::Uuid;
 
 use crate::shared::AppState;
 
@@ -52,6 +55,113 @@ struct SessionSyncBody {
 #[derive(Debug, Deserialize)]
 struct ProfileNameBody {
     name: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct DevSessionBody {
+    #[serde(rename = "loginMethod")]
+    login_method: Option<String>,
+    #[serde(rename = "providerId")]
+    provider_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DevLocalAccountBody {
+    name: Option<String>,
+    email: String,
+    password: String,
+}
+
+#[derive(Clone, Debug)]
+struct DevLocalAccount {
+    user_id: String,
+    email: String,
+    name: String,
+    preferred_username: String,
+    password_hash: String,
+}
+
+#[derive(Debug, Default)]
+pub struct DevAuthState {
+    accounts: RwLock<HashMap<String, DevLocalAccount>>,
+}
+
+impl DevAuthState {
+    pub fn new() -> Self {
+        Self {
+            accounts: RwLock::new(HashMap::new()),
+        }
+    }
+
+    async fn register_local_account(
+        &self,
+        name: &str,
+        email: &str,
+        password: &str,
+    ) -> Result<DevLocalAccount, (StatusCode, &'static str)> {
+        let normalized_name = validate_profile_name(name)?;
+        let normalized_email = normalize_local_account_email(email)
+            .ok_or((StatusCode::BAD_REQUEST, "Enter a valid email address."))?;
+        let normalized_password = validate_local_account_password(password)?;
+        let mut accounts = self.accounts.write().await;
+
+        if accounts.contains_key(&normalized_email) {
+            return Err((
+                StatusCode::CONFLICT,
+                "An account with that email already exists.",
+            ));
+        }
+
+        let account = DevLocalAccount {
+            user_id: format!("dev-local-{}", Uuid::new_v4()),
+            email: normalized_email.clone(),
+            name: normalized_name.clone(),
+            preferred_username: build_local_account_username(
+                normalized_name.as_str(),
+                normalized_email.as_str(),
+            ),
+            password_hash: hash_local_account_password(normalized_password.as_str()),
+        };
+
+        accounts.insert(normalized_email, account.clone());
+        Ok(account)
+    }
+
+    async fn authenticate_local_account(
+        &self,
+        email: &str,
+        password: &str,
+    ) -> Result<DevLocalAccount, (StatusCode, &'static str)> {
+        let normalized_email = normalize_local_account_email(email)
+            .ok_or((StatusCode::BAD_REQUEST, "Enter a valid email address."))?;
+        let normalized_password = validate_local_account_password(password)?;
+        let accounts = self.accounts.read().await;
+        let Some(account) = accounts.get(&normalized_email) else {
+            return Err((StatusCode::UNAUTHORIZED, "Invalid email or password."));
+        };
+
+        if account.password_hash != hash_local_account_password(normalized_password.as_str()) {
+            return Err((StatusCode::UNAUTHORIZED, "Invalid email or password."));
+        }
+
+        Ok(account.clone())
+    }
+
+    async fn rename_local_account(&self, user_id: &str, name: &str) -> bool {
+        let Ok(normalized_name) = validate_profile_name(name) else {
+            return false;
+        };
+
+        let mut accounts = self.accounts.write().await;
+        for account in accounts.values_mut() {
+            if account.user_id == user_id {
+                account.name = normalized_name;
+                return true;
+            }
+        }
+
+        false
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -92,6 +202,9 @@ pub struct AuthSession {
 
 pub fn router() -> Router<AppState> {
     Router::new()
+        .route("/dev/register", post(register_dev_local_account))
+        .route("/dev/login", post(login_dev_local_account))
+        .route("/dev/session", post(issue_dev_session))
         .route("/session/sync", post(sync_session))
         .route("/session", get(get_session))
         .route("/logout", post(logout))
@@ -368,6 +481,184 @@ fn claims_from_unverified_token(token: String, state: &AppState) -> SessionClaim
     )
 }
 
+fn normalize_dev_identity_segment(value: &str) -> String {
+    let mut normalized = String::new();
+    let mut previous_dash = false;
+    for character in value.chars() {
+        let next = if character.is_ascii_alphanumeric() {
+            character.to_ascii_lowercase()
+        } else {
+            '-'
+        };
+        if next == '-' {
+            if previous_dash {
+                continue;
+            }
+            previous_dash = true;
+        } else {
+            previous_dash = false;
+        }
+        normalized.push(next);
+    }
+
+    normalized.trim_matches('-').to_string()
+}
+
+fn normalize_local_account_email(value: &str) -> Option<String> {
+    let normalized = value.trim().to_ascii_lowercase();
+    let mut parts = normalized.split('@');
+    let local = parts.next()?.trim();
+    let domain = parts.next()?.trim();
+    if local.is_empty() || domain.is_empty() || parts.next().is_some() {
+        return None;
+    }
+    Some(normalized)
+}
+
+fn validate_local_account_password(value: &str) -> Result<String, (StatusCode, &'static str)> {
+    let normalized = value.trim().to_string();
+    if normalized.len() < 8 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Password must be at least 8 characters.",
+        ));
+    }
+    if normalized.len() > 128 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Password must be 128 characters or less.",
+        ));
+    }
+    Ok(normalized)
+}
+
+fn validate_profile_name(value: &str) -> Result<String, (StatusCode, &'static str)> {
+    let trimmed = value.trim();
+    if trimmed.len() < 2 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Name must be at least 2 characters.",
+        ));
+    }
+    if trimmed.len() > 64 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Name must be 64 characters or less.",
+        ));
+    }
+    Ok(trimmed.to_string())
+}
+
+fn build_local_account_username(name: &str, email: &str) -> String {
+    let local_part = email.split('@').next().unwrap_or(email);
+    let normalized_name = normalize_dev_identity_segment(name);
+    let normalized_email = normalize_dev_identity_segment(local_part);
+    let candidate = if normalized_name.is_empty() {
+        normalized_email
+    } else {
+        normalized_name
+    };
+    if candidate.is_empty() {
+        "local-user".to_string()
+    } else {
+        candidate
+    }
+}
+
+fn hash_local_account_password(value: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(value.as_bytes());
+    URL_SAFE_NO_PAD.encode(hasher.finalize())
+}
+
+fn build_dev_session_claims(body: &DevSessionBody, state: &AppState) -> SessionClaims {
+    let now = now_epoch_secs();
+    let login_method = normalize_optional_string(body.login_method.as_deref())
+        .unwrap_or_else(|| "magic-link".to_string());
+    let provider_id = normalize_optional_string(body.provider_id.as_deref());
+    let identity_source = provider_id
+        .as_deref()
+        .unwrap_or(login_method.as_str());
+    let slug = normalize_dev_identity_segment(identity_source);
+    let normalized_slug = if slug.is_empty() {
+        "local".to_string()
+    } else {
+        slug
+    };
+    let provider_label = match provider_id.as_deref() {
+        Some("google") => "Google",
+        Some("github") => "GitHub",
+        _ => "Magic Link",
+    };
+
+    SessionClaims {
+        sub: format!("dev-{}", normalized_slug),
+        email: Some(format!("{}@dev.prometheus.local", normalized_slug)),
+        name: Some(format!("{provider_label} Demo User")),
+        picture: None,
+        preferred_username: Some(format!("{}-dev", normalized_slug)),
+        roles: vec![],
+        login_method: Some(login_method),
+        provider_id,
+        sid: None,
+        id_token: None,
+        iss: SESSION_ISSUER.to_string(),
+        aud: state
+            .config
+            .auth
+            .as_ref()
+            .map(|config| config.spacetimeauth_client_id.clone())
+            .unwrap_or_else(|| "prometheus-site-dev".to_string()),
+        exp: (now + DEFAULT_SESSION_TTL_SECS) as usize,
+        iat: now as usize,
+    }
+}
+
+fn build_local_account_claims(account: &DevLocalAccount, state: &AppState) -> SessionClaims {
+    let now = now_epoch_secs();
+
+    SessionClaims {
+        sub: account.user_id.clone(),
+        email: Some(account.email.clone()),
+        name: Some(account.name.clone()),
+        picture: None,
+        preferred_username: Some(account.preferred_username.clone()),
+        roles: vec![],
+        login_method: Some("password".to_string()),
+        provider_id: Some("local".to_string()),
+        sid: None,
+        id_token: None,
+        iss: SESSION_ISSUER.to_string(),
+        aud: state
+            .config
+            .auth
+            .as_ref()
+            .map(|config| config.spacetimeauth_client_id.clone())
+            .unwrap_or_else(|| "prometheus-site-dev".to_string()),
+        exp: (now + DEFAULT_SESSION_TTL_SECS) as usize,
+        iat: now as usize,
+    }
+}
+
+fn build_session_response(claims: &SessionClaims, headers: &HeaderMap, state: &AppState) -> Response {
+    let cookie = match build_session_cookie(claims, headers, state) {
+        Ok(cookie) => cookie,
+        Err(status) => {
+            return (
+                status,
+                Json(json!({ "error": "session signing unavailable" })),
+            )
+                .into_response()
+        }
+    };
+
+    let mut response = Json(build_session_payload(claims)).into_response();
+    if let Ok(value) = cookie.parse() {
+        response.headers_mut().append(SET_COOKIE, value);
+    }
+    response
+}
+
 pub fn read_bearer_claims(headers: &HeaderMap, state: &AppState) -> Option<SessionClaims> {
     let header = headers.get(AUTHORIZATION)?.to_str().ok()?.trim();
     let token = header.strip_prefix("Bearer ")?.trim();
@@ -517,22 +808,72 @@ async fn sync_session(
         }
     };
 
-    let cookie = match build_session_cookie(&claims, &headers, &state) {
-        Ok(cookie) => cookie,
-        Err(status) => {
-            return (
-                status,
-                Json(json!({ "error": "session signing unavailable" })),
-            )
-                .into_response()
+    build_session_response(&claims, &headers, &state)
+}
+
+async fn register_dev_local_account(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<DevLocalAccountBody>,
+) -> Response {
+    if state.config.environment.eq_ignore_ascii_case("production") {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+
+    let account = match state
+        .dev_auth
+        .register_local_account(
+            body.name.as_deref().unwrap_or_default(),
+            body.email.as_str(),
+            body.password.as_str(),
+        )
+        .await
+    {
+        Ok(account) => account,
+        Err((status, message)) => {
+            return (status, Json(json!({ "error": message }))).into_response()
         }
     };
 
-    let mut response = Json(build_session_payload(&claims)).into_response();
-    if let Ok(value) = cookie.parse() {
-        response.headers_mut().append(SET_COOKIE, value);
+    let claims = build_local_account_claims(&account, &state);
+    build_session_response(&claims, &headers, &state)
+}
+
+async fn login_dev_local_account(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<DevLocalAccountBody>,
+) -> Response {
+    if state.config.environment.eq_ignore_ascii_case("production") {
+        return StatusCode::NOT_FOUND.into_response();
     }
-    response
+
+    let account = match state
+        .dev_auth
+        .authenticate_local_account(body.email.as_str(), body.password.as_str())
+        .await
+    {
+        Ok(account) => account,
+        Err((status, message)) => {
+            return (status, Json(json!({ "error": message }))).into_response()
+        }
+    };
+
+    let claims = build_local_account_claims(&account, &state);
+    build_session_response(&claims, &headers, &state)
+}
+
+async fn issue_dev_session(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<DevSessionBody>,
+) -> Response {
+    if state.config.environment.eq_ignore_ascii_case("production") {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+
+    let claims = build_dev_session_claims(&body, &state);
+    build_session_response(&claims, &headers, &state)
 }
 
 async fn get_session(State(state): State<AppState>, headers: HeaderMap) -> Response {
@@ -564,27 +905,18 @@ async fn update_profile_name(
             .into_response();
     };
 
-    let trimmed = body.name.trim();
-    if trimmed.len() < 2 {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": "Name must be at least 2 characters" })),
-        )
-            .into_response();
-    }
-    if trimmed.len() > 64 {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": "Name must be 64 characters or less" })),
-        )
-            .into_response();
-    }
+    let trimmed = match validate_profile_name(body.name.as_str()) {
+        Ok(name) => name,
+        Err((status, message)) => {
+            return (status, Json(json!({ "error": message }))).into_response()
+        }
+    };
 
     if let Some(id_token) = claims.id_token.clone() {
         if let Err(error) = call_spacetime_reducer(
             &state,
             "set_profile_name",
-            &[Value::String(trimmed.to_string())],
+            &[Value::String(trimmed.clone())],
             &id_token,
         )
         .await
@@ -593,22 +925,16 @@ async fn update_profile_name(
         }
     }
 
-    claims.name = Some(trimmed.to_string());
-    let cookie = match build_session_cookie(&claims, &headers, &state) {
-        Ok(cookie) => cookie,
-        Err(status) => {
-            return (
-                status,
-                Json(json!({ "error": "session signing unavailable" })),
-            )
-                .into_response()
-        }
-    };
-
-    let mut response = Json(json!({ "user": build_session_user(&claims) })).into_response();
-    if let Ok(value) = cookie.parse() {
-        response.headers_mut().append(SET_COOKIE, value);
+    if claims.provider_id.as_deref() == Some("local") {
+        let _ = state
+            .dev_auth
+            .rename_local_account(claims.sub.as_str(), trimmed.as_str())
+            .await;
     }
+
+    claims.name = Some(trimmed);
+    let mut response = build_session_response(&claims, &headers, &state);
+    *response.body_mut() = Json(json!({ "user": build_session_user(&claims) })).into_response().into_body();
     response
 }
 

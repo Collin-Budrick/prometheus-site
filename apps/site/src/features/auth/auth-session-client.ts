@@ -70,10 +70,6 @@ export const clearClientAuthSessionCache = () => {
 export const loadClientAuthSession = async (
   options: LoadClientAuthSessionOptions = {}
 ): Promise<AuthSessionState> => {
-  if (!hasClientSiteSessionCookie()) {
-    return storeCachedAuthSession(buildAnonymousSession())
-  }
-
   if (!options.force) {
     if (isCachedAuthSessionFresh() && cachedAuthSession) {
       return cachedAuthSession
@@ -102,9 +98,6 @@ export const loadClientAuthSession = async (
 }
 
 export const revalidateClientAuthSession = async () => {
-  if (!hasClientSiteSessionCookie()) {
-    return storeCachedAuthSession(buildAnonymousSession())
-  }
   try {
     return storeCachedAuthSession(await resolveClientAuthSession())
   } catch {

@@ -10,12 +10,22 @@ type StaticLoginRouteProps = {
   copy: Pick<
     UiCopy,
     | 'authHostedStatus'
+    | 'authNotConfigured'
     | 'authMethodsLabel'
+    | 'authEmailLabel'
+    | 'authNameLabel'
+    | 'authPasswordLabel'
+    | 'authRememberLabel'
     | 'authSocialSectionLabel'
     | 'loginAction'
     | 'loginDescription'
     | 'loginMetaLine'
+    | 'loginTab'
     | 'loginTitle'
+    | 'signupAction'
+    | 'signupDescription'
+    | 'signupTab'
+    | 'signupTitle'
   >
   lang: Lang
 }
@@ -26,8 +36,14 @@ const authClass = {
   card: authModuleStyles['auth-card'],
   header: authModuleStyles['auth-header'],
   title: authModuleStyles['auth-title'],
+  tabs: authModuleStyles['auth-tabs'],
+  tab: authModuleStyles['auth-tab'],
   panels: authModuleStyles['auth-panels'],
   panel: authModuleStyles['auth-panel'],
+  field: authModuleStyles['auth-field'],
+  input: authModuleStyles['auth-input'],
+  check: authModuleStyles['auth-check'],
+  checkInput: authModuleStyles['auth-check-input'],
   actions: authModuleStyles['auth-actions'],
   primary: authModuleStyles['auth-primary'],
   social: authModuleStyles['auth-social'],
@@ -46,8 +62,14 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang 
       <section class={['fragment-shell', authClass.shell].join(' ')}>
         <div class={['fragment-grid', authClass.grid].join(' ')} data-fragment-grid="main">
           <article class="fragment-card" style={{ gridColumn: 'span 12' }}>
-            <div class={authClass.card} data-static-login-root data-mode="login" data-state="idle">
-                <div class={authClass.header}>
+            <div
+              class={authClass.card}
+              data-static-login-root
+              data-mode="login"
+              data-runtime-mode="hosted"
+              data-state="idle"
+            >
+              <div class={authClass.header}>
                 <div class="meta-line">{copy.loginMetaLine}</div>
                 <div class={authClass.title}>
                   <h1>{copy.loginTitle}</h1>
@@ -55,10 +77,73 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang 
                 </div>
               </div>
 
+              <div class={authClass.tabs} role="tablist" aria-label={copy.authMethodsLabel}>
+                <button
+                  class={authClass.tab}
+                  type="button"
+                  role="tab"
+                  aria-selected="true"
+                  data-static-login-tab="login"
+                  data-static-login-disable
+                >
+                  {copy.loginTab}
+                </button>
+                <button
+                  class={authClass.tab}
+                  type="button"
+                  role="tab"
+                  aria-selected="false"
+                  data-static-login-tab="signup"
+                  data-static-login-signup-tab
+                  data-static-login-disable
+                >
+                  {copy.signupTab}
+                </button>
+              </div>
+
               <div class={authClass.panels}>
+                <form class={authClass.panel} data-panel="login" data-static-login-form="login" hidden>
+                  <label class={authClass.field}>
+                    <span>{copy.authEmailLabel}</span>
+                    <input
+                      class={authClass.input}
+                      type="email"
+                      name="email"
+                      autocomplete="email"
+                      data-static-login-disable
+                    />
+                  </label>
+                  <label class={authClass.field}>
+                    <span>{copy.authPasswordLabel}</span>
+                    <input
+                      class={authClass.input}
+                      type="password"
+                      name="password"
+                      autocomplete="current-password"
+                      data-static-login-disable
+                    />
+                  </label>
+                  <label class={authClass.check}>
+                    <input
+                      class={authClass.checkInput}
+                      type="checkbox"
+                      name="remember"
+                      value="1"
+                      data-static-login-disable
+                    />
+                    <span>{copy.authRememberLabel}</span>
+                  </label>
+                  <div class={authClass.actions}>
+                    <button class={authClass.primary} type="submit" data-static-login-disable>
+                      {copy.loginAction}
+                    </button>
+                  </div>
+                </form>
+
                 <div
                   class={authClass.panel}
                   data-panel="login"
+                  data-static-login-hosted-panel
                   role="group"
                   aria-label={copy.authMethodsLabel}
                 >
@@ -99,6 +184,57 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang 
                     {copy.authHostedStatus}
                   </div>
                 </div>
+
+                <form class={authClass.panel} data-panel="signup" data-static-login-form="signup" hidden>
+                  <label class={authClass.field}>
+                    <span>{copy.authNameLabel}</span>
+                    <input
+                      class={authClass.input}
+                      type="text"
+                      name="name"
+                      autocomplete="name"
+                      data-static-login-disable
+                    />
+                  </label>
+                  <label class={authClass.field}>
+                    <span>{copy.authEmailLabel}</span>
+                    <input
+                      class={authClass.input}
+                      type="email"
+                      name="email"
+                      autocomplete="email"
+                      data-static-login-disable
+                    />
+                  </label>
+                  <label class={authClass.field}>
+                    <span>{copy.authPasswordLabel}</span>
+                    <input
+                      class={authClass.input}
+                      type="password"
+                      name="password"
+                      autocomplete="new-password"
+                      data-static-login-disable
+                    />
+                  </label>
+                  <label class={authClass.check}>
+                    <input
+                      class={authClass.checkInput}
+                      type="checkbox"
+                      name="remember"
+                      value="1"
+                      data-static-login-disable
+                    />
+                    <span>{copy.authRememberLabel}</span>
+                  </label>
+                  <div class={authClass.status} role="status" aria-live="polite" data-tone="neutral">
+                    {copy.signupDescription}
+                  </div>
+                  <div class={authClass.actions}>
+                    <button class={authClass.primary} type="submit" data-static-login-disable>
+                      {copy.signupAction}
+                    </button>
+                  </div>
+                </form>
               </div>
 
               <div

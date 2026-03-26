@@ -9,6 +9,7 @@ pub struct AppState {
     pub config: Arc<AppConfig>,
     pub http: reqwest::Client,
     pub redis: Client,
+    pub dev_auth: Arc<crate::auth::DevAuthState>,
     pub fragments: Arc<crate::fragments::FragmentService>,
     pub home_collab: Arc<crate::home_collab::HomeCollabState>,
     pub store: Arc<crate::store::StoreState>,
@@ -23,6 +24,7 @@ impl AppState {
         let http = reqwest::Client::builder()
             .build()
             .context("failed to create HTTP client")?;
+        let dev_auth = Arc::new(crate::auth::DevAuthState::new());
         let store = Arc::new(crate::store::StoreState::new());
         let fragments = Arc::new(crate::fragments::FragmentService::new(
             config.features.clone(),
@@ -35,6 +37,7 @@ impl AppState {
             config: Arc::new(config),
             http,
             redis,
+            dev_auth,
             fragments,
             home_collab,
             store,

@@ -1,13 +1,43 @@
-import { describe, expect, it } from 'bun:test'
+import { afterEach, describe, expect, it } from 'bun:test'
 
 import type { AuthSessionState } from './auth-session'
-import { didAuthSessionChange, hasClientSiteSessionCookie } from './auth-session-client'
+import {
+  clearClientAuthSessionCache,
+  didAuthSessionChange,
+  hasClientSiteSessionCookie,
+  loadClientAuthSession
+} from './auth-session-client'
 
 const anonymousSession: AuthSessionState = { status: 'anonymous' }
 
 const authenticatedSession = (id: string): AuthSessionState => ({
   status: 'authenticated',
   user: { id }
+})
+
+const originalFetch = globalThis.fetch
+const originalDocument = globalThis.document
+const originalWindow = globalThis.window
+
+afterEach(() => {
+  clearClientAuthSessionCache()
+  globalThis.fetch = originalFetch
+  if (originalDocument === undefined) {
+    Reflect.deleteProperty(globalThis, 'document')
+  } else {
+    Object.defineProperty(globalThis, 'document', {
+      configurable: true,
+      value: originalDocument
+    })
+  }
+  if (originalWindow === undefined) {
+    Reflect.deleteProperty(globalThis, 'window')
+  } else {
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: originalWindow
+    })
+  }
 })
 
 describe('didAuthSessionChange', () => {
@@ -32,5 +62,54 @@ describe('hasClientSiteSessionCookie', () => {
     expect(hasClientSiteSessionCookie('session=abc123')).toBe(true)
     expect(hasClientSiteSessionCookie('spacetimedb_session=abc123; theme=dark')).toBe(false)
     expect(hasClientSiteSessionCookie('')).toBe(false)
+  })
+})
+
+describe('loadClientAuthSession', () => {
+  it('revalidates against the server when the site session cookie is HttpOnly', async () => {
+    Object.defineProperty(globalThis, 'document', {
+      configurable: true,
+      value: {
+        cookie: 'theme=dark; lang=en'
+      }
+    })
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: {
+        location: {
+          origin: 'https://prometheus.dev'
+        }
+      }
+    })
+
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          user: {
+            id: 'dev-local-user',
+            email: 'dev@example.com',
+            name: 'Dev User'
+          },
+          session: {
+            userId: 'dev-local-user'
+          }
+        }),
+        {
+          status: 200,
+          headers: {
+            'content-type': 'application/json'
+          }
+        }
+      )) as typeof fetch
+
+    await expect(loadClientAuthSession({ force: true })).resolves.toEqual({
+      status: 'authenticated',
+      user: {
+        id: 'dev-local-user',
+        email: 'dev@example.com',
+        name: 'Dev User',
+        image: undefined
+      }
+    })
   })
 })

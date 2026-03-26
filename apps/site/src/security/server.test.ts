@@ -31,6 +31,7 @@ describe('security/server', () => {
   it('keeps Trusted Types enforcement even when direct SpaceTimeDB is enabled', () => {
     const config = resolvePublicAppConfig({
       apiBase: 'https://api.prometheus.dev/api',
+      spacetimeAuthAuthority: 'https://auth.spacetimedb.com/oidc',
       spacetimeDbUri: 'https://db.prometheus.dev',
       spacetimeDbModule: 'prometheus-site'
     })
@@ -49,7 +50,9 @@ describe('security/server', () => {
     expect(csp).toContain(
       'trusted-types prometheus-server-html prometheus-template-html prometheus-runtime-script'
     )
-    expect(csp).toContain(`connect-src 'self' https://prometheus.dev https://api.prometheus.dev wss://api.prometheus.dev https://db.prometheus.dev wss://db.prometheus.dev`)
+    expect(csp).toContain(
+      `connect-src 'self' https://prometheus.dev https://api.prometheus.dev wss://api.prometheus.dev https://auth.spacetimedb.com https://db.prometheus.dev wss://db.prometheus.dev`
+    )
   })
 
   it('allows wasm compilation on the home route without enabling general eval', () => {
@@ -72,6 +75,7 @@ describe('security/server', () => {
   it('expands connect-src for api, websocket, webtransport, and analytics origins', () => {
     const config = resolvePublicAppConfig({
       apiBase: 'https://api.prometheus.dev/api',
+      spacetimeAuthAuthority: 'https://auth.spacetimedb.com/oidc',
       spacetimeDbUri: 'https://db.prometheus.dev',
       webTransportBase: 'https://prometheus.dev:4444',
       enableFragmentStreaming: true,
@@ -87,6 +91,7 @@ describe('security/server', () => {
       'https://prometheus.dev',
       'https://api.prometheus.dev',
       'wss://api.prometheus.dev',
+      'https://auth.spacetimedb.com',
       'https://db.prometheus.dev',
       'wss://db.prometheus.dev',
       'https://prometheus.dev:4444',
