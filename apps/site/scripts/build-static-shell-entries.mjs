@@ -1,8 +1,13 @@
 import { spawnSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
 import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  normalizeBundledAssetPaths,
+  sanitizeBundledWasmSourceMaps,
+  stageBundledWasmAssets,
+  versionBundledWasmAssetPaths
+} from './build-static-shell-assets.mjs'
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const siteRoot = path.resolve(scriptDir, '..')
@@ -171,115 +176,6 @@ for (const buildGroup of buildGroups) {
   runBuildGroup(buildGroup)
 }
 
-const normalizeBundledAssetPaths = (dir) => {
-  for (const entry of readdirSync(dir)) {
-    const filePath = path.join(dir, entry)
-    const stat = statSync(filePath)
-    if (stat.isDirectory()) {
-      normalizeBundledAssetPaths(filePath)
-      continue
-    }
-    if (!filePath.endsWith('.js')) {
-      continue
-    }
-    const source = readFileSync(filePath, 'utf8')
-    const nextSource = source.replace(
-      /(['"])\/build\/static-shell\/(?:\.\.\/)+/g,
-      '$1/build/static-shell/'
-    )
-    if (nextSource !== source) {
-      writeFileSync(filePath, nextSource)
-    }
-  }
-}
-
-const sanitizeBundledWasmSourceMaps = (dir) => {
-  const sourceMapSectionName = Buffer.from('sourceMappingURL')
-  const disabledSourceMapSectionName = Buffer.from('ignoreMappingURL')
-  const sourceMapUrl = Buffer.from(
-    'https://unpkg.com/loro-crdt-map@1.10.6/bundler/loro_wasm_bg.wasm.map'
-  )
-  const disabledSourceMapUrl = Buffer.from('disabled-wasm-source-map'.padEnd(sourceMapUrl.length, ' '))
-
-  for (const entry of readdirSync(dir)) {
-    const filePath = path.join(dir, entry)
-    const stat = statSync(filePath)
-    if (stat.isDirectory()) {
-      sanitizeBundledWasmSourceMaps(filePath)
-      continue
-    }
-    if (!filePath.endsWith('.wasm')) {
-      continue
-    }
-
-    const source = readFileSync(filePath)
-    let markerIndex = source.indexOf(sourceMapSectionName)
-    if (markerIndex === -1) {
-      continue
-    }
-
-    const nextSource = Buffer.from(source)
-    while (markerIndex !== -1) {
-      disabledSourceMapSectionName.copy(nextSource, markerIndex)
-      markerIndex = source.indexOf(sourceMapSectionName, markerIndex + sourceMapSectionName.length)
-    }
-
-    let urlIndex = source.indexOf(sourceMapUrl)
-    while (urlIndex !== -1) {
-      disabledSourceMapUrl.copy(nextSource, urlIndex)
-      urlIndex = source.indexOf(sourceMapUrl, urlIndex + sourceMapUrl.length)
-    }
-    writeFileSync(filePath, nextSource)
-  }
-}
-
-const versionBundledWasmAssetPaths = (dir) => {
-  const wasmVersions = new Map()
-
-  const collectWasmVersions = (currentDir) => {
-    for (const entry of readdirSync(currentDir)) {
-      const filePath = path.join(currentDir, entry)
-      const stat = statSync(filePath)
-      if (stat.isDirectory()) {
-        collectWasmVersions(filePath)
-        continue
-      }
-      if (!filePath.endsWith('.wasm')) {
-        continue
-      }
-      const source = readFileSync(filePath)
-      const version = createHash('sha256').update(source).digest('hex').slice(0, 12)
-      wasmVersions.set(path.basename(filePath), version)
-    }
-  }
-
-  const rewriteWasmUrls = (currentDir) => {
-    for (const entry of readdirSync(currentDir)) {
-      const filePath = path.join(currentDir, entry)
-      const stat = statSync(filePath)
-      if (stat.isDirectory()) {
-        rewriteWasmUrls(filePath)
-        continue
-      }
-      if (!filePath.endsWith('.js')) {
-        continue
-      }
-
-      const source = readFileSync(filePath, 'utf8')
-      let nextSource = source
-      for (const [fileName, version] of wasmVersions) {
-        nextSource = nextSource.replaceAll(`${publicPath}${fileName}`, `${publicPath}${fileName}?v=${version}`)
-      }
-      if (nextSource !== source) {
-        writeFileSync(filePath, nextSource)
-      }
-    }
-  }
-
-  collectWasmVersions(dir)
-  rewriteWasmUrls(dir)
-}
-
 const normalizeOutputKey = (value) => value.replace(/\\/g, '/').replace(/^\.\//, '')
 const toAssetPath = (outputKey) => `${publicPath}${normalizeOutputKey(outputKey)}`.replace(/^\//, '')
 
@@ -438,7 +334,11 @@ const buildChunkManifest = () => {
   )
 }
 
+stageBundledWasmAssets({
+  siteRoot,
+  outDir
+})
 normalizeBundledAssetPaths(outDir)
 sanitizeBundledWasmSourceMaps(outDir)
-versionBundledWasmAssetPaths(outDir)
+versionBundledWasmAssetPaths(outDir, { publicPath })
 buildChunkManifest()
