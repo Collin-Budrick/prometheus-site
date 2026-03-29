@@ -30,10 +30,10 @@ fn test_config() -> AppConfig {
         garnet_port: 6379,
         auth: Some(AuthConfig {
             cookie_secret: "test-cookie-secret-test-cookie-secret".to_string(),
-            spacetimeauth_authority: "https://auth.spacetimedb.com/oidc".to_string(),
-            spacetimeauth_client_id: "prometheus-site-dev".to_string(),
-            spacetimeauth_jwks_uri: "https://auth.spacetimedb.com/oidc/jwks".to_string(),
-            spacetimeauth_post_logout_redirect_uri: None,
+            jwt_issuer: "urn:prometheus:better-auth".to_string(),
+            jwt_audience: "prometheus-site".to_string(),
+            jwks_uri: "http://127.0.0.1:3211/api/auth/jwks".to_string(),
+            post_logout_redirect_uri: None,
             bootstrap_private_key: Some("bootstrap-dev-secret".to_string()),
         }),
         features: FeatureFlags {

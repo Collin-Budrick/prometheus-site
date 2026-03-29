@@ -3,6 +3,8 @@ import type { Theme } from '@prometheus/ui'
 import { InSettings } from '@qwikest/icons/iconoir'
 import { emptyUiCopy, type LanguageSeedPayload } from '../../lang/selection'
 import type { Lang } from '../../lang'
+import { supportedLanguages } from '../../lang/manifest'
+import { appConfig, siteTemplateConfig } from '../../site-config'
 import { useCspNonce } from '../../security/qwik'
 import {
   FRAGMENT_STATIC_ROUTE_KIND,
@@ -17,7 +19,7 @@ import {
   STATIC_SHELL_SEED_SCRIPT_ID,
   getStaticShellRouteConfig
 } from './constants'
-import { renderStaticBrand, StaticDockMarkup } from './dock'
+import { getLangLabel, renderStaticBrand, StaticDockMarkup } from './dock'
 import type { StaticShellSeed } from './seed'
 
 type StaticShellLayoutProps = {
@@ -35,13 +37,110 @@ const serializeJson = (value: unknown) =>
     .replace(/</g, '\\u003c')
     .replace(/>/g, '\\u003e')
     .replace(/&/g, '\\u0026')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029')
+const serializeInlineScriptAssignment = (target: string, value: unknown) =>
+  `${target}=${serializeJson(value)};`
 const omitUndefined = <T extends Record<string, unknown>>(value: T): Partial<T> =>
   Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as Partial<T>
+
+const StaticShellSettingsOverlay = component$<{
+  lang: Lang
+  theme: Theme
+  copy: typeof emptyUiCopy
+}>(({ lang, theme, copy }) => {
+  const hasMultipleLangs = supportedLanguages.length > 1
+  const themeLabel = theme === 'dark' ? copy.themeAriaToLight : copy.themeAriaToDark
+
+  return (
+    <div
+      class="settings-dropdown"
+      id="topbar-settings-menu"
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby="topbar-settings-heading"
+      aria-label={copy.navSettings}
+      data-open="false"
+      hidden
+      aria-hidden="true"
+      inert
+    >
+      <h2 class="settings-panel-title" id="topbar-settings-heading" aria-label={copy.navSettings}>
+        {copy.navSettings}
+      </h2>
+      <div class="settings-controls">
+        {hasMultipleLangs ? (
+          <button
+            type="button"
+            class="lang-toggle settings-lang-trigger"
+            data-lang={lang}
+            aria-expanded="false"
+            aria-label={copy.languageToggleLabel}
+            aria-controls="topbar-settings-language-panel"
+            data-static-language-menu-toggle
+          >
+            <span class="lang-toggle-icon" aria-hidden="true">
+              A
+            </span>
+          </button>
+        ) : null}
+        <button
+          class="theme-toggle"
+          type="button"
+          data-theme={theme}
+          aria-pressed={theme === 'dark' ? 'true' : 'false'}
+          aria-label={themeLabel}
+          data-static-theme-toggle
+        >
+          <span class="theme-toggle-icon" aria-hidden="true">
+            {theme === 'dark' ? '☼' : '◐'}
+          </span>
+        </button>
+      </div>
+      {hasMultipleLangs ? (
+        <div
+          class="settings-lang-drawer"
+          id="topbar-settings-language-panel"
+          data-open="false"
+          hidden
+          aria-hidden="true"
+          aria-labelledby="topbar-settings-heading"
+          inert
+        >
+          <fieldset class="settings-lang-list">
+            <legend class="sr-only">{copy.languageToggleLabel}</legend>
+            {supportedLanguages.map((language) => {
+              const isActive = language === lang
+              return (
+                <label
+                  key={language}
+                  class="settings-lang-option"
+                  data-active={isActive ? 'true' : 'false'}
+                >
+                  <input
+                    class="settings-lang-input"
+                    type="radio"
+                    name="static-topbar-language"
+                    checked={isActive}
+                    data-static-language-option
+                    data-lang={language}
+                  />
+                  <span class="settings-lang-code">{getLangLabel(language)}</span>
+                </label>
+              )
+            })}
+          </fieldset>
+        </div>
+      ) : null}
+    </div>
+  )
+})
 
 export const StaticShellLayout = component$<StaticShellLayoutProps>(({
   currentPath,
   isAuthenticated,
   lang,
+  theme,
   languageSeed,
   buildVersion = null,
   routeKind = FRAGMENT_STATIC_ROUTE_KIND
@@ -71,6 +170,7 @@ export const StaticShellLayout = component$<StaticShellLayoutProps>(({
         [STATIC_ROUTE_ATTR]: resolvedRouteKind
       }}
       data-static-lang={lang}
+      data-static-template-preset={siteTemplateConfig.preset}
     >
       <header
         class="topbar"
@@ -104,9 +204,14 @@ export const StaticShellLayout = component$<StaticShellLayoutProps>(({
               >
                 <InSettings class="settings-trigger-icon" aria-hidden="true" />
               </button>
+              <StaticShellSettingsOverlay lang={lang} theme={theme} copy={copy} />
             </div>
           </div>
         </div>
+        <script
+          nonce={nonce || undefined}
+          dangerouslySetInnerHTML={serializeInlineScriptAssignment('globalThis.__PUBLIC_APP_CONFIG__', appConfig)}
+        />
         <script
           id={STATIC_SHELL_SEED_SCRIPT_ID}
           type="application/json"

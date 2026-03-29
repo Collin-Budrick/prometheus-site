@@ -269,6 +269,7 @@ const renderStoreCreateNode = (
             type: 'text',
             name: 'name',
             placeholder: namePlaceholder,
+            autocomplete: 'off',
             readonly: true
           })
         ]),
@@ -278,6 +279,7 @@ const renderStoreCreateNode = (
             type: 'number',
             name: 'price',
             placeholder: pricePlaceholder,
+            autocomplete: 'off',
             readonly: true
           })
         ]),
@@ -291,6 +293,7 @@ const renderStoreCreateNode = (
                 type: 'number',
                 name: 'quantity',
                 placeholder: quantityPlaceholder,
+                autocomplete: 'off',
                 readonly: true
               })
             ]),

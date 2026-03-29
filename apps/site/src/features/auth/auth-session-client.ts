@@ -1,6 +1,6 @@
 import type { AuthSessionState } from './auth-session'
 import { normalizeAuthSessionPayload } from './auth-session-payload'
-import { buildPublicApiUrl } from '@site/shared/public-api-url'
+import { buildPublicSiteAuthUrl } from '@site/shared/public-api-url'
 
 type LoadClientAuthSessionOptions = {
   force?: boolean
@@ -36,7 +36,7 @@ const storeCachedAuthSession = (value: AuthSessionState) => {
 }
 
 const resolveClientAuthSession = async () => {
-  const response = await fetch(buildPublicApiUrl('/auth/session', window.location.origin), {
+  const response = await fetch(buildPublicSiteAuthUrl('/auth/session', window.location.origin), {
     credentials: 'include',
     headers: {
       accept: 'application/json'

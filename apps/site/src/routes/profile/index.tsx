@@ -2,8 +2,12 @@ import { $, component$, useComputed$, useSignal, useVisibleTask$ } from '@builde
 import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteTemplate } from '@prometheus/ui'
 import authModuleStyles from '@site/features/auth/auth.module.css'
-import { appConfig, siteBrand } from '../../site-config'
-import { createCacheHandler, createFeatureRouteHandler, ensureFeatureEnabled, PRIVATE_REVALIDATE_CACHE } from '../route-utils'
+import { appConfig, buildPublicSiteAuthUrl, siteBrand } from '../../site-config'
+import {
+  createProtectedFeatureRouteHandler,
+  ensureFeatureEnabled,
+  PRIVATE_REVALIDATE_CACHE
+} from '../route-utils'
 import { useLangCopy, useLanguageSeed, useSharedLangSignal } from '../../shared/lang-bridge'
 import { resolveRequestLang } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
@@ -63,42 +67,6 @@ const parseHexColor = (value: string): ProfileColor | null => {
   return { r, g, b }
 }
 
-const isLocalHost = (hostname: string) => hostname === '127.0.0.1' || hostname === 'localhost'
-
-const resolveAuthBase = (origin: string, apiBase?: string) => {
-  if (!apiBase) return ''
-  if (apiBase.startsWith('/')) return apiBase
-  try {
-    const apiUrl = new URL(apiBase)
-    const originUrl = new URL(origin)
-    const apiHost = apiUrl.hostname
-    const originHost = originUrl.hostname
-    if (isLocalHost(apiHost) && !isLocalHost(originHost) && apiHost !== originHost) {
-      return '/api'
-    }
-  } catch {
-    return ''
-  }
-  return apiBase
-}
-
-const buildApiUrl = (path: string, origin: string, apiBase?: string) => {
-  const base = resolveAuthBase(origin, apiBase)
-  if (!base) return `${origin}${path}`
-
-  if (base.startsWith('/')) {
-    if (path.startsWith(base)) return `${origin}${path}`
-    return `${origin}${base}${path}`
-  }
-
-  if (path.startsWith('/api')) {
-    const normalizedBase = base.endsWith('/api') ? base.slice(0, -4) : base
-    return `${normalizedBase}${path}`
-  }
-
-  return `${base}${path}`
-}
-
 const authClass = {
   field: authModuleStyles['auth-field'],
   input: authModuleStyles['auth-input'],
@@ -138,7 +106,7 @@ const profileClass = {
   colorSlider: profileModuleStyles['profile-color-slider']
 } as const
 
-export const useProfileData = routeLoader$<ProfileData>(async ({ request, redirect }) => {
+export const useProfileData = routeLoader$<ProfileData>(async ({ request }) => {
   ensureFeatureEnabled('account')
   const { createServerLanguageSeed } = await import('../../lang/server')
   const lang = resolveRequestLang(request)
@@ -151,22 +119,16 @@ export const useProfileData = routeLoader$<ProfileData>(async ({ request, redire
     }
   }
   const session = await loadAuthSession(request)
-  if (session.status !== 'authenticated') {
-    throw redirect(302, '/login')
-  }
   const localProfile = readLocalProfileFromCookie(request.headers.get('cookie'))
   return {
-    user: session.user,
+    user: session.status === 'authenticated' ? session.user : {},
     lang,
     localProfile,
     languageSeed: createServerLanguageSeed(lang, profileLanguageSelection)
   }
 })
 
-export const onGet: RequestHandler = createFeatureRouteHandler(
-  'account',
-  createCacheHandler(PRIVATE_REVALIDATE_CACHE)
-)
+export const onGet: RequestHandler = createProtectedFeatureRouteHandler('account', PRIVATE_REVALIDATE_CACHE)
 
 export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
   const data = resolveValue(useProfileData)
@@ -347,7 +309,7 @@ export default component$(() => {
     statusMessage.value = null
 
     try {
-      const response = await fetch(buildApiUrl('/auth/profile/name', window.location.origin, appConfig.apiBase), {
+      const response = await fetch(buildPublicSiteAuthUrl('/auth/profile/name', window.location.origin), {
         method: 'POST',
         credentials: 'include',
         headers: { 'content-type': 'application/json' },

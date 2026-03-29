@@ -1,13 +1,21 @@
 import { component$ } from '@builder.io/qwik'
 import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteSkeleton, StaticRouteTemplate } from '@prometheus/ui'
-import { isSiteFeatureEnabled, siteBrand, siteFeatures } from '../../site-config'
-import { createCacheHandler, createFeatureRouteHandler, ensureFeatureEnabled, PRIVATE_REVALIDATE_CACHE } from '../route-utils'
+import { isSiteFeatureEnabled, siteBrand } from '../../site-config'
+import {
+  buildLoginRedirectHref,
+  createClientLoginRedirectResponse,
+  createFeatureRouteHandler,
+  ensureFeatureEnabled,
+  PRIVATE_REVALIDATE_CACHE,
+  resolveInternalNextPath
+} from '../route-utils'
 import { useLangCopy, useLanguageSeed, useSharedLangSignal } from '../../shared/lang-bridge'
 import { resolveRequestLang } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
 import { emptyUiCopy, loginLanguageSelection, type LanguageSeedPayload } from '../../lang/selection'
 import type { UiCopy } from '../../lang/types'
+import { getOrCreateRequestCspNonce } from '../../security/server'
 import { StaticPageRoot } from '../../shell/core/StaticPageRoot'
 import { StaticLoginRoute } from '../../shell/auth/StaticLoginRoute'
 import { buildGlobalStylesheetLinks } from '../../shell/core/global-style-assets'
@@ -16,6 +24,7 @@ const loginEnabled = isSiteFeatureEnabled('auth')
 type LoginResource = {
   lang: Lang
   languageSeed: LanguageSeedPayload
+  nextPath: string | null
 }
 
 const resolveLoginCopy = (seed?: Partial<UiCopy>) => ({
@@ -45,13 +54,15 @@ export const useLoginResource = routeLoader$<LoginResource>(async ({ request }) 
   if (!loginEnabled) {
     return {
       lang,
-      languageSeed: createServerLanguageSeed(lang, loginLanguageSelection)
+      languageSeed: createServerLanguageSeed(lang, loginLanguageSelection),
+      nextPath: null
     }
   }
 
   return {
     lang,
-    languageSeed: createServerLanguageSeed(lang, loginLanguageSelection)
+    languageSeed: createServerLanguageSeed(lang, loginLanguageSelection),
+    nextPath: null
   }
 })
 
@@ -70,7 +81,22 @@ const DisabledLoginRoute = component$<{ lang: Lang }>(({ lang }) => {
 
 export const onGet: RequestHandler = createFeatureRouteHandler(
   'auth',
-  createCacheHandler(PRIVATE_REVALIDATE_CACHE)
+  async (event) => {
+    event.headers.set('Cache-Control', PRIVATE_REVALIDATE_CACHE)
+    const currentUrl = new URL(event.request.url)
+    const requestedNext = currentUrl.searchParams.get('next')
+    if (requestedNext) {
+      const nextPath = resolveInternalNextPath(requestedNext, currentUrl.origin)
+      return createClientLoginRedirectResponse({
+        loginHref: buildLoginRedirectHref(event.request),
+        nextPath,
+        cacheControl: PRIVATE_REVALIDATE_CACHE,
+        nonce: getOrCreateRequestCspNonce(event),
+        currentOrigin: currentUrl.origin,
+        pathname: currentUrl.pathname
+      })
+    }
+  }
 )
 
 export const LoginSkeleton = StaticRouteSkeleton
@@ -115,6 +141,7 @@ export default component$(() => {
     <StaticLoginRoute
       copy={resolveLoginCopy(data.languageSeed.ui)}
       lang={data.lang}
+      nextPath={data.nextPath}
     />
   )
 })

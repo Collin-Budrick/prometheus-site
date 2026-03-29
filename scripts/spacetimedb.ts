@@ -143,7 +143,7 @@ const runDockerSpacetime = (
     ...extraEnv
   }, [[cliConfigDir, '/tmp/.config']], extraDockerArgs)
 
-const runDockerRust = (args: string[]) => {
+const runDockerRust = (args: string[], extraEnv: Record<string, string | undefined> = {}) => {
   mkdirSync(rustCargoRegistryDir, { recursive: true })
   mkdirSync(rustCargoGitDir, { recursive: true })
   mkdirSync(rustRustupDir, { recursive: true })
@@ -153,7 +153,8 @@ const runDockerRust = (args: string[]) => {
     {
       CARGO_HOME: '/usr/local/cargo',
       CARGO_BUILD_JOBS: process.env.SPACETIMEDB_CARGO_BUILD_JOBS?.trim() || '1',
-      RUSTUP_HOME: rustupCacheHome
+      RUSTUP_HOME: rustupCacheHome,
+      ...extraEnv
     },
     [
       [rustCargoRegistryDir, '/usr/local/cargo/registry'],
@@ -269,22 +270,50 @@ export const hasPublishedSpacetimeModule = (
 export const hasBuiltSpacetimeModule = () => existsSync(moduleWasmAbsolutePath)
 
 export const buildSpacetimeModule = () =>
-  runDockerRust([
-    'sh',
-    '-lc',
+  runDockerRust(
     [
-      'export PATH=/usr/local/cargo/bin:$PATH',
-      `mkdir -p "${rustupCacheHome}"`,
+      'sh',
+      '-lc',
       [
-        `if [ ! -d "${rustupCacheHome}/toolchains" ]`,
-        `|| ! find "${rustupCacheHome}/toolchains" -mindepth 1 -maxdepth 1 -type d | grep -q .`,
-        `|| ! grep -q '^default_toolchain = ' "${rustupCacheHome}/settings.toml" 2>/dev/null;`,
-        `then cp -a /usr/local/rustup/. "${rustupCacheHome}/"; fi`
-      ].join(' '),
-      "if ! rustup target list --installed | grep -qx 'wasm32-unknown-unknown'; then rustup target add wasm32-unknown-unknown; fi",
-      `cargo build --manifest-path ${moduleManifestPath} --locked --target wasm32-unknown-unknown --release`
-    ].join(' && ')
-  ])
+        'export PATH=/usr/local/cargo/bin:$PATH',
+        `mkdir -p "${rustupCacheHome}"`,
+        [
+          `if [ ! -d "${rustupCacheHome}/toolchains" ]`,
+          `|| ! find "${rustupCacheHome}/toolchains" -mindepth 1 -maxdepth 1 -type d | grep -q .`,
+          `|| ! grep -q '^default_toolchain = ' "${rustupCacheHome}/settings.toml" 2>/dev/null;`,
+          `then cp -a /usr/local/rustup/. "${rustupCacheHome}/"; fi`
+        ].join(' '),
+        "if ! rustup target list --installed | grep -qx 'wasm32-unknown-unknown'; then rustup target add wasm32-unknown-unknown; fi",
+        `cargo build --manifest-path ${moduleManifestPath} --locked --target wasm32-unknown-unknown --release`
+      ].join(' && ')
+    ],
+    {
+      AUTH_JWT_ISSUER:
+        process.env.AUTH_JWT_ISSUER ||
+        process.env.OIDC_AUTHORITY ||
+        process.env.SPACETIMEAUTH_AUTHORITY,
+      AUTH_JWT_AUDIENCE:
+        process.env.AUTH_JWT_AUDIENCE ||
+        process.env.OIDC_CLIENT_ID ||
+        process.env.SPACETIMEAUTH_CLIENT_ID,
+      OIDC_AUTHORITY:
+        process.env.OIDC_AUTHORITY ||
+        process.env.AUTH_JWT_ISSUER ||
+        process.env.SPACETIMEAUTH_AUTHORITY,
+      OIDC_CLIENT_ID:
+        process.env.OIDC_CLIENT_ID ||
+        process.env.AUTH_JWT_AUDIENCE ||
+        process.env.SPACETIMEAUTH_CLIENT_ID,
+      SPACETIMEAUTH_AUTHORITY:
+        process.env.SPACETIMEAUTH_AUTHORITY ||
+        process.env.OIDC_AUTHORITY ||
+        process.env.AUTH_JWT_ISSUER,
+      SPACETIMEAUTH_CLIENT_ID:
+        process.env.SPACETIMEAUTH_CLIENT_ID ||
+        process.env.OIDC_CLIENT_ID ||
+        process.env.AUTH_JWT_AUDIENCE
+    }
+  )
 
 export const generateSpacetimeBindings = () => {
   buildSpacetimeModule()

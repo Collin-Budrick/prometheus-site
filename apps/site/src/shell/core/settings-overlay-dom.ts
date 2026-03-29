@@ -124,15 +124,17 @@ export const ensureStaticShellSettingsOverlay = ({
   settingsPanel.setAttribute('role', 'dialog')
   settingsPanel.setAttribute('aria-modal', 'false')
   settingsPanel.setAttribute('aria-labelledby', 'topbar-settings-heading')
+  settingsPanel.setAttribute('aria-label', copy.navSettings)
   settingsPanel.dataset.open = 'false'
   settingsPanel.hidden = true
   settingsPanel.setAttribute('aria-hidden', 'true')
   settingsPanel.setAttribute('inert', '')
 
   const heading = document.createElement('h2')
-  heading.className = 'sr-only'
+  heading.className = 'settings-panel-title'
   heading.id = 'topbar-settings-heading'
   heading.textContent = copy.navSettings
+  heading.setAttribute('aria-label', copy.navSettings)
 
   const controls = document.createElement('div')
   controls.className = 'settings-controls'

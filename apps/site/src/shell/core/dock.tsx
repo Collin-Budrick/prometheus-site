@@ -1,7 +1,7 @@
 import { InChatLines, InDashboard, InFlask, InHomeSimple, InSettings, InShop, InUser, InUserCircle } from '@qwikest/icons/iconoir'
 import type { JSXNode, QwikIntrinsicElements } from '@builder.io/qwik'
 import type { Lang, UiCopy } from '../../lang'
-import { siteBrand, type NavLabelKey } from '../../site-config'
+import { siteBrand, siteTemplateConfig, type NavLabelKey } from '../../site-config'
 import { AUTH_NAV_ITEMS, TOPBAR_NAV_ITEMS } from '../../shared/nav-order'
 import { toCanonicalStaticShellHref } from './constants'
 
@@ -95,7 +95,7 @@ export const renderStaticBrand = () => (
     <div class="brand-mark" aria-hidden="true" />
     <div class="brand-title">
       <strong>{siteBrand.name}</strong>
-      <span>{siteBrand.product}</span>
+      <span>{`${siteBrand.product} · ${siteTemplateConfig.preset} preset`}</span>
     </div>
   </div>
 )

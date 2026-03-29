@@ -101,7 +101,10 @@ if (import.meta.hot) {
 }
 
 export default function (opts: RenderOptions) {
+  let didRenderFullApp = false
   const renderFullApp = async () => {
+    if (didRenderFullApp) return
+    didRenderFullApp = true
     const [{ render }, { default: Root }] = await Promise.all([import('@builder.io/qwik'), import('./root')])
     return render(document, <Root />, opts)
   }
@@ -123,11 +126,17 @@ export default function (opts: RenderOptions) {
         bootstrapStaticRouteShell(hasStaticOnlyRoute, () => {
           void renderFullApp()
         })
+        if (hasStaticOnlyRoute) {
+          void renderFullApp()
+        }
       }, { once: true })
     } else {
       bootstrapStaticRouteShell(hasStaticOnlyRoute, () => {
         void renderFullApp()
       })
+      if (hasStaticOnlyRoute) {
+        void renderFullApp()
+      }
     }
   }
 

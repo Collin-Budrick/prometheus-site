@@ -189,7 +189,7 @@ describe('security script payload rendering', () => {
       'utf8'
     )
     const staticShellLayoutSource = readFileSync(
-      'c:\\Users\\colli\\Documents\\Project\\prometheus-site\\apps\\site\\src\\shell\\StaticShellLayout.tsx',
+      'c:\\Users\\colli\\Documents\\Project\\prometheus-site\\apps\\site\\src\\shell\\core\\StaticShellLayout.tsx',
       'utf8'
     )
 
@@ -200,21 +200,22 @@ describe('security script payload rendering', () => {
     })
     expect(fragmentShellSource).toContain('id={FRAGMENT_PLAN_CACHE_PAYLOAD_ID}')
     expect(fragmentShellSource).toContain('dangerouslySetInnerHTML={shell.planCachePayload}')
+    expect(staticShellLayoutSource).toContain("globalThis.__PUBLIC_APP_CONFIG__")
     expect(staticShellLayoutSource).toContain('id={STATIC_SHELL_SEED_SCRIPT_ID}')
     expect(staticShellLayoutSource).toContain('dangerouslySetInnerHTML={serializeJson(shellSeed)}')
   })
 
   it('keeps source-level JSON payload scripts on raw inner HTML injection', () => {
     const homeRouteSource = readFileSync(
-      'c:\\Users\\colli\\Documents\\Project\\prometheus-site\\apps\\site\\src\\shell\\StaticHomeRoute.tsx',
+      'c:\\Users\\colli\\Documents\\Project\\prometheus-site\\apps\\site\\src\\shell\\home\\StaticHomeRoute.tsx',
       'utf8'
     )
     const fragmentRouteSource = readFileSync(
-      'c:\\Users\\colli\\Documents\\Project\\prometheus-site\\apps\\site\\src\\shell\\StaticFragmentRoute.tsx',
+      'c:\\Users\\colli\\Documents\\Project\\prometheus-site\\apps\\site\\src\\shell\\fragments\\StaticFragmentRoute.tsx',
       'utf8'
     )
     const pageRootSource = readFileSync(
-      'c:\\Users\\colli\\Documents\\Project\\prometheus-site\\apps\\site\\src\\shell\\StaticPageRoot.tsx',
+      'c:\\Users\\colli\\Documents\\Project\\prometheus-site\\apps\\site\\src\\shell\\core\\StaticPageRoot.tsx',
       'utf8'
     )
 

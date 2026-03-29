@@ -768,9 +768,12 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
         <form preventdefault:submit class="store-stream-search" onSubmit$={handleRefresh}>
           <div class="store-stream-field">
             <input
+              id="store-stream-search"
+              name="store-search"
               type="search"
               placeholder={searchPlaceholder}
               value={query.value}
+              autoComplete="off"
               onPointerDown$={ensureKeyboardVisible}
               onFocus$={ensureKeyboardVisible}
               onInput$={handleInput}

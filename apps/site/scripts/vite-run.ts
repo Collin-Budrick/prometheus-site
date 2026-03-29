@@ -3,6 +3,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symli
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { patchQwikOptimizerFiles } from './vite-run.patches.ts'
+import { assertHostedAuthConfigForNonDevelopmentHosts } from '../../../scripts/spacetime-auth-config.ts'
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const siteRoot = path.resolve(scriptDir, '..')
@@ -14,6 +15,18 @@ const viteBin = resolveFirstExisting([
   path.resolve(workspaceRoot, 'node_modules', 'vite', 'bin', 'vite.js')
 ])
 const viteNodeModulesDir = path.resolve(path.dirname(viteBin), '..', '..')
+const viteCommandArgs = process.argv.slice(2)
+const betterAuthSecret = process.env.BETTER_AUTH_SECRET?.trim() || 'dev-better-auth-secret-please-change-32'
+
+if (viteCommandArgs.some((arg) => arg === 'build' || arg === 'preview')) {
+  assertHostedAuthConfigForNonDevelopmentHosts({
+    context: 'apps/site vite build',
+    env: {
+      ...process.env,
+      BETTER_AUTH_SECRET: betterAuthSecret
+    }
+  })
+}
 
 const rolldownIndexCandidates = [
   path.resolve(siteRoot, 'node_modules', 'rolldown', 'dist', 'index.mjs'),

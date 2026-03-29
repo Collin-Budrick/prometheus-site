@@ -83,5 +83,11 @@
     "oxlint-tsgolint": "0.17.1",
     "typescript": "6.0.1-rc",
     "vite": "8.0.0-beta.18"
+  },
+  "dependencies": {
+    "@better-auth/cli": "^1.4.21",
+    "@convex-dev/better-auth": "^0.11.4",
+    "better-auth": "^1.5.6",
+    "convex": "^1.34.1"
   }
 }

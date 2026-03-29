@@ -28,6 +28,7 @@ type StaticLoginRouteProps = {
     | 'signupTitle'
   >
   lang: Lang
+  nextPath?: string | null
 }
 
 const authClass = {
@@ -53,7 +54,7 @@ const authClass = {
   status: authModuleStyles['auth-status']
 } as const
 
-export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang }) => {
+export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang, nextPath = null }) => {
   return (
     <StaticPageRoot
       routeDataScriptId={STATIC_ISLAND_DATA_SCRIPT_ID}
@@ -65,8 +66,9 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang 
             <div
               class={authClass.card}
               data-static-login-root
+              data-static-login-next-path={nextPath ?? ''}
               data-mode="login"
-              data-runtime-mode="hosted"
+              data-runtime-mode="pending"
               data-state="idle"
             >
               <div class={authClass.header}>
@@ -75,6 +77,17 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang 
                   <h1>{copy.loginTitle}</h1>
                   <p>{copy.loginDescription}</p>
                 </div>
+              </div>
+
+              <div class={authClass.status} data-tone="neutral" data-static-login-runtime-banner>
+                <div class="meta-line" data-static-login-runtime-label>
+                  Checking sign-in mode
+                </div>
+                <p data-static-login-runtime-hint>{copy.loginDescription}</p>
+                <p hidden={!nextPath} data-static-login-next>
+                  <strong>After sign in:</strong>{' '}
+                  <code data-static-login-next-code>{nextPath ?? ''}</code>
+                </p>
               </div>
 
               <div class={authClass.tabs} role="tablist" aria-label={copy.authMethodsLabel}>
@@ -110,6 +123,7 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang 
                       type="email"
                       name="email"
                       autocomplete="email"
+                      required
                       data-static-login-disable
                     />
                   </label>
@@ -120,6 +134,7 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang 
                       type="password"
                       name="password"
                       autocomplete="current-password"
+                      required
                       data-static-login-disable
                     />
                   </label>
@@ -138,33 +153,14 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang 
                       {copy.loginAction}
                     </button>
                   </div>
-                </form>
-
-                <div
-                  class={authClass.panel}
-                  data-panel="login"
-                  data-static-login-hosted-panel
-                  role="group"
-                  aria-label={copy.authMethodsLabel}
-                >
-                  <div class={authClass.actions}>
-                    <button
-                      class={authClass.primary}
-                      type="button"
-                      data-static-login-method="magic-link"
-                      data-static-login-disable
-                    >
-                      {copy.loginAction}
-                    </button>
-                  </div>
-
-                  <div class={authClass.social}>
+                  <div class={authClass.social} data-static-login-social hidden>
                     <p class={authClass.socialLabel}>{copy.authSocialSectionLabel}</p>
                     <div class={authClass.socialActions}>
                       <button
                         type="button"
                         class={authClass.socialButton}
                         data-static-login-method="google"
+                        data-static-login-provider="google"
                         data-static-login-disable
                       >
                         Google
@@ -173,6 +169,7 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang 
                         type="button"
                         class={authClass.socialButton}
                         data-static-login-method="github"
+                        data-static-login-provider="github"
                         data-static-login-disable
                       >
                         GitHub
@@ -180,10 +177,16 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang 
                     </div>
                   </div>
 
-                  <div class={authClass.status} role="status" aria-live="polite" data-tone="neutral">
+                  <div
+                    class={authClass.status}
+                    role="status"
+                    aria-live="polite"
+                    data-tone="neutral"
+                    data-static-login-login-hint
+                  >
                     {copy.authHostedStatus}
                   </div>
-                </div>
+                </form>
 
                 <form class={authClass.panel} data-panel="signup" data-static-login-form="signup" hidden>
                   <label class={authClass.field}>
@@ -193,6 +196,8 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang 
                       type="text"
                       name="name"
                       autocomplete="name"
+                      minLength={2}
+                      required
                       data-static-login-disable
                     />
                   </label>
@@ -203,6 +208,7 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang 
                       type="email"
                       name="email"
                       autocomplete="email"
+                      required
                       data-static-login-disable
                     />
                   </label>
@@ -213,6 +219,7 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang 
                       type="password"
                       name="password"
                       autocomplete="new-password"
+                      required
                       data-static-login-disable
                     />
                   </label>

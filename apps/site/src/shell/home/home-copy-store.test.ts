@@ -75,4 +75,11 @@ describe('home-copy-store', () => {
     expect(copy.actions.binary).toBe('Apply stream')
     expect(copy.stages.map((stage) => stage.id)).toEqual(['react', 'binary', 'qwik'])
   })
+
+  it('falls back to shared ui copy when the home seed omits settings labels', () => {
+    const copy = getStaticHomeUiCopy('en')
+
+    expect(copy.navSettings).toBe('Settings')
+    expect(copy.languageToggleLabel).toBe('Switch language')
+  })
 })

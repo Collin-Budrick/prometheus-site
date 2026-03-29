@@ -50,6 +50,7 @@ import {
   serializeHomeRuntimePlanEntries
 } from './home-bootstrap-data'
 import { normalizeHomeDemoAssetMap } from './home-demo-runtime-types'
+import { isSiteFeatureEnabled, siteBrand, siteTemplateConfig } from '../../site-config'
 
 type StaticHomeRouteProps = {
   plan: FragmentPlanValue
@@ -191,6 +192,17 @@ const buildRuntimeBootstrapBytes = (payloads: FragmentPayload[]) => {
   })
 
   return encodeBase64Bytes(concatUint8Arrays(frames))
+}
+
+const withStaticRouteLang = (href: string, lang: Lang) => {
+  const base = typeof window === 'undefined' ? 'https://example.com' : window.location.origin
+  try {
+    const url = new URL(href, base)
+    url.searchParams.set('lang', lang)
+    return `${url.pathname}${url.search}${url.hash}`
+  } catch {
+    return href
+  }
 }
 
 export const buildStaticHomeRouteState = ({
@@ -399,6 +411,21 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
     '1': [...heroColumns['1'], ...mainColumns['1']],
     '2': [...heroColumns['2'], ...mainColumns['2']]
   } as const
+  const primaryAction = isSiteFeatureEnabled('store')
+    ? { href: '/store', label: 'Browse store' }
+    : isSiteFeatureEnabled('lab')
+      ? { href: '/lab', label: 'Open lab' }
+      : isSiteFeatureEnabled('auth')
+        ? { href: '/login', label: 'Inspect auth' }
+        : { href: '/', label: 'Review shell' }
+  const secondaryActions = [
+    isSiteFeatureEnabled('auth') && primaryAction.href !== '/login'
+      ? { href: '/login', label: 'Review auth' }
+      : null,
+    isSiteFeatureEnabled('pwa')
+      ? { href: '/offline', label: 'Offline state' }
+      : null
+  ].filter((action): action is { href: string; label: string } => action !== null)
   const renderHomeCard = (card: StaticHomeRenderedCard) => {
     const style = {
       '--fragment-min-height': `${card.reservedHeight}px`,
@@ -482,6 +509,39 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
             data-reveal-locked="false"
           >
             <div class="fragment-card-body">
+              <div class="home-intro-copy-block">
+                <div class="meta-line">{`${siteTemplateConfig.preset} preset`}</div>
+                <div class="home-intro-copy">
+                  <h1>{`${siteBrand.name} template surface`}</h1>
+                  <span class="home-intro-copy-line">{siteBrand.tagline}</span>
+                  <span class="home-intro-copy-line">
+                    Audit the shared fragment shell, route flows, and auth/settings behavior before you fork the preset.
+                  </span>
+                </div>
+                <ul class="home-intro-pills">
+                  <li>
+                    <a
+                      class="home-intro-pill"
+                      href={withStaticRouteLang(primaryAction.href, lang)}
+                      data-fragment-link
+                    >
+                      {primaryAction.label}
+                    </a>
+                  </li>
+                  {secondaryActions.map((action) => (
+                    <li key={action.href}>
+                      <a
+                        class="home-intro-pill"
+                        href={withStaticRouteLang(action.href, lang)}
+                        data-fragment-link
+                      >
+                        {action.label}
+                      </a>
+                    </li>
+                  ))}
+                  <li class="home-intro-pill">{siteBrand.product}</li>
+                </ul>
+              </div>
               <div
                 class="home-intro"
                 dangerouslySetInnerHTML={asTrustedHtml(renderHomeIntroMarkdownToHtml(introMarkdown), 'template') as string}

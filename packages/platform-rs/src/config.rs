@@ -29,10 +29,10 @@ pub struct AppConfig {
 #[derive(Clone, Debug)]
 pub struct AuthConfig {
     pub cookie_secret: String,
-    pub spacetimeauth_authority: String,
-    pub spacetimeauth_client_id: String,
-    pub spacetimeauth_jwks_uri: String,
-    pub spacetimeauth_post_logout_redirect_uri: Option<String>,
+    pub jwt_issuer: String,
+    pub jwt_audience: String,
+    pub jwks_uri: String,
+    pub post_logout_redirect_uri: Option<String>,
     pub bootstrap_private_key: Option<String>,
 }
 
@@ -89,32 +89,24 @@ impl AppConfig {
                     "BETTER_AUTH_COOKIE_SECRET",
                     "dev-cookie-secret-please-change-32",
                 ),
-                spacetimeauth_authority: normalize_url(&read_string(
-                    "SPACETIMEAUTH_AUTHORITY",
-                    "https://auth.spacetimedb.com/oidc",
-                ))?,
-                spacetimeauth_client_id: read_string(
-                    "SPACETIMEAUTH_CLIENT_ID",
-                    "prometheus-site-dev",
+                jwt_issuer: read_string_with_aliases(
+                    &["AUTH_JWT_ISSUER", "OIDC_AUTHORITY", "SPACETIMEAUTH_AUTHORITY"],
+                    "urn:prometheus:better-auth",
                 ),
-                spacetimeauth_jwks_uri: normalize_url(&read_string(
-                    "SPACETIMEAUTH_JWKS_URI",
-                    "https://auth.spacetimedb.com/oidc/jwks",
+                jwt_audience: read_string_with_aliases(
+                    &["AUTH_JWT_AUDIENCE", "OIDC_CLIENT_ID", "SPACETIMEAUTH_CLIENT_ID"],
+                    "prometheus-site",
+                ),
+                jwks_uri: normalize_url(&read_string_with_aliases(
+                    &["AUTH_JWKS_URI", "OIDC_JWKS_URI", "SPACETIMEAUTH_JWKS_URI"],
+                    "http://127.0.0.1:3211/api/auth/jwks",
                 ))?,
-                spacetimeauth_post_logout_redirect_uri: env::var(
+                post_logout_redirect_uri: read_optional_string(&[
+                    "AUTH_POST_LOGOUT_REDIRECT_URI",
+                    "OIDC_POST_LOGOUT_REDIRECT_URI",
                     "SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI",
-                )
-                .ok()
-                .and_then(|value| {
-                    let trimmed = value.trim().to_string();
-                    (!trimmed.is_empty()).then_some(trimmed)
-                }),
-                bootstrap_private_key: env::var("AUTH_BOOTSTRAP_PRIVATE_KEY").ok().and_then(
-                    |value| {
-                        let trimmed = value.trim().to_string();
-                        (!trimmed.is_empty()).then_some(trimmed)
-                    },
-                ),
+                ]),
+                bootstrap_private_key: read_optional_string(&["AUTH_BOOTSTRAP_PRIVATE_KEY"]),
             })
         } else {
             None
@@ -200,6 +192,32 @@ fn read_string(key: &str, default: impl Into<String>) -> String {
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| default.into())
+}
+
+fn read_string_with_aliases(keys: &[&str], default: impl Into<String>) -> String {
+    for key in keys {
+        if let Ok(value) = env::var(key) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return trimmed.to_string();
+            }
+        }
+    }
+
+    default.into()
+}
+
+fn read_optional_string(keys: &[&str]) -> Option<String> {
+    for key in keys {
+        if let Ok(value) = env::var(key) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+
+    None
 }
 
 fn read_bool(key: &str, default: bool) -> bool {

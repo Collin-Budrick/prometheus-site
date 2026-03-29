@@ -99,4 +99,12 @@ describe("entry.ssr static bootstrap injection", () => {
     expect(source).toContain('resolveStaticBootstrapMode(pathname) === "home-static"');
     expect(source).toContain("return staticFragmentPrewarmPromise.then(() => renderStaticShell());");
   });
+
+  it("guards against a missing client manifest during preview static-shell rendering", async () => {
+    const source = await readSource();
+
+    expect(source).toContain("const resolvedManifest = manifest as");
+    expect(source).toContain("if (!resolvedManifest || typeof resolvedManifest !== \"object\")");
+    expect(source).toContain("return undefined;");
+  });
 });

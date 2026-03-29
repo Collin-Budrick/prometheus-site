@@ -10,7 +10,7 @@ import {
   saveLocalProfile,
   type ProfileColor
 } from '../../../features/auth/profile-storage'
-import { buildPublicApiUrl } from '../../../shared/public-api-url'
+import { buildPublicSiteAuthUrl } from '../../../shared/public-api-url'
 
 type ProfileUser = {
   id?: string
@@ -303,7 +303,7 @@ export const mountStaticProfileController = ({ lang, user }: MountStaticProfileC
     syncSaveButton(actionButton, state)
 
     try {
-      const response = await fetch(buildPublicApiUrl('/auth/profile/name', window.location.origin), {
+      const response = await fetch(buildPublicSiteAuthUrl('/auth/profile/name', window.location.origin), {
         method: 'POST',
         credentials: 'include',
         headers: { 'content-type': 'application/json' },

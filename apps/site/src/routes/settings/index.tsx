@@ -3,7 +3,11 @@ import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHa
 import { StaticRouteTemplate } from '@prometheus/ui'
 import authModuleStyles from '@site/features/auth/auth.module.css'
 import { appConfig, isSiteFeatureEnabled, siteBrand } from '../../site-config'
-import { createCacheHandler, createFeatureRouteHandler, ensureFeatureEnabled, PRIVATE_REVALIDATE_CACHE } from '../route-utils'
+import {
+  createProtectedFeatureRouteHandler,
+  ensureFeatureEnabled,
+  PRIVATE_REVALIDATE_CACHE
+} from '../route-utils'
 import { useLangCopy, useLanguageSeed, useSharedLangSignal } from '../../shared/lang-bridge'
 import { resolveRequestLang } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
@@ -98,7 +102,7 @@ const settingsClass = {
   range: settingsModuleStyles['settings-range']
 } as const
 
-export const useSettingsData = routeLoader$<ProtectedRouteData>(async ({ request, redirect }) => {
+export const useSettingsData = routeLoader$<ProtectedRouteData>(async ({ request }) => {
   ensureFeatureEnabled('account')
   const { createServerLanguageSeed } = await import('../../lang/server')
   const lang = resolveRequestLang(request)
@@ -115,26 +119,20 @@ export const useSettingsData = routeLoader$<ProtectedRouteData>(async ({ request
     }
   }
   const session = await loadAuthSession(request)
-  if (session.status !== 'authenticated') {
-    throw redirect(302, '/login')
-  }
   const cookieHeader = request.headers.get('cookie')
   const chatSettings = readChatSettingsFromCookie(cookieHeader) ?? { ...defaultChatSettings }
   const swSeed = readServiceWorkerSeedFromCookie(cookieHeader)
   const swOptOut = Boolean(swSeed.optOut)
   return {
     lang,
-    user: session.user,
+    user: session.status === 'authenticated' ? session.user : undefined,
     chatSettings,
     swOptOut,
     languageSeed: createServerLanguageSeed(lang, settingsLanguageSelection)
   }
 })
 
-export const onGet: RequestHandler = createFeatureRouteHandler(
-  'account',
-  createCacheHandler(PRIVATE_REVALIDATE_CACHE)
-)
+export const onGet: RequestHandler = createProtectedFeatureRouteHandler('account', PRIVATE_REVALIDATE_CACHE)
 
 export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
   const data = resolveValue(useSettingsData)

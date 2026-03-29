@@ -7,7 +7,13 @@ import { defaultLang, type Lang } from '../shared/lang-store'
 import { StaticPageRoot } from '../shell/core/StaticPageRoot'
 import { resolveRequestLang } from './fragment-resource'
 import { useLangCopy, useLanguageSeed, useSharedLangSignal } from '../shared/lang-bridge'
-import { offlineLanguageSelection, type LanguageSeedPayload } from '../lang/selection'
+import {
+  mergeLanguageSelections,
+  offlineLanguageSelection,
+  settingsLanguageSelection,
+  shellLanguageSelection,
+  type LanguageSeedPayload
+} from '../lang/selection'
 import { buildGlobalStylesheetLinks } from '../shell/core/global-style-assets'
 
 type OfflineRouteData = {
@@ -15,13 +21,18 @@ type OfflineRouteData = {
   languageSeed: LanguageSeedPayload
 }
 
+const offlinePageLanguageSelection = mergeLanguageSelections(
+  mergeLanguageSelections(shellLanguageSelection, settingsLanguageSelection),
+  offlineLanguageSelection
+)
+
 export const useOfflineRoute = routeLoader$<OfflineRouteData>(async ({ request }) => {
   ensureFeatureEnabled('pwa')
   const { createServerLanguageSeed } = await import('../lang/server')
   const lang = resolveRequestLang(request)
   return {
     lang,
-    languageSeed: createServerLanguageSeed(lang, offlineLanguageSelection)
+    languageSeed: createServerLanguageSeed(lang, offlinePageLanguageSelection)
   }
 })
 

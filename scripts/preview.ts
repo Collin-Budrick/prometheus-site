@@ -14,6 +14,7 @@ import {
   runSync,
   saveBuildCache
 } from './compose-utils'
+import { deployConvexProject } from './convex'
 import { generateFragmentCss } from './fragment-css'
 import { getRuntimeConfig } from './runtime-config'
 import {
@@ -24,6 +25,11 @@ import {
   publishBuiltSpacetimeModule,
   waitForSpacetimeServer
 } from './spacetimedb'
+import {
+  assertHostedAuthConfigForNonDevelopmentHosts,
+  resolveSpacetimeAuthConfig,
+  withResolvedSpacetimeAuthEnv
+} from './spacetime-auth-config'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 ensureSpacetimeJwtKeys()
@@ -226,8 +232,10 @@ const previewEnableApiWebTransport =
 const previewEnableWebTransportDatagramsServer =
   process.env.WEBTRANSPORT_ENABLE_DATAGRAMS?.trim() || (realtimeEnabled ? '1' : '0')
 const previewWebTransportMaxDatagramSize = process.env.WEBTRANSPORT_MAX_DATAGRAM_SIZE?.trim() || '1200'
+const betterAuthSecret = process.env.BETTER_AUTH_SECRET?.trim() || 'dev-better-auth-secret-please-change-32'
 const includeRealtimeServices = runtimeCompose.includeOptionalServices
 const composeProfiles = Array.from(new Set(runtimeCompose.profiles))
+const resolvedAuthConfig = resolveSpacetimeAuthConfig(process.env)
 
 const normalizeBasePort = (value: string) => {
   try {
@@ -277,15 +285,20 @@ const composeStaticSiteOptions = {
   stripAcceptEncoding: true
 }
 
-const composeEnv = {
+const composeEnv = withResolvedSpacetimeAuthEnv({
   ...process.env,
   COMPOSE_PROJECT_NAME: previewProject,
   ...(composeProfiles.length > 0 ? { COMPOSE_PROFILES: composeProfiles.join(',') } : {}),
+  BETTER_AUTH_SECRET: betterAuthSecret,
+  BETTER_AUTH_COOKIE_SECRET: process.env.BETTER_AUTH_COOKIE_SECRET?.trim() || betterAuthSecret,
   PROMETHEUS_HTTP_PORT: previewHttpPort,
   PROMETHEUS_HTTPS_PORT: previewHttpsPort,
   PROMETHEUS_API_PORT: previewApiPort,
   PROMETHEUS_SPACETIMEDB_PORT: previewSpacetimeDbPort,
   PROMETHEUS_GARNET_PORT: previewGarnetPort,
+  PROMETHEUS_CONVEX_PORT: runtimeConfig.ports.convex,
+  PROMETHEUS_CONVEX_SITE_PROXY_PORT: runtimeConfig.ports.convexSiteProxy,
+  PROMETHEUS_CONVEX_DASHBOARD_PORT: runtimeConfig.ports.convexDashboard,
   PROMETHEUS_WEBTRANSPORT_PORT: previewWebTransportPort,
   PROMETHEUS_DB_HOST: runtimeConfig.domains.db,
   PROMETHEUS_DB_HOST_PROD: runtimeConfig.domains.dbProd,
@@ -319,12 +332,26 @@ const composeEnv = {
   VITE_P2P_WAKU_RELAYS: previewP2pWakuRelays,
   VITE_P2P_PEERJS_SERVER: previewPeerjsServer,
   VITE_DISABLE_SW: previewDisableSw,
+  SPACETIMEAUTH_AUTHORITY: resolvedAuthConfig.serverAuthority,
+  SPACETIMEAUTH_CLIENT_ID: resolvedAuthConfig.serverClientId,
+  SPACETIMEAUTH_JWKS_URI: resolvedAuthConfig.serverJwksUri ?? '',
+  SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI: resolvedAuthConfig.serverPostLogoutRedirectUri ?? '',
+  VITE_SPACETIMEAUTH_AUTHORITY: resolvedAuthConfig.publicAuthority,
+  VITE_SPACETIMEAUTH_CLIENT_ID: resolvedAuthConfig.publicClientId,
+  VITE_SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI: resolvedAuthConfig.publicPostLogoutRedirectUri ?? '',
   ENABLE_WEBTRANSPORT_FRAGMENTS: previewEnableApiWebTransport,
   WEBTRANSPORT_ENABLE_DATAGRAMS: previewEnableWebTransportDatagramsServer,
   WEBTRANSPORT_MAX_DATAGRAM_SIZE: previewWebTransportMaxDatagramSize
-}
+})
+assertHostedAuthConfigForNonDevelopmentHosts({
+  context: 'preview compose runtime',
+  env: composeEnv,
+  hosts: [previewWebHost, runtimeConfig.domains.webProd]
+})
 const composeSiteBuildEnv = {
   ...process.env,
+  BETTER_AUTH_SECRET: composeEnv.BETTER_AUTH_SECRET,
+  BETTER_AUTH_COOKIE_SECRET: composeEnv.BETTER_AUTH_COOKIE_SECRET,
   PROMETHEUS_TEMPLATE_PRESET: composeEnv.PROMETHEUS_TEMPLATE_PRESET,
   PROMETHEUS_TEMPLATE_HOME_MODE: composeEnv.PROMETHEUS_TEMPLATE_HOME_MODE,
   PROMETHEUS_TEMPLATE_FEATURES: composeEnv.PROMETHEUS_TEMPLATE_FEATURES,
@@ -353,15 +380,16 @@ const composeSiteBuildEnv = {
   VITE_P2P_WAKU_RELAYS: composeEnv.VITE_P2P_WAKU_RELAYS,
   VITE_P2P_PEERJS_SERVER: composeEnv.VITE_P2P_PEERJS_SERVER,
   VITE_DISABLE_SW: composeEnv.VITE_DISABLE_SW,
+  VITE_AUTH_BASE_PATH: composeEnv.VITE_AUTH_BASE_PATH,
+  VITE_AUTH_SOCIAL_PROVIDERS: composeEnv.VITE_AUTH_SOCIAL_PROVIDERS,
+  VITE_OIDC_AUTHORITY: composeEnv.VITE_OIDC_AUTHORITY,
+  VITE_OIDC_CLIENT_ID: composeEnv.VITE_OIDC_CLIENT_ID,
+  VITE_OIDC_JWKS_URI: composeEnv.VITE_OIDC_JWKS_URI,
+  VITE_OIDC_POST_LOGOUT_REDIRECT_URI: composeEnv.VITE_OIDC_POST_LOGOUT_REDIRECT_URI,
   VITE_PUBLIC_BASE: process.env.VITE_PUBLIC_BASE?.trim() || '',
-  VITE_SPACETIMEAUTH_AUTHORITY:
-    process.env.VITE_SPACETIMEAUTH_AUTHORITY?.trim() ||
-    process.env.SPACETIMEAUTH_AUTHORITY?.trim() ||
-    'https://auth.spacetimedb.com/oidc',
-  VITE_SPACETIMEAUTH_CLIENT_ID:
-    process.env.VITE_SPACETIMEAUTH_CLIENT_ID?.trim() ||
-    process.env.SPACETIMEAUTH_CLIENT_ID?.trim() ||
-    templateBranding.ids.authClientId,
+  VITE_SPACETIMEAUTH_AUTHORITY: composeEnv.VITE_SPACETIMEAUTH_AUTHORITY,
+  VITE_SPACETIMEAUTH_CLIENT_ID: composeEnv.VITE_SPACETIMEAUTH_CLIENT_ID,
+  VITE_SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI: composeEnv.VITE_SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI,
   VITE_SPACETIMEDB_MODULE:
     process.env.VITE_SPACETIMEDB_MODULE?.trim() ||
     process.env.SPACETIMEDB_MODULE?.trim() ||
@@ -570,6 +598,8 @@ if (needsFullUp) {
   )
   if (up.status !== 0) process.exit(up.status ?? 1)
 }
+
+deployConvexProject({ command, prefix, env: composeEnv })
 
 if (configChanged && running.has('caddy')) {
   const restart = runSync(command, [...prefix, 'restart', 'caddy'], composeEnv)

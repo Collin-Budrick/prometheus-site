@@ -13,6 +13,7 @@ import {
   runSync,
   saveBuildCache
 } from './compose-utils'
+import { deployConvexProject } from './convex'
 import { generateFragmentCss } from './fragment-css'
 import { getRuntimeConfig } from './runtime-config'
 import {
@@ -23,6 +24,7 @@ import {
   publishBuiltSpacetimeModule,
   waitForSpacetimeServer
 } from './spacetimedb'
+import { resolveSpacetimeAuthConfig, withResolvedSpacetimeAuthEnv } from './spacetime-auth-config'
 
 type BuildTarget = {
   service: string
@@ -233,6 +235,7 @@ const templateFeatures = runtimeConfig.template.features
 const realtimeEnabled = templateFeatures.realtime
 const analyticsEnabled = templateFeatures.analytics
 const pwaEnabled = templateFeatures.pwa
+const resolvedAuthConfig = resolveSpacetimeAuthConfig(process.env)
 
 const devOrigin = resolveOrigin(devWebHost, devHttpsPort, 'https')
 const devDbOrigin = resolveOrigin(devDbHost, devHttpsPort, 'https')
@@ -254,16 +257,22 @@ const enableClientDatagrams =
 const enableServerWebTransport = process.env.ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() || (realtimeEnabled ? '1' : '0')
 const enableServerDatagrams = process.env.WEBTRANSPORT_ENABLE_DATAGRAMS?.trim() || (realtimeEnabled ? '1' : '0')
 const webTransportMaxDatagramSize = process.env.WEBTRANSPORT_MAX_DATAGRAM_SIZE?.trim() || '1200'
+const betterAuthSecret = process.env.BETTER_AUTH_SECRET?.trim() || 'dev-better-auth-secret-please-change-32'
 
-const composeEnv: NodeJS.ProcessEnv = {
+const composeEnv: NodeJS.ProcessEnv = withResolvedSpacetimeAuthEnv({
   ...process.env,
   COMPOSE_PROJECT_NAME: runtimeCompose.projectName,
   ...(composeProfiles.length > 0 ? { COMPOSE_PROFILES: composeProfiles.join(',') } : {}),
+  BETTER_AUTH_SECRET: betterAuthSecret,
+  BETTER_AUTH_COOKIE_SECRET: process.env.BETTER_AUTH_COOKIE_SECRET?.trim() || betterAuthSecret,
   PROMETHEUS_HTTP_PORT: devHttpPort,
   PROMETHEUS_HTTPS_PORT: devHttpsPort,
   PROMETHEUS_API_PORT: devApiPort,
   PROMETHEUS_SPACETIMEDB_PORT: devSpacetimeDbPort,
   PROMETHEUS_GARNET_PORT: devGarnetPort,
+  PROMETHEUS_CONVEX_PORT: runtimeConfig.ports.convex,
+  PROMETHEUS_CONVEX_SITE_PROXY_PORT: runtimeConfig.ports.convexSiteProxy,
+  PROMETHEUS_CONVEX_DASHBOARD_PORT: runtimeConfig.ports.convexDashboard,
   PROMETHEUS_WEBTRANSPORT_PORT: devWebTransportPort,
   PROMETHEUS_DB_HOST: runtimeConfig.domains.db,
   PROMETHEUS_DB_HOST_PROD: runtimeConfig.domains.dbProd,
@@ -278,10 +287,17 @@ const composeEnv: NodeJS.ProcessEnv = {
   VITE_TEMPLATE_FEATURES: process.env.PROMETHEUS_TEMPLATE_FEATURES?.trim() || '',
   VITE_TEMPLATE_DISABLE_FEATURES: process.env.PROMETHEUS_TEMPLATE_DISABLE_FEATURES?.trim() || '',
   VITE_SPACETIMEDB_URI: process.env.VITE_SPACETIMEDB_URI?.trim() || devDbOrigin,
+  SPACETIMEAUTH_AUTHORITY: resolvedAuthConfig.serverAuthority,
+  SPACETIMEAUTH_CLIENT_ID: resolvedAuthConfig.serverClientId,
+  SPACETIMEAUTH_JWKS_URI: resolvedAuthConfig.serverJwksUri ?? '',
+  SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI: resolvedAuthConfig.serverPostLogoutRedirectUri ?? '',
+  VITE_SPACETIMEAUTH_AUTHORITY: resolvedAuthConfig.publicAuthority,
+  VITE_SPACETIMEAUTH_CLIENT_ID: resolvedAuthConfig.publicClientId,
+  VITE_SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI: resolvedAuthConfig.publicPostLogoutRedirectUri ?? '',
   ENABLE_WEBTRANSPORT_FRAGMENTS: enableServerWebTransport,
   WEBTRANSPORT_ENABLE_DATAGRAMS: enableServerDatagrams,
   WEBTRANSPORT_MAX_DATAGRAM_SIZE: webTransportMaxDatagramSize
-}
+})
 
 const { devUpstream, configChanged } = ensureCaddyConfig(process.env.DEV_WEB_UPSTREAM?.trim(), undefined, {
   dev: {
@@ -334,6 +350,8 @@ console.info('[dev] Starting Compose infra and API. The site runs on the host fo
 
 const upCore = runSync(command, [...prefix, 'up', '-d', '--remove-orphans', ...coreServices], composeEnv)
 if (upCore.status !== 0) process.exit(upCore.status ?? 1)
+
+deployConvexProject({ command, prefix, env: composeEnv })
 
 const upCaddy = runSync(command, [...prefix, 'up', '-d', '--remove-orphans', '--no-deps', 'caddy'], composeEnv)
 if (upCaddy.status !== 0) process.exit(upCaddy.status ?? 1)
@@ -388,7 +406,7 @@ const deviceApiBase = resolveDeviceApiBase(resolvedDeviceHost, devApiPort)
 const resolvedClientApiBase =
   deviceApiBase && isLocalApiBase(rawClientApiBase) ? deviceApiBase : rawClientApiBase || '/api'
 
-const siteEnv: NodeJS.ProcessEnv = {
+const siteEnv: NodeJS.ProcessEnv = withResolvedSpacetimeAuthEnv({
   ...composeEnv,
   PROMETHEUS_DEVICE_HOST: resolvedDeviceHost || '',
   PROMETHEUS_DEVICE_WEB_PORT: devSitePort,
@@ -397,14 +415,6 @@ const siteEnv: NodeJS.ProcessEnv = {
   VITE_API_BASE: resolvedClientApiBase,
   API_BASE: process.env.API_BASE?.trim() || `http://127.0.0.1:${devApiPort}`,
   VITE_SPACETIMEDB_URI: process.env.VITE_SPACETIMEDB_URI?.trim() || devDbOrigin,
-  VITE_SPACETIMEAUTH_AUTHORITY:
-    process.env.VITE_SPACETIMEAUTH_AUTHORITY?.trim() ||
-    process.env.SPACETIMEAUTH_AUTHORITY?.trim() ||
-    'https://auth.spacetimedb.com/oidc',
-  VITE_SPACETIMEAUTH_CLIENT_ID:
-    process.env.VITE_SPACETIMEAUTH_CLIENT_ID?.trim() ||
-    process.env.SPACETIMEAUTH_CLIENT_ID?.trim() ||
-    templateBranding.ids.authClientId,
   VITE_SPACETIMEDB_MODULE:
     process.env.VITE_SPACETIMEDB_MODULE?.trim() ||
     process.env.SPACETIMEDB_MODULE?.trim() ||
@@ -440,7 +450,7 @@ const siteEnv: NodeJS.ProcessEnv = {
     process.env.PROMETHEUS_VITE_P2P_PEERJS_SERVER?.trim() ||
     'https://0.peerjs.com',
   VITE_DISABLE_SW: process.env.VITE_DISABLE_SW?.trim() || (pwaEnabled ? '0' : '1')
-}
+})
 
 if (!useDeviceHost) {
   siteEnv.VITE_DEV_HTTPS = '1'

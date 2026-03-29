@@ -1,35 +1,10 @@
 import { templateBranding } from '@prometheus/template-config'
 import { appConfig } from '@site/site-config'
+import { buildPublicSiteAuthUrl } from '@site/shared/public-api-url'
 import { attemptBootstrapSession, clearBootstrapSession } from './auth-bootstrap'
 import { clearClientAuthSessionCache } from './auth-session-client'
-import { buildPublicApiUrl } from '@site/shared/public-api-url'
 
 export type SpacetimeAuthMethod = 'magic-link' | 'google' | 'github'
-
-type SpacetimeAuthDiscovery = {
-  authorization_endpoint: string
-  end_session_endpoint?: string
-  issuer: string
-  token_endpoint: string
-}
-
-type PendingAuthRequest = {
-  codeVerifier: string
-  createdAt: number
-  method: SpacetimeAuthMethod
-  next: string
-  nonce: string
-  state: string
-}
-
-type TokenResponse = {
-  access_token?: string
-  expires_in?: number
-  id_token?: string
-  refresh_token?: string
-  scope?: string
-  token_type?: string
-}
 
 type AuthClaims = {
   aud?: string | string[]
@@ -38,21 +13,16 @@ type AuthClaims = {
   iss?: string
   login_method?: string
   name?: string
-  nonce?: string
   picture?: string
   preferred_username?: string
   provider_id?: string
-  roles?: string[]
+  roles?: string[] | string
   sub?: string
 }
 
 export type StoredSpacetimeAuthSession = {
-  accessToken?: string
   expiresAt?: number
   idToken: string
-  refreshToken?: string
-  scope?: string
-  tokenType?: string
   user: {
     email?: string
     id: string
@@ -66,13 +36,6 @@ export type StoredSpacetimeAuthSession = {
 
 type StartLoginOptions = {
   next?: string
-}
-
-type SpacetimeAuthConfig = {
-  authority: string
-  clientId: string
-  postLogoutRedirectUri: string
-  redirectUri: string
 }
 
 export type SpacetimeAuthMode = 'hosted' | 'dev-session' | 'disabled'
@@ -92,10 +55,43 @@ type DevLocalAccountRequestBody = {
   email: string
   name?: string
   password: string
+  remember?: boolean
+}
+
+type BetterAuthSessionResponse = {
+  session?: {
+    id?: string
+  }
+  user?: {
+    email?: string
+    id?: string
+    image?: string | null
+    name?: string
+  }
+}
+
+type BetterAuthTokenResponse = {
+  token?: string
+}
+
+type BetterAuthRedirectResponse = {
+  redirect?: boolean
+  url?: string
+}
+
+type BetterAuthErrorResponse = {
+  code?: string
+  error?: string
+  message?: string
 }
 
 type DevSessionResponse = {
   error?: string
+}
+
+type HostedAuthResult = {
+  next: string
+  session: StoredSpacetimeAuthSession
 }
 
 const pendingRequestStorageKey = 'spacetimeauth:pkce:v1'
@@ -103,7 +99,7 @@ const sessionStorageKey = 'spacetimeauth:session:v1'
 const preferredSpacetimeDbUriStorageKey = 'spacetimedb:preferred-uri:v1'
 const preferredSpacetimeDbUriTtlMs = 7 * 24 * 60 * 60 * 1000
 const refreshGraceMs = 30_000
-const defaultSpacetimeAuthAuthority = 'https://auth.spacetimedb.com/oidc'
+const localDevelopmentHostnames = new Set(['localhost', '127.0.0.1', '::1'])
 
 type StoredPreferredSpacetimeDbUri = {
   moduleName: string
@@ -112,20 +108,15 @@ type StoredPreferredSpacetimeDbUri = {
   uri: string
 }
 
-let discoveryPromise: Promise<SpacetimeAuthDiscovery> | null = null
-
 const authRuntimeEnv =
   typeof import.meta !== 'undefined'
     ? (import.meta as ImportMeta & { env?: AuthRuntimeEnv }).env
     : undefined
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null
-
 const normalizeOptionalString = (value: unknown) => {
   if (typeof value !== 'string') return undefined
   const trimmed = value.trim()
-  return trimmed === '' ? undefined : trimmed
+  return trimmed ? trimmed : undefined
 }
 
 const normalizeRoles = (value: unknown) => {
@@ -136,6 +127,13 @@ const normalizeRoles = (value: unknown) => {
   }
   const single = normalizeOptionalString(value)
   return single ? [single] : []
+}
+
+const normalizeApiPath = (value: string | undefined, fallback = '/api/auth') => {
+  const trimmed = normalizeOptionalString(value) ?? fallback
+  if (trimmed === '/') return '/'
+  const withLeadingSlash = trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+  return withLeadingSlash.replace(/\/+$/, '') || '/'
 }
 
 const readStorage = (storage: Storage, key: string) => {
@@ -173,25 +171,6 @@ const parseJson = <T>(value: string | null) => {
   }
 }
 
-const base64UrlEncode = (bytes: Uint8Array) => {
-  let binary = ''
-  bytes.forEach((byte) => {
-    binary += String.fromCharCode(byte)
-  })
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
-}
-
-const randomToken = (size = 32) => {
-  const bytes = new Uint8Array(size)
-  crypto.getRandomValues(bytes)
-  return base64UrlEncode(bytes)
-}
-
-const createCodeChallenge = async (codeVerifier: string) => {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(codeVerifier))
-  return base64UrlEncode(new Uint8Array(digest))
-}
-
 const decodeJwtClaims = (token: string): AuthClaims | null => {
   const parts = token.split('.')
   if (parts.length < 2) return null
@@ -199,8 +178,7 @@ const decodeJwtClaims = (token: string): AuthClaims | null => {
   if (!payload) return null
   try {
     const padded = payload.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(payload.length / 4) * 4, '=')
-    const decoded = atob(padded)
-    return JSON.parse(decoded) as AuthClaims
+    return JSON.parse(atob(padded)) as AuthClaims
   } catch {
     return null
   }
@@ -221,78 +199,49 @@ const isDevelopmentRuntime = () => {
   return normalizeOptionalString(authRuntimeEnv?.NODE_ENV)?.toLowerCase() === 'development'
 }
 
-const normalizeAuthority = (value: string | undefined) =>
-  normalizeOptionalString(value)?.replace(/\/+$/, '')
+const isDevelopmentHostname = (hostname?: string) => {
+  const normalizedHostname = normalizeOptionalString(hostname)?.toLowerCase()
+  if (!normalizedHostname) return false
+  return (
+    localDevelopmentHostnames.has(normalizedHostname) ||
+    normalizedHostname.endsWith('.dev') ||
+    normalizedHostname.endsWith('.localhost')
+  )
+}
+
+const buildAuthBasePath = () => normalizeApiPath(appConfig.authBasePath, '/api/auth')
+
+const buildAuthUrl = (path: string, origin: string) => {
+  const basePath = buildAuthBasePath()
+  const resolvedPath = path.startsWith('/') ? path : `/${path}`
+  return `${origin}${basePath}${resolvedPath}`
+}
 
 export const resolveSpacetimeAuthMode = ({
-  authority,
-  clientId,
-  dev
+  authBasePath,
+  dev,
+  featureEnabled = true,
+  hostname
 }: {
-  authority?: string
-  clientId?: string
+  authBasePath?: string
   dev?: boolean
+  featureEnabled?: boolean
+  hostname?: string
 }): SpacetimeAuthMode => {
-  const normalizedAuthority = normalizeAuthority(authority)
-  const normalizedClientId = normalizeOptionalString(clientId)
-  if (!normalizedAuthority || !normalizedClientId) return 'disabled'
-
-  const usesTemplatePlaceholder =
-    normalizedAuthority === defaultSpacetimeAuthAuthority &&
-    normalizedClientId === templateBranding.ids.authClientId
-
-  if (usesTemplatePlaceholder) {
-    return dev ? 'dev-session' : 'disabled'
+  const normalizedAuthBasePath = normalizeOptionalString(authBasePath)
+  if (featureEnabled && normalizedAuthBasePath) {
+    return 'hosted'
   }
-
-  return 'hosted'
+  return featureEnabled && (dev || isDevelopmentHostname(hostname)) ? 'dev-session' : 'disabled'
 }
 
 export const getSpacetimeAuthMode = (): SpacetimeAuthMode =>
   resolveSpacetimeAuthMode({
-    authority: appConfig.spacetimeAuthAuthority,
-    clientId: appConfig.spacetimeAuthClientId,
-    dev: isDevelopmentRuntime()
+    authBasePath: appConfig.authBasePath,
+    dev: isDevelopmentRuntime(),
+    featureEnabled: appConfig.template.features.auth,
+    hostname: typeof window !== 'undefined' ? window.location.hostname : undefined
   })
-
-const buildHostedConfig = (origin: string): SpacetimeAuthConfig | null => {
-  if (getSpacetimeAuthMode() !== 'hosted') return null
-  const authority = normalizeOptionalString(appConfig.spacetimeAuthAuthority)
-  const clientId = normalizeOptionalString(appConfig.spacetimeAuthClientId)
-  if (!authority || !clientId) return null
-
-  return {
-    authority: authority.replace(/\/+$/, ''),
-    clientId,
-    redirectUri: `${origin}/login/callback`,
-    postLogoutRedirectUri:
-      normalizeOptionalString(appConfig.spacetimeAuthPostLogoutRedirectUri) ?? `${origin}/`
-  }
-}
-
-const resolveDiscovery = async (origin: string) => {
-  const config = buildHostedConfig(origin)
-  if (!config) {
-    throw new Error('SpacetimeAuth is not configured for this site.')
-  }
-  if (!discoveryPromise) {
-    const discoveryUrl = `${config.authority}/.well-known/openid-configuration`
-    discoveryPromise = fetch(discoveryUrl, {
-      headers: {
-        accept: 'application/json'
-      }
-    }).then(async (response) => {
-      if (!response.ok) {
-        throw new Error(`Unable to load SpacetimeAuth discovery (${response.status}).`)
-      }
-      return (await response.json()) as SpacetimeAuthDiscovery
-    })
-  }
-  return {
-    config,
-    discovery: await discoveryPromise
-  }
-}
 
 const normalizeNextPath = (value: string | undefined, origin: string) => {
   const trimmed = value?.trim() ?? ''
@@ -306,139 +255,72 @@ const normalizeNextPath = (value: string | undefined, origin: string) => {
   }
 }
 
-const readPendingRequest = () => {
-  if (typeof window === 'undefined') return null
-  const pending = parseJson<PendingAuthRequest>(readStorage(window.sessionStorage, pendingRequestStorageKey))
-  if (!pending) return null
-  if (!pending.state || !pending.nonce || !pending.codeVerifier) return null
-  return pending
-}
-
-const storePendingRequest = (value: PendingAuthRequest) => {
-  if (typeof window === 'undefined') return false
-  return writeStorage(window.sessionStorage, pendingRequestStorageKey, JSON.stringify(value))
-}
-
 const clearPendingRequest = () => {
-  if (typeof window === 'undefined') return false
-  return removeStorage(window.sessionStorage, pendingRequestStorageKey)
+  if (typeof window === 'undefined') return
+  removeStorage(window.sessionStorage, pendingRequestStorageKey)
 }
 
 const readStoredSession = () => {
   if (typeof window === 'undefined') return null
-  return parseJson<StoredSpacetimeAuthSession>(readStorage(window.localStorage, sessionStorageKey))
+  return parseJson<StoredSpacetimeAuthSession>(readStorage(window.sessionStorage, sessionStorageKey))
 }
 
 const writeStoredSession = (value: StoredSpacetimeAuthSession) => {
   if (typeof window === 'undefined') return false
-  return writeStorage(window.localStorage, sessionStorageKey, JSON.stringify(value))
+  return writeStorage(window.sessionStorage, sessionStorageKey, JSON.stringify(value))
 }
 
 export const clearStoredSpacetimeAuthSession = () => {
-  if (typeof window === 'undefined') return false
-  return removeStorage(window.localStorage, sessionStorageKey)
+  if (typeof window === 'undefined') return
+  removeStorage(window.sessionStorage, sessionStorageKey)
 }
 
-const buildStoredSession = (tokens: TokenResponse, claims: AuthClaims): StoredSpacetimeAuthSession => {
-  const expiresAt =
-    typeof tokens.expires_in === 'number'
-      ? Date.now() + tokens.expires_in * 1000
-      : typeof claims.exp === 'number'
-        ? claims.exp * 1000
-        : undefined
-
-  return {
-    idToken: tokens.id_token!,
-    accessToken: normalizeOptionalString(tokens.access_token),
-    refreshToken: normalizeOptionalString(tokens.refresh_token),
-    expiresAt,
-    scope: normalizeOptionalString(tokens.scope),
-    tokenType: normalizeOptionalString(tokens.token_type),
-    user: {
-      id: claims.sub!,
-      email: normalizeOptionalString(claims.email),
-      image: normalizeOptionalString(claims.picture),
-      loginMethod: normalizeOptionalString(claims.login_method),
-      name:
-        normalizeOptionalString(claims.name) ??
-        normalizeOptionalString(claims.preferred_username) ??
-        normalizeOptionalString(claims.email) ??
-        claims.sub!,
-      providerId: normalizeOptionalString(claims.provider_id),
-      roles: normalizeRoles(claims.roles)
-    }
+const buildStoredSession = (
+  idToken: string,
+  claims: AuthClaims,
+  fallbackUser?: BetterAuthSessionResponse['user']
+): StoredSpacetimeAuthSession => ({
+  expiresAt: typeof claims.exp === 'number' ? claims.exp * 1000 : undefined,
+  idToken,
+  user: {
+    email: normalizeOptionalString(claims.email) ?? normalizeOptionalString(fallbackUser?.email),
+    id: claims.sub ?? fallbackUser?.id ?? '',
+    image: normalizeOptionalString(claims.picture) ?? normalizeOptionalString(fallbackUser?.image ?? undefined),
+    loginMethod: normalizeOptionalString(claims.login_method),
+    name: normalizeOptionalString(claims.name) ?? normalizeOptionalString(fallbackUser?.name),
+    providerId: normalizeOptionalString(claims.provider_id),
+    roles: normalizeRoles(claims.roles)
   }
-}
+})
 
 const isSessionFresh = (session: StoredSpacetimeAuthSession | null) => {
-  if (!session) return false
-  if (typeof session.expiresAt !== 'number') return true
+  if (!session?.idToken) return false
+  if (!session.expiresAt) return true
   return session.expiresAt - refreshGraceMs > Date.now()
 }
 
-const validateIdTokenClaims = (
-  claims: AuthClaims | null,
-  pending: PendingAuthRequest,
-  discovery: SpacetimeAuthDiscovery,
-  clientId: string
-) => {
-  if (!claims?.sub) {
-    throw new Error('The ID token is missing a subject.')
-  }
-  if (!claims.iss || claims.iss !== discovery.issuer) {
-    throw new Error('The ID token issuer did not match the configured authority.')
-  }
-  const audiences = Array.isArray(claims.aud) ? claims.aud : claims.aud ? [claims.aud] : []
-  if (!audiences.includes(clientId)) {
-    throw new Error('The ID token audience did not match this client.')
-  }
-  if (claims.nonce && claims.nonce !== pending.nonce) {
-    throw new Error('The login session nonce did not match the callback.')
-  }
-  if (typeof claims.exp === 'number' && claims.exp * 1000 <= Date.now()) {
-    throw new Error('The ID token has already expired.')
+const readResponseJson = async <T>(response: Response) => {
+  try {
+    return (await response.json()) as T
+  } catch {
+    return null
   }
 }
 
-const exchangeToken = async (origin: string, params: Record<string, string>) => {
-  const { config, discovery } = await resolveDiscovery(origin)
-  const response = await fetch(discovery.token_endpoint, {
-    method: 'POST',
-    headers: {
-      accept: 'application/json',
-      'content-type': 'application/x-www-form-urlencoded'
-    },
-    body: new URLSearchParams({
-      client_id: config.clientId,
-      ...params
-    })
-  })
-
-  if (!response.ok) {
-    const payload = parseJson<{ error?: string; error_description?: string }>(await response.text())
-    throw new Error(
-      payload?.error_description ??
-        payload?.error ??
-        `Unable to complete the SpacetimeAuth token exchange (${response.status}).`
-    )
-  }
-
-  return {
-    config,
-    discovery,
-    tokens: (await response.json()) as TokenResponse
-  }
+const resolveHostedErrorMessage = async (response: Response, fallback: string) => {
+  const payload = await readResponseJson<BetterAuthErrorResponse>(response)
+  return payload?.message ?? payload?.error ?? fallback
 }
 
-const syncServerSession = async (origin: string, idToken: string, apiBase = appConfig.apiBase) => {
-  const response = await fetch(buildPublicApiUrl('/auth/session/sync', origin, apiBase), {
+const syncServerSession = async (origin: string, token: string, apiBase = appConfig.apiBase) => {
+  const response = await fetch(buildPublicSiteAuthUrl('/auth/session/sync', origin), {
     method: 'POST',
     credentials: 'include',
     headers: {
-      'content-type': 'application/json',
-      accept: 'application/json'
+      accept: 'application/json',
+      'content-type': 'application/json'
     },
-    body: JSON.stringify({ idToken })
+    body: JSON.stringify({ idToken: token, token })
   })
 
   if (!response.ok) {
@@ -447,24 +329,7 @@ const syncServerSession = async (origin: string, idToken: string, apiBase = appC
   }
 
   clearClientAuthSessionCache()
-  return response
 }
-
-const withProviderHints = (method: SpacetimeAuthMethod, url: URL) => {
-  // If the provider ignores these hints, the hosted auth page still falls back to
-  // its own picker without breaking the OIDC flow.
-  if (method === 'magic-link') {
-    url.searchParams.set('login_method', 'magic_link')
-    return
-  }
-
-  url.searchParams.set('provider_id', method)
-}
-
-const buildDevSessionBody = (method: SpacetimeAuthMethod): DevSessionRequestBody =>
-  method === 'magic-link'
-    ? { loginMethod: method }
-    : { loginMethod: method, providerId: method }
 
 const shouldAttemptBootstrapRefresh = () =>
   getSpacetimeAuthMode() === 'hosted' && Boolean(normalizeOptionalString(appConfig.authBootstrapPublicKey))
@@ -479,6 +344,76 @@ const refreshBrowserAuthState = async (origin: string, apiBase = appConfig.apiBa
   }
 }
 
+const fetchHostedSession = async (origin: string) => {
+  const response = await fetch(buildAuthUrl('/get-session', origin), {
+    credentials: 'include',
+    headers: {
+      accept: 'application/json'
+    }
+  })
+  if (response.status === 401) return null
+  if (!response.ok) {
+    throw new Error(await resolveHostedErrorMessage(response, 'Unable to read the hosted auth session.'))
+  }
+  return await readResponseJson<BetterAuthSessionResponse | null>(response)
+}
+
+const fetchHostedToken = async (origin: string) => {
+  const response = await fetch(buildAuthUrl('/token', origin), {
+    credentials: 'include',
+    headers: {
+      accept: 'application/json'
+    }
+  })
+  if (response.status === 401) return null
+  if (!response.ok) {
+    throw new Error(await resolveHostedErrorMessage(response, 'Unable to mint the hosted auth JWT.'))
+  }
+  return await readResponseJson<BetterAuthTokenResponse>(response)
+}
+
+const buildHostedSessionResult = async (origin: string) => {
+  const hostedSession = await fetchHostedSession(origin)
+  if (!hostedSession?.session || !hostedSession.user) return null
+
+  const hostedToken = await fetchHostedToken(origin)
+  const idToken = normalizeOptionalString(hostedToken?.token)
+  if (!idToken) {
+    throw new Error('The hosted auth token response did not include a JWT.')
+  }
+
+  const claims = decodeJwtClaims(idToken)
+  if (!claims?.sub) {
+    throw new Error('The hosted auth JWT is missing a subject.')
+  }
+
+  return buildStoredSession(idToken, claims, hostedSession.user)
+}
+
+const restoreHostedSession = async (origin: string, apiBase = appConfig.apiBase) => {
+  const session = await buildHostedSessionResult(origin)
+  if (!session) {
+    clearStoredSpacetimeAuthSession()
+    clearClientAuthSessionCache()
+    return null
+  }
+
+  if (!writeStoredSession(session)) {
+    throw new Error('Unable to store the hosted auth session in the browser.')
+  }
+
+  await syncServerSession(origin, session.idToken, apiBase)
+  if (shouldAttemptBootstrapRefresh()) {
+    await attemptBootstrapSession(origin, apiBase)
+  }
+  return session
+}
+
+const buildDevSessionBody = (method: SpacetimeAuthMethod): DevSessionRequestBody =>
+  method === 'magic-link'
+    ? { loginMethod: method }
+    : { loginMethod: method, providerId: method }
+
 const postDevSessionRequest = async (
   path: string,
   body: DevSessionRequestBody | DevLocalAccountRequestBody,
@@ -487,7 +422,7 @@ const postDevSessionRequest = async (
 ) => {
   if (typeof window === 'undefined') return
   const origin = window.location.origin
-  const response = await fetch(buildPublicApiUrl(path, origin, apiBase), {
+  const response = await fetch(buildPublicSiteAuthUrl(path, origin), {
     method: 'POST',
     credentials: 'include',
     headers: {
@@ -543,161 +478,136 @@ export const loginDevLocalAccount = async (
   )
 }
 
+const postHostedJson = async <TResponse>(
+  origin: string,
+  path: string,
+  body: Record<string, unknown>,
+  fallbackMessage: string
+) => {
+  const response = await fetch(buildAuthUrl(path, origin), {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      accept: 'application/json',
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify(body)
+  })
+
+  if (!response.ok) {
+    throw new Error(await resolveHostedErrorMessage(response, fallbackMessage))
+  }
+
+  return (await readResponseJson<TResponse>(response)) as TResponse
+}
+
+export const loginHostedLocalAccount = async (
+  account: DevLocalAccountRequestBody,
+  apiBase = appConfig.apiBase
+) => {
+  if (typeof window === 'undefined') return null
+  const origin = window.location.origin
+  await postHostedJson(
+    origin,
+    '/sign-in/email',
+    {
+      email: account.email,
+      password: account.password,
+      rememberMe: account.remember !== false
+    },
+    'Unable to sign in with email and password.'
+  )
+  return await restoreHostedSession(origin, apiBase)
+}
+
+export const registerHostedLocalAccount = async (
+  account: DevLocalAccountRequestBody,
+  apiBase = appConfig.apiBase
+) => {
+  if (typeof window === 'undefined') return null
+  const origin = window.location.origin
+  await postHostedJson(
+    origin,
+    '/sign-up/email',
+    {
+      name: account.name?.trim() || account.email,
+      email: account.email,
+      password: account.password,
+      rememberMe: account.remember !== false
+    },
+    'Unable to create the hosted account.'
+  )
+  return await restoreHostedSession(origin, apiBase)
+}
+
 export const startSpacetimeAuthLogin = async (
   method: SpacetimeAuthMethod,
   options: StartLoginOptions = {}
 ) => {
   if (typeof window === 'undefined') return
   const origin = window.location.origin
+  const nextPath = normalizeNextPath(options.next, origin)
   const mode = getSpacetimeAuthMode()
   if (mode === 'dev-session') {
-    await startDevSessionLogin(method, normalizeNextPath(options.next, origin))
+    await startDevSessionLogin(method, nextPath)
     return
   }
-  const { config, discovery } = await resolveDiscovery(origin)
-  const pending: PendingAuthRequest = {
-    codeVerifier: randomToken(48),
-    createdAt: Date.now(),
-    method,
-    next: normalizeNextPath(options.next, origin),
-    nonce: randomToken(24),
-    state: randomToken(24)
+  if (mode !== 'hosted') {
+    throw new Error('Hosted auth is not configured for this site.')
+  }
+  if (method !== 'google' && method !== 'github') {
+    throw new Error('Use the email and password form to sign in or create an account.')
   }
 
-  if (!storePendingRequest(pending)) {
-    throw new Error('Unable to initialize the login session.')
-  }
+  const response = await postHostedJson<BetterAuthRedirectResponse>(
+    origin,
+    '/sign-in/social',
+    {
+      callbackURL: `${origin}/login/callback?next=${encodeURIComponent(nextPath)}`,
+      disableRedirect: true,
+      provider: method
+    },
+    `Unable to start the ${method} sign-in flow.`
+  )
 
-  const codeChallenge = await createCodeChallenge(pending.codeVerifier)
-  const authorizeUrl = new URL(discovery.authorization_endpoint)
-  authorizeUrl.searchParams.set('client_id', config.clientId)
-  authorizeUrl.searchParams.set('redirect_uri', config.redirectUri)
-  authorizeUrl.searchParams.set('response_type', 'code')
-  authorizeUrl.searchParams.set('scope', 'openid profile email offline_access')
-  authorizeUrl.searchParams.set('code_challenge', codeChallenge)
-  authorizeUrl.searchParams.set('code_challenge_method', 'S256')
-  authorizeUrl.searchParams.set('state', pending.state)
-  authorizeUrl.searchParams.set('nonce', pending.nonce)
-  withProviderHints(method, authorizeUrl)
-  window.location.assign(authorizeUrl.toString())
+  const redirectUrl = normalizeOptionalString(response?.url)
+  if (!redirectUrl) {
+    throw new Error(`The ${method} sign-in flow did not return a redirect URL.`)
+  }
+  window.location.assign(redirectUrl)
 }
 
-export const completeSpacetimeAuthCallback = async (callbackUrl: string, apiBase = appConfig.apiBase) => {
+export const completeSpacetimeAuthCallback = async (
+  callbackUrl: string,
+  apiBase = appConfig.apiBase
+): Promise<HostedAuthResult> => {
   if (typeof window === 'undefined') {
-    throw new Error('The SpacetimeAuth callback can only complete in the browser.')
+    throw new Error('The hosted auth callback can only complete in the browser.')
   }
 
   const origin = window.location.origin
-  try {
-    const currentConfig = buildHostedConfig(origin)
-    if (!currentConfig) {
-      throw new Error('SpacetimeAuth is not configured for this site.')
-    }
-    const url = new URL(callbackUrl, origin)
-    const pending = readPendingRequest()
-    const callbackState = normalizeOptionalString(url.searchParams.get('state'))
-    const code = normalizeOptionalString(url.searchParams.get('code'))
-    const authError = normalizeOptionalString(url.searchParams.get('error'))
-    const authErrorDescription = normalizeOptionalString(url.searchParams.get('error_description'))
+  const url = new URL(callbackUrl, origin)
+  const authError = normalizeOptionalString(url.searchParams.get('error'))
+  const authErrorDescription = normalizeOptionalString(url.searchParams.get('error_description'))
+  if (authError) {
+    throw new Error(authErrorDescription ?? authError)
+  }
 
-    if (authError) {
-      throw new Error(authErrorDescription ?? authError)
-    }
+  const session = await restoreHostedSession(origin, apiBase)
+  if (!session) {
+    throw new Error('The hosted auth callback completed without creating a session.')
+  }
 
-    if (!pending || !callbackState || pending.state !== callbackState || !code) {
-      throw new Error('The login callback is missing its PKCE state.')
-    }
-
-    const { config, discovery, tokens } = await exchangeToken(origin, {
-      code,
-      code_verifier: pending.codeVerifier,
-      grant_type: 'authorization_code',
-      redirect_uri: currentConfig.redirectUri
-    })
-
-    if (!tokens.id_token) {
-      throw new Error('The token response did not include an ID token.')
-    }
-
-    const claims = decodeJwtClaims(tokens.id_token)
-    validateIdTokenClaims(claims, pending, discovery, config.clientId)
-    const session = buildStoredSession(tokens, claims ?? {})
-
-    if (!writeStoredSession(session)) {
-      throw new Error('Unable to persist the browser auth session.')
-    }
-
-    await syncServerSession(origin, session.idToken, apiBase)
-    await attemptBootstrapSession(origin, apiBase)
-    clearPendingRequest()
-
-    return {
-      next: normalizeNextPath(pending.next, origin),
-      session
-    }
-  } catch (error) {
-    clearPendingRequest()
-    throw error
+  return {
+    next: normalizeNextPath(url.searchParams.get('next') ?? undefined, origin),
+    session
   }
 }
 
 export const refreshSpacetimeAuthSession = async (apiBase = appConfig.apiBase) => {
   if (typeof window === 'undefined') return null
-  const origin = window.location.origin
-  const stored = readStoredSession()
-  const refreshToken = normalizeOptionalString(stored?.refreshToken)
-  if (!refreshToken) return null
-
-  const { config, discovery, tokens } = await exchangeToken(origin, {
-    grant_type: 'refresh_token',
-    refresh_token: refreshToken
-  })
-
-  const idToken = normalizeOptionalString(tokens.id_token) ?? stored?.idToken
-  if (!idToken) {
-    throw new Error('The refresh response did not include an ID token.')
-  }
-
-  const claims = decodeJwtClaims(idToken)
-  if (!claims?.sub) {
-    throw new Error('The refreshed ID token is missing a subject.')
-  }
-  const providerId = normalizeOptionalString(claims.provider_id)
-  const refreshedMethod: SpacetimeAuthMethod =
-    providerId === 'github' || providerId === 'google' ? providerId : 'magic-link'
-  validateIdTokenClaims(
-    claims,
-    {
-      codeVerifier: '',
-      createdAt: Date.now(),
-      method: refreshedMethod,
-      next: '/profile',
-      nonce: normalizeOptionalString(claims.nonce) ?? '',
-      state: 'refresh'
-    },
-    discovery,
-    config.clientId
-  )
-
-  const session = buildStoredSession(
-    {
-      ...tokens,
-      id_token: idToken,
-      refresh_token: tokens.refresh_token ?? refreshToken,
-      access_token: tokens.access_token ?? stored?.accessToken,
-      scope: tokens.scope ?? stored?.scope,
-      token_type: tokens.token_type ?? stored?.tokenType
-    },
-    claims
-  )
-
-  if (!writeStoredSession(session)) {
-    throw new Error('Unable to update the browser auth session.')
-  }
-
-  await syncServerSession(origin, session.idToken, apiBase)
-  await attemptBootstrapSession(origin, apiBase)
-  return session
+  if (getSpacetimeAuthMode() !== 'hosted') return null
+  return await restoreHostedSession(window.location.origin, apiBase)
 }
 
 export const loadStoredSpacetimeAuthSession = async (apiBase = appConfig.apiBase) => {
@@ -720,7 +630,9 @@ export const ensureSpacetimeAuthSession = async (apiBase = appConfig.apiBase) =>
   const session = await loadStoredSpacetimeAuthSession(apiBase)
   if (!session) return null
   await syncServerSession(origin, session.idToken, apiBase)
-  await attemptBootstrapSession(origin, apiBase)
+  if (shouldAttemptBootstrapRefresh()) {
+    await attemptBootstrapSession(origin, apiBase)
+  }
   return session
 }
 
@@ -793,10 +705,23 @@ export const resolveSpacetimeDbClientConfig = async (apiBase = appConfig.apiBase
 export const signOutSpacetimeAuth = async (apiBase = appConfig.apiBase) => {
   if (typeof window === 'undefined') return '/'
   const origin = window.location.origin
-  const storedSession = readStoredSession()
 
   try {
-    await fetch(buildPublicApiUrl('/auth/logout', origin, apiBase), {
+    await fetch(buildAuthUrl('/sign-out', origin), {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json'
+      },
+      body: '{}'
+    })
+  } catch {
+    // Clearing local state is enough to sign out the browser experience.
+  }
+
+  try {
+    await fetch(buildPublicSiteAuthUrl('/auth/logout', origin), {
       method: 'POST',
       credentials: 'include'
     })
@@ -809,22 +734,7 @@ export const signOutSpacetimeAuth = async (apiBase = appConfig.apiBase) => {
   clearClientAuthSessionCache()
   await clearBootstrapSession()
 
-  try {
-    const { config, discovery } = await resolveDiscovery(origin)
-    if (!discovery.end_session_endpoint) {
-      return config.postLogoutRedirectUri
-    }
-
-    const logoutUrl = new URL(discovery.end_session_endpoint)
-    logoutUrl.searchParams.set('post_logout_redirect_uri', config.postLogoutRedirectUri)
-    if (storedSession?.idToken) {
-      logoutUrl.searchParams.set('id_token_hint', storedSession.idToken)
-    }
-    return logoutUrl.toString()
-  } catch {
-    return appConfig.spacetimeAuthPostLogoutRedirectUri ?? `${origin}/`
-  }
+  return appConfig.authPostLogoutRedirectUri ?? appConfig.spacetimeAuthPostLogoutRedirectUri ?? `${origin}/`
 }
 
-export const isSpacetimeAuthConfigured = () =>
-  getSpacetimeAuthMode() !== 'disabled'
+export const isSpacetimeAuthConfigured = () => getSpacetimeAuthMode() !== 'disabled'

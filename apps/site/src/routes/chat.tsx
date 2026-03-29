@@ -3,11 +3,14 @@ import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHa
 import { starterContactInvites } from '@prometheus/template-config'
 import { StaticRouteTemplate } from '@prometheus/ui'
 import { siteBrand } from '../site-config'
-import { createCacheHandler, createFeatureRouteHandler, ensureFeatureEnabled, PRIVATE_REVALIDATE_CACHE } from './route-utils'
+import {
+  createProtectedFeatureRouteHandler,
+  ensureFeatureEnabled,
+  PRIVATE_REVALIDATE_CACHE
+} from './route-utils'
 import { useLangCopy, useLanguageSeed, useSharedLangSignal } from '../shared/lang-bridge'
 import { loadHybridFragmentResource, resolveRequestLang, resolveViewportHint } from './fragment-resource'
 import { defaultLang, type Lang } from '../shared/lang-store'
-import { loadAuthSession } from '../features/auth/auth-session'
 import type { FragmentPlanValue } from '../fragment/types'
 import type { ContactInvitesSeed } from '../features/messaging/contact-invites-seed'
 import { normalizeInviteGroups } from '../components/contact-invites/data'
@@ -34,16 +37,12 @@ type ProtectedRouteData = {
   languageSeed: LanguageSeedPayload
 }
 
-export const useChatData = routeLoader$<ProtectedRouteData>(async ({ request, redirect }) => {
+export const useChatData = routeLoader$<ProtectedRouteData>(async ({ request }) => {
   ensureFeatureEnabled('messaging')
   const { createServerLanguageSeed } = await import('../lang/server')
   const lang = resolveRequestLang(request)
   if (isStaticShellBuild()) {
     return { lang, languageSeed: createServerLanguageSeed(lang, chatLanguageSelection) }
-  }
-  const session = await loadAuthSession(request)
-  if (session.status !== 'authenticated') {
-    throw redirect(302, '/login')
   }
   return { lang, languageSeed: createServerLanguageSeed(lang, chatLanguageSelection) }
 })
@@ -125,10 +124,7 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
   }
 })
 
-export const onGet: RequestHandler = createFeatureRouteHandler(
-  'messaging',
-  createCacheHandler(PRIVATE_REVALIDATE_CACHE)
-)
+export const onGet: RequestHandler = createProtectedFeatureRouteHandler('messaging', PRIVATE_REVALIDATE_CACHE)
 
 export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
   const data = resolveValue(useChatData)

@@ -541,7 +541,7 @@ export const templateBranding: TemplateBrandingConfig = {
   },
   ids: {
     spacetimeModule: 'prometheus-site-local',
-    authClientId: 'prometheus-site-dev',
+    authClientId: 'prometheus-site',
     nativeBundleId: 'com.prometheus.site',
     manifestId: '/?source=pwa',
     cachePrefix: 'fragment-prime'
@@ -677,13 +677,45 @@ export const templatePresetDescriptors: Record<TemplatePreset, TemplatePresetDes
 }
 
 const AUTH_ENV_KEYS = [
+  'AUTH_BASE_PATH',
+  'BETTER_AUTH_SECRET',
+  'AUTH_JWT_ISSUER',
+  'AUTH_JWT_AUDIENCE',
+  'AUTH_JWKS_URI',
+  'AUTH_POST_LOGOUT_REDIRECT_URI',
+  'AUTH_SOCIAL_PROVIDERS',
+  'AUTH_GOOGLE_CLIENT_ID',
+  'AUTH_GOOGLE_CLIENT_SECRET',
+  'AUTH_GITHUB_CLIENT_ID',
+  'AUTH_GITHUB_CLIENT_SECRET',
+  'CONVEX_SELF_HOSTED_URL',
+  'CONVEX_SELF_HOSTED_SITE_URL',
+  'CONVEX_SELF_HOSTED_DASHBOARD_URL',
+  'CONVEX_SITE_PROXY_INTERNAL_URL',
+  'CONVEX_SELF_HOSTED_ADMIN_KEY',
+  'PROMETHEUS_CONVEX_PORT',
+  'PROMETHEUS_CONVEX_SITE_PROXY_PORT',
+  'PROMETHEUS_CONVEX_DASHBOARD_PORT',
+  'AUTH_BOOTSTRAP_PRIVATE_KEY',
+  'VITE_AUTH_BOOTSTRAP_PUBLIC_KEY',
+  'AUTH_BOOTSTRAP_PUBLIC_KEY',
+  'VITE_AUTH_BASE_PATH',
+  'VITE_AUTH_SOCIAL_PROVIDERS',
+  'OIDC_AUTHORITY',
+  'OIDC_CLIENT_ID',
+  'OIDC_JWKS_URI',
+  'OIDC_POST_LOGOUT_REDIRECT_URI',
+  'VITE_OIDC_AUTHORITY',
+  'VITE_OIDC_CLIENT_ID',
+  'VITE_OIDC_JWKS_URI',
+  'VITE_OIDC_POST_LOGOUT_REDIRECT_URI',
   'SPACETIMEAUTH_AUTHORITY',
   'SPACETIMEAUTH_CLIENT_ID',
   'SPACETIMEAUTH_JWKS_URI',
   'SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI',
-  'AUTH_BOOTSTRAP_PRIVATE_KEY',
-  'VITE_AUTH_BOOTSTRAP_PUBLIC_KEY',
-  'AUTH_BOOTSTRAP_PUBLIC_KEY'
+  'VITE_SPACETIMEAUTH_AUTHORITY',
+  'VITE_SPACETIMEAUTH_CLIENT_ID',
+  'VITE_SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI'
 ] as const
 
 const REALTIME_ENV_KEYS = [
@@ -742,18 +774,20 @@ export const featureBundleManifests: Record<TemplateFeatureId, FeatureBundleMani
   auth: {
     id: 'auth',
     title: 'Auth',
-    description: 'Hosted auth flows, bootstrap tokens, and the login route.',
+    description: 'Self-hosted Better Auth on Convex, bootstrap tokens, and the login route.',
     routes: ['/login'],
     envKeys: AUTH_ENV_KEYS,
     navItems: [{ href: '/login', labelKey: 'navLogin', feature: 'auth', order: 40 }],
     tests: ['apps/site/src/features/auth/**/*.test.ts', 'apps/site/src/routes/login/**/*.test.tsx'],
     apiRegistrations: ['auth routes', 'auth bootstrap verification'],
     owners: ['template', 'auth'],
-    requiredSecrets: ['AUTH_BOOTSTRAP_PRIVATE_KEY'],
+    requiredSecrets: ['AUTH_BOOTSTRAP_PRIVATE_KEY', 'BETTER_AUTH_SECRET'],
     docs: ['docs/template-bundle-cookbook.md#auth'],
-    migrations: ['Auth authority and bootstrap keys must stay in sync across client and server.'],
+    migrations: [
+      'Better Auth base path, JWT issuer/audience, and JWKS settings must stay in sync across Convex, the site bundle, the Rust API, and the SpacetimeDB module.'
+    ],
     qualityGates: ['build', 'typecheck', 'browser'],
-    adapters: ['SpacetimeAuth'],
+    adapters: ['Convex', 'Better Auth'],
     visibility: 'public',
     placement: 'starter-safe',
     defaultEnabledIn: ['full', 'core', 'saas', 'commerce', 'community']

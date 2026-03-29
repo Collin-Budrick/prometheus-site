@@ -12,6 +12,8 @@ services:
         condition: service_healthy
       api:
         condition: service_started
+      convex-backend:
+        condition: service_healthy
       spacetimedb:
         condition: service_healthy
     ports:
@@ -75,6 +77,10 @@ services:
     environment:
       HOME: /tmp
       XDG_CONFIG_HOME: /tmp/.config
+      AUTH_JWT_ISSUER: ${AUTH_JWT_ISSUER:-urn:prometheus:better-auth}
+      AUTH_JWT_AUDIENCE: ${AUTH_JWT_AUDIENCE:-prometheus-site}
+      OIDC_AUTHORITY: ${OIDC_AUTHORITY:-${AUTH_JWT_ISSUER:-urn:prometheus:better-auth}}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-${AUTH_JWT_AUDIENCE:-prometheus-site}}
       SPACETIMEAUTH_AUTHORITY: ${SPACETIMEAUTH_AUTHORITY:-https://auth.spacetimedb.com/oidc}
       SPACETIMEAUTH_CLIENT_ID: ${SPACETIMEAUTH_CLIENT_ID:-prometheus-site-dev}
     networks:
@@ -137,6 +143,68 @@ services:
       timeout: 3s
       retries: 10
 
+  convex-backend:
+    image: ghcr.io/get-convex/convex-backend:latest
+    stop_grace_period: 10s
+    stop_signal: SIGINT
+    environment:
+      ACTIONS_USER_TIMEOUT_SECS: ${ACTIONS_USER_TIMEOUT_SECS:-}
+      APPLICATION_MAX_CONCURRENT_MUTATIONS: ${APPLICATION_MAX_CONCURRENT_MUTATIONS:-16}
+      APPLICATION_MAX_CONCURRENT_NODE_ACTIONS: ${APPLICATION_MAX_CONCURRENT_NODE_ACTIONS:-16}
+      APPLICATION_MAX_CONCURRENT_QUERIES: ${APPLICATION_MAX_CONCURRENT_QUERIES:-16}
+      APPLICATION_MAX_CONCURRENT_V8_ACTIONS: ${APPLICATION_MAX_CONCURRENT_V8_ACTIONS:-16}
+      AUTH_BASE_PATH: ${AUTH_BASE_PATH:-/api/auth}
+      AUTH_GOOGLE_CLIENT_ID: ${AUTH_GOOGLE_CLIENT_ID:-}
+      AUTH_GOOGLE_CLIENT_SECRET: ${AUTH_GOOGLE_CLIENT_SECRET:-}
+      AUTH_GITHUB_CLIENT_ID: ${AUTH_GITHUB_CLIENT_ID:-}
+      AUTH_GITHUB_CLIENT_SECRET: ${AUTH_GITHUB_CLIENT_SECRET:-}
+      AUTH_JWT_AUDIENCE: ${AUTH_JWT_AUDIENCE:-prometheus-site}
+      AUTH_JWT_ISSUER: ${AUTH_JWT_ISSUER:-urn:prometheus:better-auth}
+      AUTH_POST_LOGOUT_REDIRECT_URI: ${AUTH_POST_LOGOUT_REDIRECT_URI:-}
+      AUTH_SOCIAL_PROVIDERS: ${AUTH_SOCIAL_PROVIDERS:-}
+      CONVEX_CLOUD_ORIGIN: ${CONVEX_CLOUD_ORIGIN:-http://127.0.0.1:${PROMETHEUS_CONVEX_PORT:-3210}}
+      CONVEX_SITE_ORIGIN: ${CONVEX_SITE_ORIGIN:-http://127.0.0.1:${PROMETHEUS_CONVEX_SITE_PROXY_PORT:-3211}}
+      DISABLE_BEACON: ${DISABLE_BEACON:-true}
+      DISABLE_METRICS_ENDPOINT: ${DISABLE_METRICS_ENDPOINT:-true}
+      DOCUMENT_RETENTION_DELAY: ${DOCUMENT_RETENTION_DELAY:-172800}
+      DO_NOT_REQUIRE_SSL: ${DO_NOT_REQUIRE_SSL:-true}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-dev-better-auth-secret-please-change-32}
+      INSTANCE_NAME: ${INSTANCE_NAME:-prometheus-site}
+      INSTANCE_SECRET: ${INSTANCE_SECRET:-}
+      PROMETHEUS_WEB_HOST: ${PROMETHEUS_WEB_HOST:-prometheus.dev}
+      PROMETHEUS_WEB_HOST_PROD: ${PROMETHEUS_WEB_HOST_PROD:-prometheus.prod}
+      RUST_LOG: ${CONVEX_RUST_LOG:-info}
+    ports:
+      - "${PROMETHEUS_CONVEX_PORT:-3210}:3210"
+      - "${PROMETHEUS_CONVEX_SITE_PROXY_PORT:-3211}:3211"
+    volumes:
+      - convex_data:/convex/data
+    networks:
+      prometheus_net:
+        ipv4_address: 172.30.0.7
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3210/version >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  convex-dashboard:
+    image: ghcr.io/get-convex/convex-dashboard:latest
+    stop_grace_period: 10s
+    stop_signal: SIGINT
+    depends_on:
+      convex-backend:
+        condition: service_healthy
+    environment:
+      NEXT_PUBLIC_DEPLOYMENT_URL: ${NEXT_PUBLIC_DEPLOYMENT_URL:-http://127.0.0.1:${PROMETHEUS_CONVEX_PORT:-3210}}
+      NEXT_PUBLIC_LOAD_MONACO_INTERNALLY: ${NEXT_PUBLIC_LOAD_MONACO_INTERNALLY:-1}
+    ports:
+      - "${PROMETHEUS_CONVEX_DASHBOARD_PORT:-6791}:6791"
+    networks:
+      prometheus_net:
+        ipv4_address: 172.30.0.8
+
   api:
     build:
       context: .
@@ -149,6 +217,8 @@ services:
       spacetimedb:
         condition: service_healthy
       garnet:
+        condition: service_healthy
+      convex-backend:
         condition: service_healthy
     environment:
       NODE_ENV: ${API_NODE_ENV:-development}
@@ -180,11 +250,17 @@ services:
       WEB_HOST: ${PROMETHEUS_WEB_HOST:-prometheus.dev}
       WEB_HOST_PROD: ${PROMETHEUS_WEB_HOST_PROD:-prometheus.prod}
       ENABLE_WEBTRANSPORT_FRAGMENTS: ${ENABLE_WEBTRANSPORT_FRAGMENTS:-1}
-      BETTER_AUTH_COOKIE_SECRET: dev-cookie-secret-please-change-32
+      BETTER_AUTH_COOKIE_SECRET: ${BETTER_AUTH_COOKIE_SECRET:-${BETTER_AUTH_SECRET:-dev-cookie-secret-please-change-32}}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
+      AUTH_BASE_PATH: ${AUTH_BASE_PATH:-/api/auth}
+      AUTH_JWT_ISSUER: ${AUTH_JWT_ISSUER:-urn:prometheus:better-auth}
+      AUTH_JWT_AUDIENCE: ${AUTH_JWT_AUDIENCE:-prometheus-site}
+      AUTH_JWKS_URI: ${AUTH_JWKS_URI:-http://convex-backend:3211/api/auth/jwks}
+      AUTH_POST_LOGOUT_REDIRECT_URI: ${AUTH_POST_LOGOUT_REDIRECT_URI:-}
       SPACETIMEAUTH_AUTHORITY: ${SPACETIMEAUTH_AUTHORITY:-https://auth.spacetimedb.com/oidc}
       SPACETIMEAUTH_CLIENT_ID: ${SPACETIMEAUTH_CLIENT_ID:-prometheus-site-dev}
       SPACETIMEAUTH_JWKS_URI: ${SPACETIMEAUTH_JWKS_URI:-https://auth.spacetimedb.com/oidc/jwks}
-      SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI: ${SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI:-https://prometheus.dev/}
+      SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI: ${SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI:-}
     ports:
       - "${PROMETHEUS_API_PORT:-4000}:4000"
       - "${PROMETHEUS_WEBTRANSPORT_PORT:-4444}:4444/udp"
@@ -205,6 +281,8 @@ services:
         - type=local,dest=.cache/buildx/web,mode=max
       args:
         VITE_API_BASE: ${PROMETHEUS_VITE_API_BASE:-/api}
+        VITE_AUTH_BASE_PATH: ${VITE_AUTH_BASE_PATH:-${AUTH_BASE_PATH:-/api/auth}}
+        VITE_AUTH_SOCIAL_PROVIDERS: ${VITE_AUTH_SOCIAL_PROVIDERS:-${AUTH_SOCIAL_PROVIDERS:-}}
         VITE_ENABLE_PREFETCH: ${VITE_ENABLE_PREFETCH:-1}
         VITE_ENABLE_WEBTRANSPORT_FRAGMENTS: ${VITE_ENABLE_WEBTRANSPORT_FRAGMENTS:-1}
         VITE_ENABLE_WEBTRANSPORT_DATAGRAMS: ${VITE_ENABLE_WEBTRANSPORT_DATAGRAMS:-1}
@@ -224,9 +302,13 @@ services:
         VITE_P2P_PEERJS_SERVER: ${VITE_P2P_PEERJS_SERVER:-https://0.peerjs.com}
         VITE_PUBLIC_BASE: ${VITE_PUBLIC_BASE:-}
         VITE_DISABLE_SW: ${VITE_DISABLE_SW:-}
+        VITE_OIDC_AUTHORITY: ${VITE_OIDC_AUTHORITY:-${OIDC_AUTHORITY:-}}
+        VITE_OIDC_CLIENT_ID: ${VITE_OIDC_CLIENT_ID:-${OIDC_CLIENT_ID:-}}
+        VITE_OIDC_JWKS_URI: ${VITE_OIDC_JWKS_URI:-${OIDC_JWKS_URI:-}}
+        VITE_OIDC_POST_LOGOUT_REDIRECT_URI: ${VITE_OIDC_POST_LOGOUT_REDIRECT_URI:-${OIDC_POST_LOGOUT_REDIRECT_URI:-}}
         VITE_SPACETIMEAUTH_AUTHORITY: ${VITE_SPACETIMEAUTH_AUTHORITY:-${SPACETIMEAUTH_AUTHORITY:-https://auth.spacetimedb.com/oidc}}
         VITE_SPACETIMEAUTH_CLIENT_ID: ${VITE_SPACETIMEAUTH_CLIENT_ID:-${SPACETIMEAUTH_CLIENT_ID:-prometheus-site-dev}}
-        SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI: ${SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI:-https://prometheus.dev/}
+        VITE_SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI: ${VITE_SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI:-${SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI:-}}
         VITE_SPACETIMEDB_URI: ${VITE_SPACETIMEDB_URI:-https://db.prometheus.dev}
         VITE_SPACETIMEDB_MODULE: ${VITE_SPACETIMEDB_MODULE:-${SPACETIMEDB_MODULE:-prometheus-site-local}}
         VITE_TEMPLATE_PRESET: ${VITE_TEMPLATE_PRESET:-}
@@ -266,6 +348,7 @@ services:
 volumes:
   caddy_data:
   caddy_config:
+  convex_data:
   spacetimedb_data:
 
 networks:

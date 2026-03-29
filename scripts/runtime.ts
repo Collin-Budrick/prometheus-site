@@ -5,6 +5,7 @@ import path from 'node:path'
 import { getTemplatePresetDescriptor, templateBranding } from '../packages/template-config/src/index.ts'
 import { getRunningServices, resolveComposeCommand, root, runSync } from './compose-utils'
 import { getRuntimeConfig } from './runtime-config'
+import { assertHostedAuthConfigForNonDevelopmentHosts } from './spacetime-auth-config'
 
 const bunGlobal = globalThis as typeof globalThis & { Bun?: { execPath?: string } }
 const bunBin =
@@ -62,6 +63,23 @@ const waitForExit = (child: ReturnType<typeof spawn>, timeoutMs: number) =>
       resolve(true)
     })
   })
+
+const previewWarningPatterns = [
+  /didn't resolve at build time, it will remain unchanged to be resolved at runtime/i
+]
+
+const assertNoPreviewWarnings = (output: string, outputPath: string) => {
+  const warnings = output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && previewWarningPatterns.some((pattern) => pattern.test(line)))
+
+  if (!warnings.length) return
+
+  throw new Error(
+    `[runtime] Preview emitted unresolved build warnings:\n${warnings.map((warning) => `- ${warning}`).join('\n')}\nlog: ${outputPath}`
+  )
+}
 
 const readPositiveIntEnv = (value: string | undefined, fallback: number) => {
   const parsed = Number.parseInt(value ?? '', 10)
@@ -149,19 +167,26 @@ const runBrowserSmoke = async () => {
 
   const preset = requestedPreset as 'full' | 'core'
   const presetDescriptor = getTemplatePresetDescriptor(preset)
-  const baseURL = process.env.PLAYWRIGHT_BASE_URL?.trim() || `https://${templateBranding.domains.webProd}`
   const specPath = `tests/browser/${preset}.spec.ts`
   const env = {
     ...process.env,
+    BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET?.trim() || 'dev-better-auth-secret-please-change-32',
     COMPOSE_PROJECT_NAME: process.env.COMPOSE_PROJECT_NAME?.trim() || templateBranding.composeProjectName,
     PROMETHEUS_TEMPLATE_PRESET: preset,
     PROMETHEUS_TEMPLATE_HOME_MODE: process.env.PROMETHEUS_TEMPLATE_HOME_MODE?.trim() || presetDescriptor.homeMode,
     VITE_TEMPLATE_PRESET: preset,
     VITE_TEMPLATE_HOME_MODE: process.env.VITE_TEMPLATE_HOME_MODE?.trim() || presetDescriptor.homeMode,
-    PROMETHEUS_DEVICE_HOST: process.env.PROMETHEUS_DEVICE_HOST?.trim() || '0',
-    PLAYWRIGHT_BASE_URL: baseURL
+    PROMETHEUS_DEVICE_HOST: process.env.PROMETHEUS_DEVICE_HOST?.trim() || '0'
   }
   const runtimeConfig = getRuntimeConfig(env)
+  assertHostedAuthConfigForNonDevelopmentHosts({
+    context: 'runtime browser smoke',
+    env,
+    hosts: [runtimeConfig.domains.web, runtimeConfig.domains.webProd]
+  })
+  const baseURL =
+    env.PLAYWRIGHT_BASE_URL?.trim() || env.PW_BASE_URL?.trim() || `https://${runtimeConfig.domains.web}`
+  env.PLAYWRIGHT_BASE_URL = baseURL
   const requiredServices = [
     ...runtimeConfig.compose.services.core,
     ...runtimeConfig.compose.services.web,
@@ -184,6 +209,7 @@ const runBrowserSmoke = async () => {
   const previewStderrPath = path.join(logDir, `browser-preview-${preset}.err.log`)
   const outLog = createWriteStream(previewStdoutPath, { flags: 'w' })
   const errLog = createWriteStream(previewStderrPath, { flags: 'w' })
+  let previewStderr = ''
 
   runComposeDown()
 
@@ -204,6 +230,9 @@ const runBrowserSmoke = async () => {
 
   preview.stdout?.pipe(outLog)
   preview.stderr?.pipe(errLog)
+  preview.stderr?.on('data', (chunk: string | Buffer) => {
+    previewStderr += chunk.toString()
+  })
 
   try {
     await waitForPreviewProject({
@@ -218,6 +247,7 @@ const runBrowserSmoke = async () => {
       url: baseURL,
       timeoutMs: readPositiveIntEnv(process.env.PROMETHEUS_BROWSER_PREVIEW_TIMEOUT_MS, 1200000)
     })
+    assertNoPreviewWarnings(previewStderr, previewStderrPath)
 
     const test = spawnSync(bunBin, ['x', 'playwright', 'test', specPath], {
       cwd: root,

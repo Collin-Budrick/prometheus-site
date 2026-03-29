@@ -3,7 +3,7 @@ import { DockBar, DockIcon } from '@prometheus/ui'
 import { getUiCopy } from '../../lang/client'
 import type { Lang } from '../../lang'
 import { AUTH_NAV_ITEMS, TOPBAR_NAV_ITEMS } from '../../shared/nav-order'
-import { buildPublicApiUrl } from '../../shared/public-api-url'
+import { buildPublicSiteAuthUrl } from '../../shared/public-api-url'
 import { DOCK_ICONS, isDockItemActive, withLangParam } from './dock'
 
 type StaticDockIslandProps = {
@@ -36,7 +36,7 @@ export const StaticDockIsland = component$<StaticDockIslandProps>(({ currentPath
       })
 
       try {
-        const response = await fetch(buildPublicApiUrl('/auth/session', window.location.origin), {
+        const response = await fetch(buildPublicSiteAuthUrl('/auth/session', window.location.origin), {
           credentials: 'include',
           headers: { accept: 'application/json' }
         })

@@ -4,8 +4,8 @@ use spacetimedb::{
     Timestamp,
 };
 
-const DEFAULT_AUTHORITY: &str = "https://auth.spacetimedb.com/oidc";
-const DEFAULT_CLIENT_ID: &str = "prometheus-site-dev";
+const DEFAULT_JWT_ISSUER: &str = "urn:prometheus:better-auth";
+const DEFAULT_JWT_AUDIENCE: &str = "prometheus-site";
 
 #[client_visibility_filter]
 const CONTACT_INVITE_FILTER: Filter = Filter::Sql(
@@ -95,12 +95,18 @@ pub struct OidcClaims {
     pub roles: Vec<String>,
 }
 
-fn resolve_authority() -> &'static str {
-    option_env!("SPACETIMEAUTH_AUTHORITY").unwrap_or(DEFAULT_AUTHORITY)
+fn resolve_jwt_issuer() -> &'static str {
+    option_env!("AUTH_JWT_ISSUER")
+        .or(option_env!("OIDC_AUTHORITY"))
+        .or(option_env!("SPACETIMEAUTH_AUTHORITY"))
+        .unwrap_or(DEFAULT_JWT_ISSUER)
 }
 
-fn resolve_client_id() -> &'static str {
-    option_env!("SPACETIMEAUTH_CLIENT_ID").unwrap_or(DEFAULT_CLIENT_ID)
+fn resolve_jwt_audience() -> &'static str {
+    option_env!("AUTH_JWT_AUDIENCE")
+        .or(option_env!("OIDC_CLIENT_ID"))
+        .or(option_env!("SPACETIMEAUTH_CLIENT_ID"))
+        .unwrap_or(DEFAULT_JWT_AUDIENCE)
 }
 
 fn parse_claims(sender_auth: &AuthCtx) -> Result<OidcClaims, String> {
@@ -120,8 +126,8 @@ fn has_allowed_issuer(sender_auth: &AuthCtx) -> bool {
         return false;
     };
 
-    jwt.issuer() == resolve_authority()
-        && jwt.audience().iter().any(|aud| aud == resolve_client_id())
+    jwt.issuer() == resolve_jwt_issuer()
+        && jwt.audience().iter().any(|aud| aud == resolve_jwt_audience())
 }
 
 fn ensure_allowed_issuer(sender_auth: &AuthCtx) -> Result<(), String> {
@@ -132,10 +138,10 @@ fn ensure_allowed_issuer(sender_auth: &AuthCtx) -> Result<(), String> {
     let jwt = sender_auth
         .jwt()
         .ok_or("Authentication required".to_string())?;
-    if jwt.issuer() != resolve_authority() {
+    if jwt.issuer() != resolve_jwt_issuer() {
         return Err("Invalid issuer".to_string());
     }
-    if !jwt.audience().iter().any(|aud| aud == resolve_client_id()) {
+    if !jwt.audience().iter().any(|aud| aud == resolve_jwt_audience()) {
         return Err("Invalid audience".to_string());
     }
 

@@ -6,7 +6,9 @@ import {
   ensureSpacetimeAuthSession,
   getSpacetimeAuthMode,
   isSpacetimeAuthConfigured,
+  loginHostedLocalAccount,
   loginDevLocalAccount,
+  registerHostedLocalAccount,
   registerDevLocalAccount,
   startSpacetimeAuthLogin,
   type SpacetimeAuthMethod
@@ -26,6 +28,85 @@ type MountStaticLoginControllerOptions = {
 type StatusTone = 'neutral' | 'error'
 type StaticLoginMode = 'login' | 'signup'
 type StaticLoginRuntimeMode = ReturnType<typeof getSpacetimeAuthMode>
+type HostedSocialProvider = Extract<SpacetimeAuthMethod, 'google' | 'github'>
+const AUTH_NEXT_PATH_SESSION_KEY = 'prom-auth-next'
+const AUTH_NEXT_PATH_WINDOW_NAME_PREFIX = 'prom-auth-next:'
+
+const readRequestedNextPath = (root: HTMLElement) => {
+  const current = root.dataset.staticLoginNextPath?.trim() ?? ''
+  if (current) return current
+  try {
+    const stored = window.sessionStorage.getItem(AUTH_NEXT_PATH_SESSION_KEY)?.trim() ?? ''
+    if (!stored) return null
+    root.dataset.staticLoginNextPath = stored
+    window.sessionStorage.removeItem(AUTH_NEXT_PATH_SESSION_KEY)
+    return stored
+  } catch {
+    // Fall back to window.name when storage is unavailable during redirect handoff.
+  }
+  try {
+    const nameValue = window.name || ''
+    if (!nameValue.startsWith(AUTH_NEXT_PATH_WINDOW_NAME_PREFIX)) {
+      return null
+    }
+    const stored = nameValue.slice(AUTH_NEXT_PATH_WINDOW_NAME_PREFIX.length).trim()
+    if (!stored) return null
+    root.dataset.staticLoginNextPath = stored
+    window.name = ''
+    return stored
+  } catch {
+    return null
+  }
+}
+
+const resolveRuntimeModeLabel = (mode: StaticLoginRuntimeMode) => {
+  switch (mode) {
+    case 'dev-session':
+      return 'Dev session'
+    case 'disabled':
+      return 'Auth disabled'
+    default:
+      return 'Hosted auth'
+  }
+}
+
+const resolveRuntimeModeHint = (
+  mode: StaticLoginRuntimeMode,
+  copy: ReturnType<typeof getUiCopy>
+) => {
+  switch (mode) {
+    case 'dev-session':
+      return copy.signupDescription
+    case 'disabled':
+      return copy.authNotConfigured
+    default:
+      return copy.authHostedStatus
+  }
+}
+
+const syncRuntimeSummary = (
+  root: HTMLElement,
+  mode: StaticLoginRuntimeMode,
+  copy: ReturnType<typeof getUiCopy>
+) => {
+  const label = root.querySelector<HTMLElement>('[data-static-login-runtime-label]')
+  const hint = root.querySelector<HTMLElement>('[data-static-login-runtime-hint]')
+  const next = root.querySelector<HTMLElement>('[data-static-login-next]')
+  const nextCode = root.querySelector<HTMLElement>('[data-static-login-next-code]')
+  const requestedNext = readRequestedNextPath(root)
+
+  if (label) {
+    label.textContent = resolveRuntimeModeLabel(mode)
+  }
+  if (hint) {
+    hint.textContent = resolveRuntimeModeHint(mode, copy)
+  }
+  if (next && nextCode) {
+    const displayNext = requestedNext ? resolveNextPath(root) : null
+    next.hidden = !displayNext
+    nextCode.textContent = displayNext ?? ''
+  }
+}
 
 const setStatus = (root: HTMLElement, tone: StatusTone, message: string | null) => {
   const status = root.querySelector<HTMLElement>('[data-static-login-status]')
@@ -51,26 +132,61 @@ const setMode = (root: HTMLElement, mode: StaticLoginMode) => {
   })
 }
 
-const setRuntimeMode = (root: HTMLElement, mode: StaticLoginRuntimeMode) => {
+const normalizeHostedSocialProviders = () =>
+  new Set(
+    appConfig.authSocialProviders
+      .map((provider) => provider.trim().toLowerCase())
+      .filter((provider): provider is HostedSocialProvider => provider === 'google' || provider === 'github')
+  )
+
+const syncHostedProviders = (root: HTMLElement, mode: StaticLoginRuntimeMode) => {
+  const enabledProviders = normalizeHostedSocialProviders()
+  let visibleProviders = 0
+
+  root.querySelectorAll<HTMLElement>('[data-static-login-provider]').forEach((element) => {
+    const provider = element.dataset.staticLoginProvider?.trim().toLowerCase()
+    const visible =
+      mode === 'hosted' && (provider === 'google' || provider === 'github') && enabledProviders.has(provider)
+    element.hidden = !visible
+    if (visible) {
+      visibleProviders += 1
+    }
+  })
+
+  const socialSection = root.querySelector<HTMLElement>('[data-static-login-social]')
+  if (socialSection) {
+    socialSection.hidden = mode !== 'hosted' || visibleProviders === 0
+  }
+}
+
+const setRuntimeMode = (
+  root: HTMLElement,
+  mode: StaticLoginRuntimeMode,
+  copy: ReturnType<typeof getUiCopy>
+) => {
   root.dataset.runtimeMode = mode
   const loginForm = root.querySelector<HTMLElement>('[data-static-login-form="login"]')
   const signupForm = root.querySelector<HTMLElement>('[data-static-login-form="signup"]')
-  const hostedPanel = root.querySelector<HTMLElement>('[data-static-login-hosted-panel]')
   const signupTab = root.querySelector<HTMLElement>('[data-static-login-signup-tab]')
-  const isDevSession = mode === 'dev-session'
+  const loginHint = root.querySelector<HTMLElement>('[data-static-login-login-hint]')
+  const formsEnabled = mode !== 'disabled'
+  const isHosted = mode === 'hosted'
 
-  if (loginForm) loginForm.hidden = !isDevSession
-  if (signupForm) signupForm.hidden = !isDevSession
-  if (hostedPanel) hostedPanel.hidden = isDevSession
-  if (signupTab) signupTab.hidden = !isDevSession
+  if (loginForm) loginForm.hidden = !formsEnabled
+  if (signupForm) signupForm.hidden = !formsEnabled
+  if (signupTab) signupTab.hidden = !formsEnabled
+  if (loginHint) {
+    loginHint.textContent = isHosted ? copy.authHostedStatus : copy.loginDescription
+  }
+  syncHostedProviders(root, mode)
 
-  if (!isDevSession) {
+  if (!formsEnabled) {
     setMode(root, 'login')
   }
 }
 
-const resolveNextPath = () => {
-  const next = new URL(window.location.href).searchParams.get('next')?.trim() ?? ''
+const resolveNextPath = (root: HTMLElement) => {
+  const next = readRequestedNextPath(root) ?? ''
   if (!next) return '/profile'
   try {
     const url = new URL(next, window.location.origin)
@@ -81,8 +197,8 @@ const resolveNextPath = () => {
   }
 }
 
-const resolveProfileUrl = (lang: Lang) => {
-  const url = new URL(resolveNextPath(), window.location.origin)
+const resolveProfileUrl = (lang: Lang, root: HTMLElement) => {
+  const url = new URL(resolveNextPath(root), window.location.origin)
   if (!url.searchParams.has('lang')) {
     url.searchParams.set('lang', lang)
   }
@@ -181,7 +297,7 @@ export const mountStaticLoginController = ({ lang }: MountStaticLoginControllerO
   }
 
   const redirectToProfile = () => {
-    window.location.assign(resolveProfileUrl(lang))
+    window.location.assign(resolveProfileUrl(lang, root))
   }
 
   const primeExistingSession = () => {
@@ -193,7 +309,8 @@ export const mountStaticLoginController = ({ lang }: MountStaticLoginControllerO
       }
 
       if (!configured) {
-        setRuntimeMode(root, 'disabled')
+        setRuntimeMode(root, 'disabled', copy)
+        syncRuntimeSummary(root, 'disabled', copy)
         setStatus(root, 'error', copy.authNotConfigured)
         applyBusy()
         return
@@ -222,21 +339,15 @@ export const mountStaticLoginController = ({ lang }: MountStaticLoginControllerO
     root.querySelectorAll<HTMLButtonElement>('[data-static-login-method]').forEach((button) => {
       const rawMethod = button.dataset.staticLoginMethod
       const method: SpacetimeAuthMethod | null =
-        rawMethod === 'magic-link' || rawMethod === 'google' || rawMethod === 'github' ? rawMethod : null
+        rawMethod === 'google' || rawMethod === 'github' ? rawMethod : null
       if (!method) return
 
       const handler = () => {
         if (busy) return
         busy = true
         applyBusy()
-        setStatus(
-          root,
-          'neutral',
-          method === 'magic-link'
-            ? copy.authRedirectingMagicLink
-            : copy.authRedirectingProvider.replace('{{method}}', method)
-        )
-        void startSpacetimeAuthLogin(method, { next: resolveNextPath() }).catch((error) => {
+        setStatus(root, 'neutral', copy.authRedirectingProvider.replace('{{method}}', method))
+        void startSpacetimeAuthLogin(method, { next: resolveNextPath(root) }).catch((error) => {
           busy = false
           applyBusy()
           setStatus(
@@ -269,7 +380,7 @@ export const mountStaticLoginController = ({ lang }: MountStaticLoginControllerO
   }
 
   const attachLocalForms = () => {
-    if (runtimeMode !== 'dev-session') return
+    if (runtimeMode === 'disabled') return
 
     root.querySelectorAll<HTMLFormElement>('[data-static-login-form]').forEach((form) => {
       const formMode: StaticLoginMode =
@@ -278,6 +389,7 @@ export const mountStaticLoginController = ({ lang }: MountStaticLoginControllerO
       const handler = (event: SubmitEvent) => {
         event.preventDefault()
         if (busy) return
+        if (!form.reportValidity()) return
 
         const values = readLocalFormValues(form)
         busy = true
@@ -285,17 +397,37 @@ export const mountStaticLoginController = ({ lang }: MountStaticLoginControllerO
         setStatus(root, 'neutral', null)
 
         const submit = async () => {
-          if (formMode === 'signup') {
-            await registerDevLocalAccount({
-              name: values.name,
-              email: values.email,
-              password: values.password
-            })
+          if (runtimeMode === 'hosted') {
+            const session =
+              formMode === 'signup'
+                ? await registerHostedLocalAccount({
+                    name: values.name,
+                    email: values.email,
+                    password: values.password,
+                    remember: values.remember
+                  })
+                : await loginHostedLocalAccount({
+                    email: values.email,
+                    password: values.password,
+                    remember: values.remember
+                  })
+
+            if (!session) {
+              throw new Error('The hosted sign-in flow did not create a session.')
+            }
           } else {
-            await loginDevLocalAccount({
-              email: values.email,
-              password: values.password
-            })
+            if (formMode === 'signup') {
+              await registerDevLocalAccount({
+                name: values.name,
+                email: values.email,
+                password: values.password
+              })
+            } else {
+              await loginDevLocalAccount({
+                email: values.email,
+                password: values.password
+              })
+            }
           }
 
           persistRememberedFormState(values)
@@ -318,7 +450,8 @@ export const mountStaticLoginController = ({ lang }: MountStaticLoginControllerO
     })
   }
 
-  setRuntimeMode(root, runtimeMode)
+  setRuntimeMode(root, runtimeMode, copy)
+  syncRuntimeSummary(root, runtimeMode, copy)
   applyRememberedFormState(root)
   if (!configured) {
     setStatus(root, 'error', copy.authNotConfigured)

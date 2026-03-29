@@ -135,16 +135,29 @@ const resolveStaticBootstrapPreloadPaths = (pathname: string) => {
 };
 
 const resolveRenderManifest = () => {
-  const injections = (manifest as { injections?: Array<{
+  const resolvedManifest = manifest as
+    | ({
+        injections?: Array<{
+          tag?: string;
+          location?: string;
+          attributes?: Record<string, unknown>;
+        }>;
+      } & RenderOptions["manifest"])
+    | null
+    | undefined;
+  if (!resolvedManifest || typeof resolvedManifest !== "object") {
+    return undefined;
+  }
+  const injections = (resolvedManifest as { injections?: Array<{
     tag?: string;
     location?: string;
     attributes?: Record<string, unknown>;
   }> }).injections;
   if (!Array.isArray(injections) || injections.length === 0) {
-    return manifest as RenderOptions['manifest'];
+    return resolvedManifest as RenderOptions['manifest'];
   }
   return {
-    ...manifest,
+    ...resolvedManifest,
     injections: injections.filter((injection) => {
       if (injection?.tag !== "link" || injection?.location !== "head") {
         return true;

@@ -41,6 +41,9 @@ export type P2pIceServer = {
 
 export type PublicAppConfig = {
   apiBase: string
+  authBasePath?: string
+  authPostLogoutRedirectUri?: string
+  authSocialProviders: string[]
   webTransportBase: string
   preferWebTransport: boolean
   preferWebTransportDatagrams: boolean
@@ -59,6 +62,9 @@ export type PublicAppConfig = {
   p2pPeerjsServer?: string
   p2pIceServers: P2pIceServer[]
   authBootstrapPublicKey?: string
+  oidcAuthority?: string
+  oidcClientId?: string
+  oidcJwksUri?: string
   spacetimeAuthAuthority?: string
   spacetimeAuthClientId?: string
   spacetimeAuthPostLogoutRedirectUri?: string
@@ -107,6 +113,8 @@ const defaultHighlightEnvironment = (env: PublicEnv | undefined = publicEnv) => 
 
 const defaultPublicAppConfig: PublicAppConfig = {
   apiBase: '/api',
+  authBasePath: '/api/auth',
+  authSocialProviders: [],
   webTransportBase: '',
   preferWebTransport: false,
   preferWebTransportDatagrams: false,
@@ -171,6 +179,14 @@ const normalizeApiBase = (raw?: string | null) => {
 
 const normalizeString = (value: unknown) => (typeof value === 'string' ? value.trim() : '')
 
+const pickFirstEnvString = (env: PublicEnv | undefined, keys: string[]) => {
+  for (const key of keys) {
+    const value = normalizeString(env?.[key])
+    if (value) return value
+  }
+  return ''
+}
+
 const normalizeBoolean = (value: unknown, defaultValue = false) =>
   typeof value === 'boolean' ? value : defaultValue
 
@@ -190,6 +206,12 @@ const normalizeStringList = (value: unknown) =>
   Array.isArray(value)
     ? value.map((entry) => normalizeString(entry)).filter(Boolean)
     : []
+
+const parseStringList = (value: string) =>
+  value
+    .split(/[,\n]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
 
 const normalizeIceServer = (value: unknown): P2pIceServer | null => {
   if (!isRecord(value)) return null
@@ -255,7 +277,12 @@ export const resolvePublicAppConfig = (
   rawConfig: Partial<PublicAppConfig> | undefined = getDefinedPublicConfig(),
   env: PublicEnv | undefined = publicEnv
 ): PublicAppConfig => {
+  const resolvedEnv = env ?? resolveTemplateEnv()
   void env
+  const configuredAuthProviders = normalizeStringList(rawConfig?.authSocialProviders)
+  const envAuthProviders = parseStringList(
+    pickFirstEnvString(resolvedEnv, ['VITE_AUTH_SOCIAL_PROVIDERS', 'AUTH_SOCIAL_PROVIDERS'])
+  )
   const fragmentVisibilityMargin =
     normalizeString(rawConfig?.fragmentVisibilityMargin) || DEFAULT_FRAGMENT_VISIBILITY_MARGIN
   const fragmentVisibilityThreshold = normalizeNumber(
@@ -272,7 +299,29 @@ export const resolvePublicAppConfig = (
   return {
     ...defaultPublicAppConfig,
     ...rawConfig,
-    apiBase: normalizeApiBase(rawConfig?.apiBase) || defaultPublicAppConfig.apiBase,
+    apiBase:
+      normalizeApiBase(rawConfig?.apiBase) ||
+      normalizeApiBase(pickFirstEnvString(resolvedEnv, ['VITE_API_BASE', 'API_BASE'])) ||
+      defaultPublicAppConfig.apiBase,
+    authBasePath:
+      normalizeString(rawConfig?.authBasePath) ||
+      pickFirstEnvString(resolvedEnv, ['VITE_AUTH_BASE_PATH', 'AUTH_BASE_PATH']) ||
+      defaultPublicAppConfig.authBasePath,
+    authPostLogoutRedirectUri:
+      normalizeString(rawConfig?.authPostLogoutRedirectUri) ||
+      pickFirstEnvString(resolvedEnv, [
+        'VITE_OIDC_POST_LOGOUT_REDIRECT_URI',
+        'OIDC_POST_LOGOUT_REDIRECT_URI',
+        'VITE_SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI',
+        'SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI'
+      ]) ||
+      undefined,
+    authSocialProviders:
+      configuredAuthProviders.length > 0
+        ? configuredAuthProviders
+        : envAuthProviders.length > 0
+          ? envAuthProviders
+          : defaultPublicAppConfig.authSocialProviders,
     webTransportBase,
     preferWebTransport:
       typeof rawConfig?.preferWebTransport === 'boolean'
@@ -319,13 +368,70 @@ export const resolvePublicAppConfig = (
           .map((entry) => normalizeIceServer(entry))
           .filter((entry): entry is P2pIceServer => entry !== null)
       : [],
-    authBootstrapPublicKey: normalizeString(rawConfig?.authBootstrapPublicKey) || undefined,
-    spacetimeAuthAuthority: normalizeString(rawConfig?.spacetimeAuthAuthority) || undefined,
-    spacetimeAuthClientId: normalizeString(rawConfig?.spacetimeAuthClientId) || undefined,
+    authBootstrapPublicKey:
+      normalizeString(rawConfig?.authBootstrapPublicKey) ||
+      pickFirstEnvString(resolvedEnv, ['VITE_AUTH_BOOTSTRAP_PUBLIC_KEY', 'AUTH_BOOTSTRAP_PUBLIC_KEY']) ||
+      undefined,
+    oidcAuthority:
+      normalizeString(rawConfig?.oidcAuthority) ||
+      pickFirstEnvString(resolvedEnv, [
+        'VITE_OIDC_AUTHORITY',
+        'OIDC_AUTHORITY',
+        'VITE_SPACETIMEAUTH_AUTHORITY',
+        'SPACETIMEAUTH_AUTHORITY'
+      ]) ||
+      undefined,
+    oidcClientId:
+      normalizeString(rawConfig?.oidcClientId) ||
+      pickFirstEnvString(resolvedEnv, [
+        'VITE_OIDC_CLIENT_ID',
+        'OIDC_CLIENT_ID',
+        'VITE_SPACETIMEAUTH_CLIENT_ID',
+        'SPACETIMEAUTH_CLIENT_ID'
+      ]) ||
+      undefined,
+    oidcJwksUri:
+      normalizeString(rawConfig?.oidcJwksUri) ||
+      pickFirstEnvString(resolvedEnv, ['VITE_OIDC_JWKS_URI', 'OIDC_JWKS_URI', 'SPACETIMEAUTH_JWKS_URI']) ||
+      undefined,
+    spacetimeAuthAuthority:
+      normalizeString(rawConfig?.spacetimeAuthAuthority) ||
+      normalizeString(rawConfig?.oidcAuthority) ||
+      pickFirstEnvString(resolvedEnv, [
+        'VITE_SPACETIMEAUTH_AUTHORITY',
+        'SPACETIMEAUTH_AUTHORITY',
+        'VITE_OIDC_AUTHORITY',
+        'OIDC_AUTHORITY'
+      ]) ||
+      undefined,
+    spacetimeAuthClientId:
+      normalizeString(rawConfig?.spacetimeAuthClientId) ||
+      normalizeString(rawConfig?.oidcClientId) ||
+      pickFirstEnvString(resolvedEnv, [
+        'VITE_SPACETIMEAUTH_CLIENT_ID',
+        'SPACETIMEAUTH_CLIENT_ID',
+        'VITE_OIDC_CLIENT_ID',
+        'OIDC_CLIENT_ID'
+      ]) ||
+      undefined,
     spacetimeAuthPostLogoutRedirectUri:
-      normalizeString(rawConfig?.spacetimeAuthPostLogoutRedirectUri) || undefined,
-    spacetimeDbUri: normalizeString(rawConfig?.spacetimeDbUri) || undefined,
-    spacetimeDbModule: normalizeString(rawConfig?.spacetimeDbModule) || undefined,
+      normalizeString(rawConfig?.spacetimeAuthPostLogoutRedirectUri) ||
+      normalizeString(rawConfig?.authPostLogoutRedirectUri) ||
+      pickFirstEnvString(resolvedEnv, [
+        'VITE_SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI',
+        'SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI',
+        'VITE_OIDC_POST_LOGOUT_REDIRECT_URI',
+        'OIDC_POST_LOGOUT_REDIRECT_URI'
+      ]) ||
+      undefined,
+    spacetimeDbUri:
+      normalizeString(rawConfig?.spacetimeDbUri) ||
+      pickFirstEnvString(resolvedEnv, ['VITE_SPACETIMEDB_URI', 'SPACETIMEDB_URI']) ||
+      undefined,
+    spacetimeDbModule:
+      normalizeString(rawConfig?.spacetimeDbModule) ||
+      pickFirstEnvString(resolvedEnv, ['VITE_SPACETIMEDB_MODULE', 'SPACETIMEDB_MODULE']) ||
+      undefined,
     template:
       rawConfig?.template && isRecord(rawConfig.template)
         ? (rawConfig.template as ResolvedTemplateFeatures)
@@ -400,6 +506,11 @@ export const buildPublicApiUrl = (path: string, origin: string, apiBase?: string
   }
 
   return `${base}${path}`
+}
+
+export const buildPublicSiteAuthUrl = (path: string, origin: string) => {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  return `${origin}${normalizedPath}`
 }
 
 export const resolvePublicApiHost = (origin: string, apiBase?: string) => {

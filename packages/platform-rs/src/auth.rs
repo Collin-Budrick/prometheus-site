@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axum::extract::{Json, State};
-use axum::http::header::{AUTHORIZATION, COOKIE, SET_COOKIE};
+use axum::http::header::{COOKIE, SET_COOKIE};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -49,7 +49,18 @@ pub struct SessionClaims {
 #[derive(Debug, Deserialize)]
 struct SessionSyncBody {
     #[serde(rename = "idToken")]
-    id_token: String,
+    id_token: Option<String>,
+    token: Option<String>,
+}
+
+impl SessionSyncBody {
+    fn token(&self) -> Option<&str> {
+        self.id_token
+            .as_deref()
+            .or(self.token.as_deref())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -214,9 +225,8 @@ pub fn router() -> Router<AppState> {
 }
 
 pub fn resolve_auth_session(headers: &HeaderMap, state: &AppState) -> Option<AuthSession> {
-    read_site_session_claims(headers, state)
-        .or_else(|| read_bearer_claims(headers, state))
-        .map(|claims| AuthSession { claims })
+    // Browser and API flows are bridged through the signed site session cookie.
+    read_site_session_claims(headers, state).map(|claims| AuthSession { claims })
 }
 
 pub fn is_admin(session: &AuthSession) -> bool {
@@ -391,7 +401,7 @@ fn decode_session_token(token: &str, state: &AppState) -> Option<SessionClaims> 
     let mut validation = Validation::new(Algorithm::HS256);
     validation.validate_exp = true;
     validation.set_issuer(&[SESSION_ISSUER]);
-    validation.set_audience(&[auth.spacetimeauth_client_id.clone()]);
+    validation.set_audience(&[auth.jwt_audience.clone()]);
 
     decode::<SessionClaims>(
         token,
@@ -405,12 +415,6 @@ fn decode_session_token(token: &str, state: &AppState) -> Option<SessionClaims> 
 pub fn read_site_session_claims(headers: &HeaderMap, state: &AppState) -> Option<SessionClaims> {
     let token = parse_cookie_value(headers, SESSION_COOKIE_NAME)?;
     decode_session_token(&token, state)
-}
-
-fn parse_jwt_payload(token: &str) -> Option<HashMap<String, Value>> {
-    let payload = token.split('.').nth(1)?;
-    let decoded = URL_SAFE_NO_PAD.decode(payload.as_bytes()).ok()?;
-    serde_json::from_slice::<HashMap<String, Value>>(&decoded).ok()
 }
 
 fn claims_from_payload(
@@ -463,22 +467,14 @@ fn claims_from_payload(
             .config
             .auth
             .as_ref()
-            .map(|config| config.spacetimeauth_client_id.clone())
-            .unwrap_or_else(|| "prometheus-site-dev".to_string()),
+            .map(|config| config.jwt_audience.clone())
+            .unwrap_or_else(|| "prometheus-site".to_string()),
         exp: payload
             .get("exp")
             .and_then(Value::as_u64)
             .unwrap_or(now + DEFAULT_SESSION_TTL_SECS) as usize,
         iat: payload.get("iat").and_then(Value::as_u64).unwrap_or(now) as usize,
     }
-}
-
-fn claims_from_unverified_token(token: String, state: &AppState) -> SessionClaims {
-    claims_from_payload(
-        parse_jwt_payload(&token).unwrap_or_default(),
-        state,
-        Some(token),
-    )
 }
 
 fn normalize_dev_identity_segment(value: &str) -> String {
@@ -607,8 +603,8 @@ fn build_dev_session_claims(body: &DevSessionBody, state: &AppState) -> SessionC
             .config
             .auth
             .as_ref()
-            .map(|config| config.spacetimeauth_client_id.clone())
-            .unwrap_or_else(|| "prometheus-site-dev".to_string()),
+            .map(|config| config.jwt_audience.clone())
+            .unwrap_or_else(|| "prometheus-site".to_string()),
         exp: (now + DEFAULT_SESSION_TTL_SECS) as usize,
         iat: now as usize,
     }
@@ -633,8 +629,8 @@ fn build_local_account_claims(account: &DevLocalAccount, state: &AppState) -> Se
             .config
             .auth
             .as_ref()
-            .map(|config| config.spacetimeauth_client_id.clone())
-            .unwrap_or_else(|| "prometheus-site-dev".to_string()),
+            .map(|config| config.jwt_audience.clone())
+            .unwrap_or_else(|| "prometheus-site".to_string()),
         exp: (now + DEFAULT_SESSION_TTL_SECS) as usize,
         iat: now as usize,
     }
@@ -659,15 +655,6 @@ fn build_session_response(claims: &SessionClaims, headers: &HeaderMap, state: &A
     response
 }
 
-pub fn read_bearer_claims(headers: &HeaderMap, state: &AppState) -> Option<SessionClaims> {
-    let header = headers.get(AUTHORIZATION)?.to_str().ok()?.trim();
-    let token = header.strip_prefix("Bearer ")?.trim();
-    if token.is_empty() {
-        return None;
-    }
-    Some(claims_from_unverified_token(token.to_string(), state))
-}
-
 async fn verify_id_token(id_token: &str, state: &AppState) -> Result<SessionClaims, String> {
     let auth = state
         .config
@@ -678,7 +665,7 @@ async fn verify_id_token(id_token: &str, state: &AppState) -> Result<SessionClai
 
     let jwks = state
         .http
-        .get(&auth.spacetimeauth_jwks_uri)
+        .get(&auth.jwks_uri)
         .timeout(Duration::from_secs(5))
         .send()
         .await
@@ -700,8 +687,8 @@ async fn verify_id_token(id_token: &str, state: &AppState) -> Result<SessionClai
         DecodingKey::from_jwk(jwk).map_err(|_| "Unable to verify ID token.".to_string())?;
     let mut validation = Validation::new(header.alg);
     validation.validate_exp = true;
-    validation.set_issuer(&[auth.spacetimeauth_authority.clone()]);
-    validation.set_audience(&[auth.spacetimeauth_client_id.clone()]);
+    validation.set_issuer(&[auth.jwt_issuer.clone()]);
+    validation.set_audience(&[auth.jwt_audience.clone()]);
 
     let payload = decode::<HashMap<String, Value>>(id_token, &decoding_key, &validation)
         .map_err(|error| {
@@ -793,15 +780,15 @@ async fn sync_session(
     headers: HeaderMap,
     Json(body): Json<SessionSyncBody>,
 ) -> Response {
-    if body.id_token.trim().is_empty() {
+    let Some(token) = body.token() else {
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({ "error": "ID token is required." })),
         )
             .into_response();
-    }
+    };
 
-    let claims = match verify_id_token(&body.id_token, &state).await {
+    let claims = match verify_id_token(token, &state).await {
         Ok(claims) => claims,
         Err(error) => {
             return (StatusCode::UNAUTHORIZED, Json(json!({ "error": error }))).into_response()

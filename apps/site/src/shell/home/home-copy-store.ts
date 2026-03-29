@@ -9,6 +9,9 @@ import type {
 } from '../../lang/types'
 import { defaultLanguage } from '../../lang/manifest'
 import type { LanguageSeedPayload } from '../../lang/selection'
+import enCopy from '../../lang/en.json'
+import jaCopy from '../../lang/ja.json'
+import koCopy from '../../lang/ko.json'
 import { normalizeStaticShellLang } from '../core/lang-param'
 
 export type HomeStaticUiCopy = Pick<
@@ -291,8 +294,39 @@ const getHomeStaticState = (lang: Lang | string): HomeStaticCopyState | undefine
   homeCopyCache.get(resolveHomeCopyLang(lang)) ??
   homeCopyCache.get(defaultLanguage)
 
+const getFallbackHomeUiCopy = (lang: Lang | string): HomeStaticUiCopy => {
+  const normalizedLang = resolveHomeCopyLang(lang)
+  const fallback =
+    normalizedLang === 'ja'
+      ? (jaCopy.ui as UiCopy)
+      : normalizedLang === 'ko'
+        ? (koCopy.ui as UiCopy)
+        : (enCopy.ui as UiCopy)
+  return {
+    navHome: fallback.navHome,
+    navStore: fallback.navStore,
+    navLab: fallback.navLab,
+    navLogin: fallback.navLogin,
+    navProfile: fallback.navProfile,
+    navChat: fallback.navChat,
+    navSettings: fallback.navSettings,
+    navDashboard: fallback.navDashboard,
+    dockAriaLabel: fallback.dockAriaLabel,
+    themeAriaToLight: fallback.themeAriaToLight,
+    themeAriaToDark: fallback.themeAriaToDark,
+    languageToggleLabel: fallback.languageToggleLabel,
+    fragmentStatusStreaming: fallback.fragmentStatusStreaming,
+    fragmentStatusStalled: fallback.fragmentStatusStalled,
+    fragmentStatusIdle: fallback.fragmentStatusIdle,
+    demoActivate: fallback.demoActivate,
+    demoActivating: fallback.demoActivating,
+    homeIntroMarkdown: fallback.homeIntroMarkdown
+  }
+}
+
 export const getStaticHomeUiCopy = (lang: Lang | string): HomeStaticUiCopy => ({
   ...emptyUiCopy,
+  ...getFallbackHomeUiCopy(lang),
   ...(getHomeStaticState(lang)?.ui ?? {})
 })
 

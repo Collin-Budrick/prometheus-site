@@ -20,6 +20,9 @@ export type SiteRuntimeConfig = {
     api: string
     spacetimedb: string
     garnet: string
+    convex: string
+    convexSiteProxy: string
+    convexDashboard: string
     webtransport: string
     deviceWeb: string
   }
@@ -55,6 +58,9 @@ const DEFAULT_PORTS = {
   api: '4000',
   spacetimedb: '3000',
   garnet: '6379',
+  convex: '3210',
+  convexSiteProxy: '3211',
+  convexDashboard: '6791',
   webtransport: '4444',
   deviceWeb: '4173'
 } as const
@@ -62,10 +68,10 @@ const DEFAULT_PORTS = {
 const DEFAULT_COMPOSE = {
   projectName: templateBranding.composeProjectName,
   services: {
-    core: ['spacetimedb', 'garnet', 'api'],
+    core: ['spacetimedb', 'garnet', 'convex-backend', 'api'],
     web: ['web'],
     proxy: ['caddy'],
-    optional: []
+    optional: ['convex-dashboard']
   } as const
 } as const
 
@@ -150,6 +156,17 @@ export const getRuntimeConfig = (env: ProcessEnv = process.env): SiteRuntimeConf
     api: readPort(env, 'PROMETHEUS_API_PORT', DEFAULT_PORTS.api),
     spacetimedb: readPort(env, 'PROMETHEUS_SPACETIMEDB_PORT', DEFAULT_PORTS.spacetimedb),
     garnet: readPortAliases(env, ['PROMETHEUS_GARNET_PORT', 'PROMETHEUS_VALKEY_PORT'], DEFAULT_PORTS.garnet),
+    convex: readPort(env, 'PROMETHEUS_CONVEX_PORT', DEFAULT_PORTS.convex),
+    convexSiteProxy: readPort(
+      env,
+      'PROMETHEUS_CONVEX_SITE_PROXY_PORT',
+      DEFAULT_PORTS.convexSiteProxy
+    ),
+    convexDashboard: readPort(
+      env,
+      'PROMETHEUS_CONVEX_DASHBOARD_PORT',
+      DEFAULT_PORTS.convexDashboard
+    ),
     webtransport: readPort(env, 'PROMETHEUS_WEBTRANSPORT_PORT', DEFAULT_PORTS.webtransport),
     deviceWeb: readPort(env, 'PROMETHEUS_DEVICE_WEB_PORT', DEFAULT_PORTS.deviceWeb)
   }

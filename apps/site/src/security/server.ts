@@ -90,7 +90,7 @@ export const buildSiteConnectSrc = (
 ) => {
   const allowDevServer = shouldAllowViteDevServer(options?.allowDevServer)
   const apiOrigin = resolveHttpOrigin(config.apiBase, currentOrigin)
-  const spacetimeAuthOrigin = resolveHttpOrigin(config.spacetimeAuthAuthority, currentOrigin)
+  const authOrigin = resolveHttpOrigin(config.oidcAuthority ?? config.spacetimeAuthAuthority, currentOrigin)
   const spacetimeDbOrigin = resolveHttpOrigin(config.spacetimeDbUri, currentOrigin)
   const webTransportOrigin =
     config.enableFragmentStreaming && (config.preferWebTransport || config.preferWebTransportDatagrams)
@@ -107,7 +107,7 @@ export const buildSiteConnectSrc = (
     allowDevServer ? toSocketOrigin(currentOrigin) : null,
     apiOrigin,
     toSocketOrigin(apiOrigin),
-    spacetimeAuthOrigin,
+    authOrigin,
     spacetimeDbOrigin,
     toSocketOrigin(spacetimeDbOrigin),
     webTransportOrigin,
@@ -153,7 +153,7 @@ export const buildSiteCsp = ({
     `img-src 'self' data: blob: https:`,
     `font-src 'self' data:`,
     `connect-src ${buildSiteConnectSrc(currentOrigin, config, { allowDevServer }).join(' ')}`,
-    `worker-src 'self'`,
+    `worker-src 'self'${enableViteDevScripts ? ' blob:' : ''}`,
     `manifest-src 'self'`
   ]
 

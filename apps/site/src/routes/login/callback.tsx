@@ -19,7 +19,7 @@ export const head: DocumentHead = {
   meta: [
     {
       name: 'description',
-      content: 'Completing the hosted SpacetimeAuth sign-in flow.'
+      content: 'Completing the hosted auth sign-in flow.'
     }
   ],
   links: buildGlobalStylesheetLinks()
@@ -49,7 +49,7 @@ export default component$(() => {
       window.location.replace(result.next)
     } catch (reason) {
       error.value =
-        reason instanceof Error ? reason.message : 'Unable to finish the SpacetimeAuth callback.'
+        reason instanceof Error ? reason.message : 'Unable to finish the auth callback.'
       message.value = 'The hosted sign-in flow could not be completed.'
     }
   })
@@ -67,7 +67,7 @@ export default component$(() => {
         >
           <div class={authClass.card} data-mode="login" data-state={error.value ? 'error' : 'submitting'}>
             <div class={authClass.header}>
-              <div class="meta-line">SpacetimeAuth callback</div>
+              <div class="meta-line">Auth callback</div>
               <div class={authClass.title}>
                 <h1>{error.value ? 'Sign-in failed' : 'Completing sign-in'}</h1>
                 <p>{message.value}</p>
@@ -87,7 +87,7 @@ export default component$(() => {
               </>
             ) : (
               <div class={authClass.status} role="status" aria-live="polite" data-tone="neutral">
-                Verifying the returned ID token, syncing the site session, and restoring your bootstrap state.
+                Verifying the returned JWT, syncing the site session, and restoring your bootstrap state.
               </div>
             )}
           </div>

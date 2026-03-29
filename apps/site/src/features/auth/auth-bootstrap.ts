@@ -1,4 +1,4 @@
-import { appConfig } from '@site/site-config'
+import { appConfig, buildPublicSiteAuthUrl } from '@site/site-config'
 
 type JsonObject = Record<string, string | number | boolean | null>
 
@@ -176,41 +176,6 @@ const parseBootstrapSession = (token: string, userRaw: string | null) => {
   })
 }
 
-const resolveAuthBase = (origin: string, apiBase?: string) => {
-  const isLocalHost = (hostname: string) => hostname === '127.0.0.1' || hostname === 'localhost'
-  if (!apiBase) return ''
-  if (apiBase.startsWith('/')) return apiBase
-  try {
-    const apiUrl = new URL(apiBase)
-    const originUrl = new URL(origin)
-    const apiHost = apiUrl.hostname
-    const originHost = originUrl.hostname
-    if (isLocalHost(apiHost) && !isLocalHost(originHost) && apiHost !== originHost) {
-      return '/api'
-    }
-    return apiBase
-  } catch {
-    return ''
-  }
-}
-
-export const buildApiUrl = (path: string, origin: string, apiBase?: string) => {
-  const base = resolveAuthBase(origin, apiBase)
-  if (!base) return `${origin}${path}`
-
-  if (base.startsWith('/')) {
-    if (path.startsWith(base)) return `${origin}${path}`
-    return `${origin}${base}${path}`
-  }
-
-  if (path.startsWith('/api')) {
-    const normalizedBase = base.endsWith('/api') ? base.slice(0, -4) : base
-    return `${normalizedBase}${path}`
-  }
-
-  return `${base}${path}`
-}
-
 export const storeBootstrapSession = async (session: BootstrapSession): Promise<boolean> => {
   if (typeof window === 'undefined') return false
   try {
@@ -238,9 +203,10 @@ export const loadBootstrapSession = async (): Promise<BootstrapSession | null> =
 
 export const attemptBootstrapSession = async (origin: string, apiBase?: string): Promise<boolean> => {
   if (typeof window === 'undefined') return false
+  if (!(appConfig.authBootstrapPublicKey?.trim() ?? '')) return false
 
   try {
-    const response = await fetch(buildApiUrl('/auth/bootstrap', origin, apiBase), {
+    const response = await fetch(buildPublicSiteAuthUrl('/auth/bootstrap', origin), {
       method: 'POST',
       credentials: 'include'
     })

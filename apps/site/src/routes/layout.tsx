@@ -904,11 +904,12 @@ const ShellSettingsPanel = component$<ShellSettingsPanelProps>((props) => {
       role="dialog"
       aria-modal="false"
       aria-labelledby="topbar-settings-heading"
+      aria-label={copy.navSettings}
       data-open={open ? 'true' : 'false'}
       hidden={!open}
       aria-hidden={open ? 'false' : 'true'}
     >
-      <h2 class="sr-only" id="topbar-settings-heading">
+      <h2 class="settings-panel-title" id="topbar-settings-heading" aria-label={copy.navSettings}>
         {copy.navSettings}
       </h2>
       <div class="settings-controls">

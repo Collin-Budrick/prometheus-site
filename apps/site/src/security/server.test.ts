@@ -117,6 +117,7 @@ describe('security/server', () => {
     expect(csp).not.toContain(`'strict-dynamic'`)
     expect(csp).not.toContain(`'nonce-nonce-123'`)
     expect(csp).toContain(`connect-src 'self' https://prometheus.dev wss://prometheus.dev`)
+    expect(csp).toContain(`worker-src 'self' blob:`)
     expect(csp).not.toContain(`trusted-types prometheus-server-html`)
     expect(csp).not.toContain(`require-trusted-types-for 'script'`)
   })
