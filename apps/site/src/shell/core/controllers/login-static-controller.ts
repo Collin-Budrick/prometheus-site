@@ -4,13 +4,16 @@ import { appConfig } from '../../../site-config'
 import { loadClientAuthSession } from '../../auth/auth-client'
 import {
   ensureSpacetimeAuthSession,
+  getHostedSocialProviderLabel,
   getSpacetimeAuthMode,
+  isHostedSocialProvider,
   isSpacetimeAuthConfigured,
   loginHostedLocalAccount,
   loginDevLocalAccount,
   registerHostedLocalAccount,
   registerDevLocalAccount,
   startSpacetimeAuthLogin,
+  type HostedSocialProvider,
   type SpacetimeAuthMethod
 } from '../../../features/auth/spacetime-auth'
 import {
@@ -28,7 +31,6 @@ type MountStaticLoginControllerOptions = {
 type StatusTone = 'neutral' | 'error'
 type StaticLoginMode = 'login' | 'signup'
 type StaticLoginRuntimeMode = ReturnType<typeof getSpacetimeAuthMode>
-type HostedSocialProvider = Extract<SpacetimeAuthMethod, 'google' | 'github'>
 const AUTH_NEXT_PATH_SESSION_KEY = 'prom-auth-next'
 const AUTH_NEXT_PATH_WINDOW_NAME_PREFIX = 'prom-auth-next:'
 
@@ -136,7 +138,7 @@ const normalizeHostedSocialProviders = () =>
   new Set(
     appConfig.authSocialProviders
       .map((provider) => provider.trim().toLowerCase())
-      .filter((provider): provider is HostedSocialProvider => provider === 'google' || provider === 'github')
+      .filter((provider): provider is HostedSocialProvider => isHostedSocialProvider(provider))
   )
 
 const syncHostedProviders = (root: HTMLElement, mode: StaticLoginRuntimeMode) => {
@@ -145,8 +147,7 @@ const syncHostedProviders = (root: HTMLElement, mode: StaticLoginRuntimeMode) =>
 
   root.querySelectorAll<HTMLElement>('[data-static-login-provider]').forEach((element) => {
     const provider = element.dataset.staticLoginProvider?.trim().toLowerCase()
-    const visible =
-      mode === 'hosted' && (provider === 'google' || provider === 'github') && enabledProviders.has(provider)
+    const visible = mode === 'hosted' && isHostedSocialProvider(provider) && enabledProviders.has(provider)
     element.hidden = !visible
     if (visible) {
       visibleProviders += 1
@@ -338,15 +339,14 @@ export const mountStaticLoginController = ({ lang }: MountStaticLoginControllerO
 
     root.querySelectorAll<HTMLButtonElement>('[data-static-login-method]').forEach((button) => {
       const rawMethod = button.dataset.staticLoginMethod
-      const method: SpacetimeAuthMethod | null =
-        rawMethod === 'google' || rawMethod === 'github' ? rawMethod : null
+      const method: SpacetimeAuthMethod | null = isHostedSocialProvider(rawMethod) ? rawMethod : null
       if (!method) return
 
       const handler = () => {
         if (busy) return
         busy = true
         applyBusy()
-        setStatus(root, 'neutral', copy.authRedirectingProvider.replace('{{method}}', method))
+        setStatus(root, 'neutral', copy.authRedirectingProvider.replace('{{method}}', getHostedSocialProviderLabel(method)))
         void startSpacetimeAuthLogin(method, { next: resolveNextPath(root) }).catch((error) => {
           busy = false
           applyBusy()

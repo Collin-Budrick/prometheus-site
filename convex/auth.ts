@@ -98,19 +98,39 @@ const fallbackOrigin =
   normalizeOrigin(process.env.PROMETHEUS_WEB_HOST) ??
   defaultFallbackOrigin
 const enabledSocialProviders = new Set(parseList(process.env.AUTH_SOCIAL_PROVIDERS))
+const supportedSocialProviders = ['google', 'facebook', 'github'] as const
+type SupportedSocialProvider = (typeof supportedSocialProviders)[number]
 
-const isProviderEnabled = (providerId: 'google' | 'github') => {
-  if (enabledSocialProviders.size > 0) {
-    return enabledSocialProviders.has(providerId)
+const getSocialProviderCredentials = (providerId: SupportedSocialProvider) => {
+  switch (providerId) {
+    case 'google':
+      return {
+        clientId: normalizeOptionalString(process.env.AUTH_GOOGLE_CLIENT_ID),
+        clientSecret: normalizeOptionalString(process.env.AUTH_GOOGLE_CLIENT_SECRET)
+      }
+    case 'facebook':
+      return {
+        clientId: normalizeOptionalString(process.env.AUTH_FACEBOOK_CLIENT_ID),
+        clientSecret: normalizeOptionalString(process.env.AUTH_FACEBOOK_CLIENT_SECRET)
+      }
+    case 'github':
+      return {
+        clientId: normalizeOptionalString(process.env.AUTH_GITHUB_CLIENT_ID),
+        clientSecret: normalizeOptionalString(process.env.AUTH_GITHUB_CLIENT_SECRET)
+      }
   }
-  return Boolean(
-    normalizeOptionalString(
-      providerId === 'google' ? process.env.AUTH_GOOGLE_CLIENT_ID : process.env.AUTH_GITHUB_CLIENT_ID
-    ) &&
-      normalizeOptionalString(
-        providerId === 'google' ? process.env.AUTH_GOOGLE_CLIENT_SECRET : process.env.AUTH_GITHUB_CLIENT_SECRET
-      )
-  )
+}
+
+const hasProviderCredentials = (providerId: SupportedSocialProvider) => {
+  const credentials = getSocialProviderCredentials(providerId)
+  return Boolean(credentials.clientId && credentials.clientSecret)
+}
+
+const isProviderEnabled = (providerId: SupportedSocialProvider) => {
+  if (enabledSocialProviders.size > 0) {
+    return enabledSocialProviders.has(providerId) && hasProviderCredentials(providerId)
+  }
+  return hasProviderCredentials(providerId)
 }
 
 const buildPreferredUsername = (email: string, name: string) => {
@@ -125,7 +145,7 @@ export const authComponent = createClient(components.betterAuth)
 export const resolveTrustedOrigins = () => trustedOrigins
 
 export const resolveEnabledAuthProviders = () =>
-  ['password', ...(isProviderEnabled('google') ? ['google'] : []), ...(isProviderEnabled('github') ? ['github'] : [])]
+  ['password', ...supportedSocialProviders.filter((providerId) => isProviderEnabled(providerId))]
 
 export const createAuth = (ctx: Record<string, unknown>) =>
   betterAuth({
@@ -148,16 +168,24 @@ export const createAuth = (ctx: Record<string, unknown>) =>
       ...(isProviderEnabled('google')
         ? {
             google: {
-              clientId: normalizeOptionalString(process.env.AUTH_GOOGLE_CLIENT_ID) ?? '',
-              clientSecret: normalizeOptionalString(process.env.AUTH_GOOGLE_CLIENT_SECRET) ?? ''
+              clientId: getSocialProviderCredentials('google').clientId ?? '',
+              clientSecret: getSocialProviderCredentials('google').clientSecret ?? ''
+            }
+          }
+        : {}),
+      ...(isProviderEnabled('facebook')
+        ? {
+            facebook: {
+              clientId: getSocialProviderCredentials('facebook').clientId ?? '',
+              clientSecret: getSocialProviderCredentials('facebook').clientSecret ?? ''
             }
           }
         : {}),
       ...(isProviderEnabled('github')
         ? {
             github: {
-              clientId: normalizeOptionalString(process.env.AUTH_GITHUB_CLIENT_ID) ?? '',
-              clientSecret: normalizeOptionalString(process.env.AUTH_GITHUB_CLIENT_SECRET) ?? ''
+              clientId: getSocialProviderCredentials('github').clientId ?? '',
+              clientSecret: getSocialProviderCredentials('github').clientSecret ?? ''
             }
           }
         : {})

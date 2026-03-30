@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 
-import { resolveSpacetimeAuthMode, signOutSpacetimeAuth } from './spacetime-auth'
+import { resolveSpacetimeAuthMode, signOutSpacetimeAuth, startSpacetimeAuthLogin } from './spacetime-auth'
 
 const originalFetch = globalThis.fetch
 const originalWindow = globalThis.window
@@ -124,5 +124,43 @@ describe('signOutSpacetimeAuth', () => {
       }
     })
     expect(String(requests[1]?.input)).toBe('https://prometheus.prod/auth/logout')
+  })
+})
+
+describe('startSpacetimeAuthLogin', () => {
+  it('supports Facebook sign-in through Better Auth social redirects', async () => {
+    const requests: Array<{ input: RequestInfo | URL; init?: RequestInit }> = []
+    const assignCalls: string[] = []
+
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push({ input, init })
+      return new Response(JSON.stringify({ redirect: true, url: 'https://facebook.example/oauth' }), {
+        status: 200,
+        headers: {
+          'content-type': 'application/json'
+        }
+      })
+    }) as typeof fetch
+
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: {
+        location: {
+          origin: 'https://prometheus.prod',
+          hostname: 'prometheus.prod',
+          assign: (value: string) => {
+            assignCalls.push(value)
+          }
+        }
+      }
+    })
+
+    await expect(startSpacetimeAuthLogin('facebook', { next: '/profile' })).resolves.toBeUndefined()
+    expect(requests).toHaveLength(1)
+    expect(String(requests[0]?.input)).toBe('https://prometheus.prod/api/auth/sign-in/social')
+    expect(JSON.parse(String(requests[0]?.init?.body))).toMatchObject({
+      provider: 'facebook'
+    })
+    expect(assignCalls).toEqual(['https://facebook.example/oauth'])
   })
 })

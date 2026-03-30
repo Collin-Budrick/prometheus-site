@@ -6,15 +6,15 @@ Use this cookbook when you need to disable, replace, or fork a built-in bundle s
 
 ## auth
 
-Hosted auth flows, bootstrap tokens, and the login route.
+Self-hosted Better Auth on Convex, bootstrap tokens, and the login route.
 
 - Depends on: none
 - Routes: `/login`
 - Owners: `template`, `auth`
-- Required secrets: `AUTH_BOOTSTRAP_PRIVATE_KEY`
+- Required secrets: `AUTH_BOOTSTRAP_PRIVATE_KEY`, `BETTER_AUTH_SECRET`
 - Quality gates: `build`, `typecheck`, `browser`
-- Adapters: `SpacetimeAuth`
-- Migrations: Auth authority and bootstrap keys must stay in sync across client and server.
+- Adapters: `Convex`, `Better Auth`
+- Migrations: Better Auth base path, JWT issuer/audience, and JWKS settings must stay in sync across Convex, the site bundle, the Rust API, and the SpacetimeDB module.
 
 ## store
 

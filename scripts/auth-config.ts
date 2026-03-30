@@ -7,6 +7,8 @@ const defaultConvexBackendPort = '3210'
 const defaultConvexSitePort = '3211'
 const defaultConvexDashboardPort = '6791'
 const localDevelopmentHostnames = new Set(['localhost', '127.0.0.1', '::1'])
+const supportedSocialProviders = ['google', 'facebook', 'github'] as const
+type SupportedSocialProvider = (typeof supportedSocialProviders)[number]
 
 type ProcessEnvLike = Record<string, string | undefined>
 
@@ -25,6 +27,79 @@ export type ResolvedAuthConfig = {
 const normalizeOptionalString = (value: string | undefined) => {
   const trimmed = value?.trim()
   return trimmed ? trimmed : undefined
+}
+
+const parseStringList = (value: string | undefined) =>
+  Array.from(
+    new Set(
+      (normalizeOptionalString(value) ?? '')
+        .split(/[,\n]/)
+        .map((entry) => entry.trim().toLowerCase())
+        .filter(Boolean)
+    )
+  )
+
+const getSocialProviderEnvKeys = (provider: SupportedSocialProvider) => {
+  switch (provider) {
+    case 'google':
+      return {
+        clientId: 'AUTH_GOOGLE_CLIENT_ID',
+        clientSecret: 'AUTH_GOOGLE_CLIENT_SECRET'
+      }
+    case 'facebook':
+      return {
+        clientId: 'AUTH_FACEBOOK_CLIENT_ID',
+        clientSecret: 'AUTH_FACEBOOK_CLIENT_SECRET'
+      }
+    case 'github':
+      return {
+        clientId: 'AUTH_GITHUB_CLIENT_ID',
+        clientSecret: 'AUTH_GITHUB_CLIENT_SECRET'
+      }
+  }
+}
+
+const isSupportedSocialProvider = (provider: string): provider is SupportedSocialProvider =>
+  (supportedSocialProviders as readonly string[]).includes(provider)
+
+const hasSocialProviderCredentials = (env: ProcessEnvLike, provider: SupportedSocialProvider) => {
+  const keys = getSocialProviderEnvKeys(provider)
+  return Boolean(normalizeOptionalString(env[keys.clientId]) && normalizeOptionalString(env[keys.clientSecret]))
+}
+
+const resolveRequestedSocialProviders = (env: ProcessEnvLike) =>
+  parseStringList(normalizeOptionalString(env.VITE_AUTH_SOCIAL_PROVIDERS) ?? normalizeOptionalString(env.AUTH_SOCIAL_PROVIDERS))
+
+const resolveSocialProviderIssues = (env: ProcessEnvLike) => {
+  const issues: string[] = []
+
+  for (const provider of resolveRequestedSocialProviders(env)) {
+    if (!isSupportedSocialProvider(provider)) {
+      issues.push(
+        `AUTH_SOCIAL_PROVIDERS includes unsupported provider "${provider}". Supported values are ${supportedSocialProviders.join(', ')}.`
+      )
+      continue
+    }
+
+    const keys = getSocialProviderEnvKeys(provider)
+    if (!normalizeOptionalString(env[keys.clientId])) {
+      issues.push(`${keys.clientId} is required when ${provider} is enabled in AUTH_SOCIAL_PROVIDERS.`)
+    }
+    if (!normalizeOptionalString(env[keys.clientSecret])) {
+      issues.push(`${keys.clientSecret} is required when ${provider} is enabled in AUTH_SOCIAL_PROVIDERS.`)
+    }
+  }
+
+  return issues
+}
+
+export const resolveEnabledSocialProviders = (env: ProcessEnvLike) => {
+  const requestedProviders = resolveRequestedSocialProviders(env)
+  const candidateProviders = requestedProviders.length
+    ? requestedProviders.filter((provider): provider is SupportedSocialProvider => isSupportedSocialProvider(provider))
+    : supportedSocialProviders.filter((provider) => hasSocialProviderCredentials(env, provider))
+
+  return candidateProviders.filter((provider) => hasSocialProviderCredentials(env, provider))
 }
 
 const normalizeUrl = (value: string | undefined) => {
@@ -134,8 +209,7 @@ export const resolveAuthConfig = (env: ProcessEnvLike): ResolvedAuthConfig => {
 
 export const withResolvedAuthEnv = <T extends ProcessEnvLike>(env: T) => {
   const resolved = resolveAuthConfig(env)
-  const socialProviders =
-    normalizeOptionalString(env.VITE_AUTH_SOCIAL_PROVIDERS) ?? normalizeOptionalString(env.AUTH_SOCIAL_PROVIDERS) ?? ''
+  const socialProviders = resolveEnabledSocialProviders(env).join(', ')
   return {
     ...env,
     AUTH_BASE_PATH: resolved.authBasePath,
@@ -201,6 +275,7 @@ export const assertHostedAuthConfigForNonDevelopmentHosts = ({
   if (!normalizeUrl(resolved.convexSiteProxyInternalUrl)) {
     issues.push('CONVEX_SITE_PROXY_INTERNAL_URL must resolve to an absolute URL.')
   }
+  issues.push(...resolveSocialProviderIssues(env))
 
   if (!issues.length) return
 

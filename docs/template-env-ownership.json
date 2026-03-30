@@ -12,6 +12,20 @@
     "secret": false
   },
   {
+    "envKey": "AUTH_BASE_PATH",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
     "envKey": "AUTH_BOOTSTRAP_PRIVATE_KEY",
     "bundleIds": [
       "auth"
@@ -40,6 +54,244 @@
     "secret": true
   },
   {
+    "envKey": "AUTH_FACEBOOK_CLIENT_ID",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "AUTH_FACEBOOK_CLIENT_SECRET",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": true
+  },
+  {
+    "envKey": "AUTH_GITHUB_CLIENT_ID",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "AUTH_GITHUB_CLIENT_SECRET",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": true
+  },
+  {
+    "envKey": "AUTH_GOOGLE_CLIENT_ID",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "AUTH_GOOGLE_CLIENT_SECRET",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": true
+  },
+  {
+    "envKey": "AUTH_JWKS_URI",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "AUTH_JWT_AUDIENCE",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "AUTH_JWT_ISSUER",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "AUTH_POST_LOGOUT_REDIRECT_URI",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "AUTH_SOCIAL_PROVIDERS",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "BETTER_AUTH_SECRET",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": true
+  },
+  {
+    "envKey": "CONVEX_SELF_HOSTED_ADMIN_KEY",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": true
+  },
+  {
+    "envKey": "CONVEX_SELF_HOSTED_DASHBOARD_URL",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "CONVEX_SELF_HOSTED_SITE_URL",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "CONVEX_SELF_HOSTED_URL",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "CONVEX_SITE_PROXY_INTERNAL_URL",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
     "envKey": "ENABLE_PARTYTOWN",
     "bundleIds": [
       "analytics"
@@ -59,6 +311,62 @@
     "requiredByDefaultIn": [
       "community",
       "full"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "OIDC_AUTHORITY",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "OIDC_CLIENT_ID",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "OIDC_JWKS_URI",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "OIDC_POST_LOGOUT_REDIRECT_URI",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
     ],
     "secret": false
   },
@@ -135,6 +443,48 @@
     ],
     "requiredByDefaultIn": [
       "commerce",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "PROMETHEUS_CONVEX_DASHBOARD_PORT",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "PROMETHEUS_CONVEX_PORT",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "PROMETHEUS_CONVEX_SITE_PROXY_PORT",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
       "full",
       "saas"
     ],
@@ -341,7 +691,35 @@
     "secret": false
   },
   {
+    "envKey": "VITE_AUTH_BASE_PATH",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
     "envKey": "VITE_AUTH_BOOTSTRAP_PUBLIC_KEY",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "VITE_AUTH_SOCIAL_PROVIDERS",
     "bundleIds": [
       "auth"
     ],
@@ -465,6 +843,62 @@
     "secret": false
   },
   {
+    "envKey": "VITE_OIDC_AUTHORITY",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "VITE_OIDC_CLIENT_ID",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "VITE_OIDC_JWKS_URI",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "VITE_OIDC_POST_LOGOUT_REDIRECT_URI",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
     "envKey": "VITE_P2P_CRDT_SIGNALING",
     "bundleIds": [
       "realtime"
@@ -537,6 +971,48 @@
     ],
     "requiredByDefaultIn": [
       "commerce",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "VITE_SPACETIMEAUTH_AUTHORITY",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "VITE_SPACETIMEAUTH_CLIENT_ID",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "VITE_SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
       "full",
       "saas"
     ],

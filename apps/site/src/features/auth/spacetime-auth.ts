@@ -4,7 +4,25 @@ import { buildPublicSiteAuthUrl } from '@site/shared/public-api-url'
 import { attemptBootstrapSession, clearBootstrapSession } from './auth-bootstrap'
 import { clearClientAuthSessionCache } from './auth-session-client'
 
-export type SpacetimeAuthMethod = 'magic-link' | 'google' | 'github'
+export const hostedSocialProviders = ['google', 'facebook', 'github'] as const
+export type HostedSocialProvider = (typeof hostedSocialProviders)[number]
+const hostedSocialProviderSet = new Set<string>(hostedSocialProviders)
+
+export const isHostedSocialProvider = (value: unknown): value is HostedSocialProvider =>
+  typeof value === 'string' && hostedSocialProviderSet.has(value)
+
+export const getHostedSocialProviderLabel = (provider: HostedSocialProvider) => {
+  switch (provider) {
+    case 'google':
+      return 'Google'
+    case 'facebook':
+      return 'Facebook'
+    case 'github':
+      return 'GitHub'
+  }
+}
+
+export type SpacetimeAuthMethod = 'magic-link' | HostedSocialProvider
 
 type AuthClaims = {
   aud?: string | string[]
@@ -48,7 +66,7 @@ type AuthRuntimeEnv = Partial<ImportMetaEnv> & {
 
 type DevSessionRequestBody = {
   loginMethod: SpacetimeAuthMethod
-  providerId?: Exclude<SpacetimeAuthMethod, 'magic-link'>
+  providerId?: HostedSocialProvider
 }
 
 type DevLocalAccountRequestBody = {
@@ -555,7 +573,7 @@ export const startSpacetimeAuthLogin = async (
   if (mode !== 'hosted') {
     throw new Error('Hosted auth is not configured for this site.')
   }
-  if (method !== 'google' && method !== 'github') {
+  if (!isHostedSocialProvider(method)) {
     throw new Error('Use the email and password form to sign in or create an account.')
   }
 

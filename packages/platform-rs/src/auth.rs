@@ -583,6 +583,7 @@ fn build_dev_session_claims(body: &DevSessionBody, state: &AppState) -> SessionC
     };
     let provider_label = match provider_id.as_deref() {
         Some("google") => "Google",
+        Some("facebook") => "Facebook",
         Some("github") => "GitHub",
         _ => "Magic Link",
     };

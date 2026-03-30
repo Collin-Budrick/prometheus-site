@@ -1,10 +1,13 @@
 import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { FragmentCard } from '@prometheus/ui'
+import { appConfig } from '@site/site-config'
 import type { AuthFormState } from './auth-form-state'
 import authModuleStyles from './auth.module.css'
 import { loadClientAuthSession } from '@site/features/auth/auth-session-client'
 import {
   ensureSpacetimeAuthSession,
+  getHostedSocialProviderLabel,
+  isHostedSocialProvider,
   isSpacetimeAuthConfigured,
   startSpacetimeAuthLogin,
   type SpacetimeAuthMethod
@@ -42,6 +45,9 @@ export type AuthCopy = {
 }
 
 type StatusTone = 'neutral' | 'error'
+
+const resolveMethodLabel = (method: SpacetimeAuthMethod) =>
+  method === 'magic-link' ? 'magic link' : getHostedSocialProviderLabel(method)
 
 const defaultAuthCopy: AuthCopy = {
   metaLine: 'Secure Access',
@@ -109,6 +115,7 @@ export const LoginRoute = component$<{
   apiBase?: string
   initialFormState?: AuthFormState
 }>(({ copy, apiBase }) => {
+  const socialProviders = appConfig.authSocialProviders.filter(isHostedSocialProvider)
   const resolvedCopy = { ...defaultAuthCopy, ...copy }
   const statusMessage = useSignal<string | null>(null)
   const statusTone = useSignal<StatusTone>('neutral')
@@ -157,7 +164,7 @@ export const LoginRoute = component$<{
     statusMessage.value =
       method === 'magic-link'
         ? resolvedCopy.redirectingMagicLinkStatus
-        : resolvedCopy.redirectingProviderStatus.replace('{{method}}', method)
+        : resolvedCopy.redirectingProviderStatus.replace('{{method}}', resolveMethodLabel(method))
 
     try {
       await startSpacetimeAuthLogin(method, { next: nextPath.value })
@@ -198,27 +205,24 @@ export const LoginRoute = component$<{
                   </button>
                 </div>
 
-                <div class={authClass.social}>
-                  <p class={authClass.socialLabel}>{resolvedCopy.socialSectionLabel}</p>
-                  <div class={authClass.socialActions}>
-                    <button
-                      type="button"
-                      class={authClass.socialButton}
-                      disabled={busy}
-                      onClick$={() => handleLogin('google')}
-                    >
-                      Google
-                    </button>
-                    <button
-                      type="button"
-                      class={authClass.socialButton}
-                      disabled={busy}
-                      onClick$={() => handleLogin('github')}
-                    >
-                      GitHub
-                    </button>
+                {socialProviders.length ? (
+                  <div class={authClass.social}>
+                    <p class={authClass.socialLabel}>{resolvedCopy.socialSectionLabel}</p>
+                    <div class={authClass.socialActions}>
+                      {socialProviders.map((provider) => (
+                        <button
+                          key={provider}
+                          type="button"
+                          class={authClass.socialButton}
+                          disabled={busy}
+                          onClick$={() => handleLogin(provider)}
+                        >
+                          {getHostedSocialProviderLabel(provider)}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                ) : null}
 
                 <div class={authClass.status} role="status" aria-live="polite" data-tone="neutral">
                   {resolvedCopy.hostedStatus}

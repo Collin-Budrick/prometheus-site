@@ -31,6 +31,12 @@ type StaticLoginRouteProps = {
   nextPath?: string | null
 }
 
+const hostedSocialProviders = [
+  { id: 'google', label: 'Google' },
+  { id: 'facebook', label: 'Facebook' },
+  { id: 'github', label: 'GitHub' }
+] as const
+
 const authClass = {
   shell: authModuleStyles['auth-shell'],
   grid: authModuleStyles['auth-grid'],
@@ -156,24 +162,18 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang,
                   <div class={authClass.social} data-static-login-social hidden>
                     <p class={authClass.socialLabel}>{copy.authSocialSectionLabel}</p>
                     <div class={authClass.socialActions}>
-                      <button
-                        type="button"
-                        class={authClass.socialButton}
-                        data-static-login-method="google"
-                        data-static-login-provider="google"
-                        data-static-login-disable
-                      >
-                        Google
-                      </button>
-                      <button
-                        type="button"
-                        class={authClass.socialButton}
-                        data-static-login-method="github"
-                        data-static-login-provider="github"
-                        data-static-login-disable
-                      >
-                        GitHub
-                      </button>
+                      {hostedSocialProviders.map(({ id, label }) => (
+                        <button
+                          key={id}
+                          type="button"
+                          class={authClass.socialButton}
+                          data-static-login-method={id}
+                          data-static-login-provider={id}
+                          data-static-login-disable
+                        >
+                          {label}
+                        </button>
+                      ))}
                     </div>
                   </div>
 
