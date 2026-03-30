@@ -344,6 +344,7 @@ services:
         condition: service_started
     volumes:
       - ./apps/site/dist:/app/apps/site/dist:ro
+      - ./apps/site/server:/app/apps/site/server:ro
     networks:
       prometheus_net:
         ipv4_address: 172.30.0.3
