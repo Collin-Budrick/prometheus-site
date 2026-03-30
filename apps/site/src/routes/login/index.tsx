@@ -39,6 +39,8 @@ const resolveLoginCopy = (seed?: Partial<UiCopy>) => ({
   signupAction: seed?.signupAction ?? emptyUiCopy.signupAction,
   authNameLabel: seed?.authNameLabel ?? emptyUiCopy.authNameLabel,
   authEmailLabel: seed?.authEmailLabel ?? emptyUiCopy.authEmailLabel,
+  authPasskeyLabel: seed?.authPasskeyLabel ?? emptyUiCopy.authPasskeyLabel,
+  authPasskeyHint: seed?.authPasskeyHint ?? emptyUiCopy.authPasskeyHint,
   authPasswordLabel: seed?.authPasswordLabel ?? emptyUiCopy.authPasswordLabel,
   authRememberLabel: seed?.authRememberLabel ?? emptyUiCopy.authRememberLabel,
   authSocialSectionLabel: seed?.authSocialSectionLabel ?? emptyUiCopy.authSocialSectionLabel,

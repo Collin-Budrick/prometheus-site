@@ -1,13 +1,16 @@
 import { createClient } from '@convex-dev/better-auth'
+import { passkey } from '@better-auth/passkey'
+import type { BetterAuthOptions } from 'better-auth'
 import { betterAuth } from 'better-auth'
 import { jwt } from 'better-auth/plugins/jwt'
 import { components } from './_generated/api'
+import betterAuthSchema from './betterAuth/schema'
 
 const defaultAuthBasePath = '/api/auth'
 const defaultBetterAuthSecret = 'dev-better-auth-secret-please-change-32'
 const defaultJwtIssuer = 'urn:prometheus:better-auth'
 const defaultJwtAudience = 'prometheus-site'
-const defaultAllowedHosts = ['localhost', '127.0.0.1', '::1', 'prometheus.dev', 'prometheus.prod']
+const defaultPasskeyRpName = 'Prometheus'
 const defaultFallbackOrigin = 'http://127.0.0.1:3211'
 
 const normalizeOptionalString = (value: string | undefined) => {
@@ -39,20 +42,6 @@ const normalizeOrigin = (value: string | undefined) => {
   }
 }
 
-const normalizeHost = (value: string | undefined) => {
-  const trimmed = normalizeOptionalString(value)
-  if (!trimmed) return undefined
-  try {
-    const url =
-      trimmed.startsWith('http://') || trimmed.startsWith('https://')
-        ? new URL(trimmed)
-        : new URL(`https://${trimmed}`)
-    return url.host
-  } catch {
-    return trimmed.replace(/^https?:\/\//, '').split('/')[0] || undefined
-  }
-}
-
 const parseList = (value: string | undefined) =>
   (value ?? '')
     .split(/[,\n]/)
@@ -70,15 +59,6 @@ const jwtAudience =
   normalizeOptionalString(process.env.OIDC_CLIENT_ID) ??
   normalizeOptionalString(process.env.SPACETIMEAUTH_CLIENT_ID) ??
   defaultJwtAudience
-const allowedHosts = Array.from(
-  new Set(
-    [
-      normalizeHost(process.env.PROMETHEUS_WEB_HOST),
-      normalizeHost(process.env.PROMETHEUS_WEB_HOST_PROD),
-      ...defaultAllowedHosts
-    ].filter((value): value is string => Boolean(value))
-  )
-)
 const trustedOrigins = Array.from(
   new Set(
     [
@@ -145,7 +125,24 @@ const buildPreferredUsername = (email: string, name: string) => {
   return normalizedName || undefined
 }
 
-export const authComponent = createClient(components.betterAuth)
+const resolveAuthBaseURL = (request?: Request | URL | string) => {
+  if (request instanceof Request) {
+    return new URL(request.url).origin
+  }
+  if (request instanceof URL) {
+    return request.origin
+  }
+  if (typeof request === 'string') {
+    return normalizeOrigin(request) ?? fallbackOrigin
+  }
+  return fallbackOrigin
+}
+
+export const authComponent = createClient(components.betterAuth, {
+  local: {
+    schema: betterAuthSchema
+  }
+})
 
 export const resolveAuthBasePath = () => authBasePath
 export const resolveTrustedOrigins = () => trustedOrigins
@@ -153,17 +150,18 @@ export const resolveTrustedOrigins = () => trustedOrigins
 export const resolveEnabledAuthProviders = () =>
   ['password', ...supportedSocialProviders.filter((providerId) => isProviderEnabled(providerId))]
 
-export const createAuth = (ctx: Record<string, unknown>) =>
-  betterAuth({
+export const createAuthOptions = (
+  ctx: Record<string, unknown>,
+  options: {
+    request?: Request | URL | string
+  } = {}
+): BetterAuthOptions => ({
+    appName: defaultPasskeyRpName,
     advanced: {
       trustedProxyHeaders: true
     },
     basePath: authBasePath,
-    baseURL: {
-      allowedHosts,
-      fallback: fallbackOrigin,
-      protocol: 'auto'
-    },
+    baseURL: resolveAuthBaseURL(options.request),
     trustedOrigins,
     database: authComponent.adapter(ctx as never),
     emailAndPassword: {
@@ -205,6 +203,13 @@ export const createAuth = (ctx: Record<string, unknown>) =>
         : {})
     },
     plugins: [
+      passkey({
+        authenticatorSelection: {
+          residentKey: 'required',
+          userVerification: 'required'
+        },
+        rpName: defaultPasskeyRpName
+      }),
       jwt({
         jwks: {
           keyPairConfig: {
@@ -229,3 +234,8 @@ export const createAuth = (ctx: Record<string, unknown>) =>
       })
     ]
   })
+
+export const createStaticAuthOptions = () => createAuthOptions({} as Record<string, unknown>, { request: fallbackOrigin })
+
+export const createAuth = (ctx: Record<string, unknown>, request?: Request | URL | string) =>
+  betterAuth(createAuthOptions(ctx, { request }))

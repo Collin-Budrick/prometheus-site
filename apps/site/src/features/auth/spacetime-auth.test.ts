@@ -2,14 +2,34 @@ import { afterEach, describe, expect, it } from 'bun:test'
 
 import {
   getHostedSocialProviderLabel,
+  isHostedPasskeySupported,
   isHostedSocialProvider,
   resolveSpacetimeAuthMode,
   signOutSpacetimeAuth,
+  signInHostedPasskey,
   startSpacetimeAuthLogin
 } from './spacetime-auth'
 
 const originalFetch = globalThis.fetch
 const originalWindow = globalThis.window
+const originalNavigator = globalThis.navigator
+const originalPublicKeyCredential = globalThis.PublicKeyCredential
+
+const encodeBase64Url = (value: string) =>
+  Buffer.from(value, 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+
+const createStorage = () => {
+  const state = new Map<string, string>()
+  return {
+    getItem: (key: string) => state.get(key) ?? null,
+    removeItem: (key: string) => {
+      state.delete(key)
+    },
+    setItem: (key: string, value: string) => {
+      state.set(key, value)
+    }
+  }
+}
 
 afterEach(() => {
   globalThis.fetch = originalFetch
@@ -19,6 +39,22 @@ afterEach(() => {
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
       value: originalWindow
+    })
+  }
+  if (originalNavigator === undefined) {
+    Reflect.deleteProperty(globalThis, 'navigator')
+  } else {
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: originalNavigator
+    })
+  }
+  if (originalPublicKeyCredential === undefined) {
+    Reflect.deleteProperty(globalThis, 'PublicKeyCredential')
+  } else {
+    Object.defineProperty(globalThis, 'PublicKeyCredential', {
+      configurable: true,
+      value: originalPublicKeyCredential
     })
   }
 })
@@ -175,5 +211,140 @@ describe('hosted social providers', () => {
   it('recognizes twitter and resolves the X label', () => {
     expect(isHostedSocialProvider('twitter')).toBe(true)
     expect(getHostedSocialProviderLabel('twitter')).toBe('Twitter (X)')
+  })
+})
+
+describe('passkeys', () => {
+  it('recognizes browser support and completes hosted passkey sign-in', async () => {
+    const requests: Array<{ input: RequestInfo | URL; init?: RequestInit }> = []
+    const tokenPayload = encodeBase64Url(
+      JSON.stringify({
+        email: 'passkey@example.com',
+        exp: Math.floor(Date.now() / 1000) + 3600,
+        name: 'Passkey User',
+        sub: 'user-1'
+      })
+    )
+
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push({ input, init })
+      const url = String(input)
+
+      if (url.endsWith('/api/auth/passkey/generate-authenticate-options')) {
+        return new Response(
+          JSON.stringify({
+            allowCredentials: [],
+            challenge: encodeBase64Url('challenge')
+          }),
+          {
+            status: 200,
+            headers: {
+              'content-type': 'application/json'
+            }
+          }
+        )
+      }
+
+      if (url.endsWith('/api/auth/passkey/verify-authentication')) {
+        return new Response(JSON.stringify({ user: { id: 'user-1' } }), {
+          status: 200,
+          headers: {
+            'content-type': 'application/json'
+          }
+        })
+      }
+
+      if (url.endsWith('/api/auth/get-session')) {
+        return new Response(
+          JSON.stringify({
+            session: { id: 'session-1' },
+            user: { email: 'passkey@example.com', id: 'user-1', name: 'Passkey User' }
+          }),
+          {
+            status: 200,
+            headers: {
+              'content-type': 'application/json'
+            }
+          }
+        )
+      }
+
+      if (url.endsWith('/api/auth/token')) {
+        return new Response(JSON.stringify({ token: `header.${tokenPayload}.signature` }), {
+          status: 200,
+          headers: {
+            'content-type': 'application/json'
+          }
+        })
+      }
+
+      if (url.endsWith('/auth/session/sync')) {
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: {
+            'content-type': 'application/json'
+          }
+        })
+      }
+
+      throw new Error(`Unexpected request: ${url}`)
+    }) as typeof fetch
+
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: {
+        location: {
+          origin: 'https://prometheus.prod',
+          hostname: 'prometheus.prod'
+        },
+        localStorage: createStorage(),
+        sessionStorage: createStorage()
+      }
+    })
+
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: {
+        credentials: {
+          create: async () => null,
+          get: async () =>
+            ({
+              id: 'credential-1',
+              rawId: Uint8Array.from([1, 2, 3]).buffer,
+              type: 'public-key',
+              response: {
+                authenticatorData: Uint8Array.from([4, 5, 6]).buffer,
+                clientDataJSON: Uint8Array.from([7, 8, 9]).buffer,
+                signature: Uint8Array.from([10, 11, 12]).buffer,
+                userHandle: null
+              },
+              getClientExtensionResults: () => ({})
+            }) satisfies Partial<PublicKeyCredential>
+        }
+      }
+    })
+
+    Object.defineProperty(globalThis, 'PublicKeyCredential', {
+      configurable: true,
+      value: class PublicKeyCredentialMock {}
+    })
+
+    expect(isHostedPasskeySupported()).toBe(true)
+    await expect(signInHostedPasskey()).resolves.toMatchObject({
+      user: {
+        email: 'passkey@example.com',
+        id: 'user-1'
+      }
+    })
+
+    expect(requests).toHaveLength(5)
+    expect(String(requests[0]?.input)).toBe('https://prometheus.prod/api/auth/passkey/generate-authenticate-options')
+    expect(String(requests[1]?.input)).toBe('https://prometheus.prod/api/auth/passkey/verify-authentication')
+    expect(JSON.parse(String(requests[1]?.init?.body))).toMatchObject({
+      response: {
+        id: 'credential-1',
+        type: 'public-key'
+      }
+    })
   })
 })

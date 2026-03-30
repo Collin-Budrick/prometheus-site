@@ -7,11 +7,14 @@ import {
   getHostedSocialProviderLabel,
   getSpacetimeAuthMode,
   isHostedSocialProvider,
+  isHostedPasskeySupported,
   isSpacetimeAuthConfigured,
   loginHostedLocalAccount,
   loginDevLocalAccount,
+  registerHostedPasskey,
   registerHostedLocalAccount,
   registerDevLocalAccount,
+  signInHostedPasskey,
   startSpacetimeAuthLogin,
   type HostedSocialProvider,
   type SpacetimeAuthMethod
@@ -160,6 +163,12 @@ const syncHostedProviders = (root: HTMLElement, mode: StaticLoginRuntimeMode) =>
   }
 }
 
+const syncHostedPasskey = (root: HTMLElement, mode: StaticLoginRuntimeMode) => {
+  const passkeyButton = root.querySelector<HTMLElement>('[data-static-login-passkey]')
+  if (!passkeyButton) return
+  passkeyButton.hidden = mode !== 'hosted' || !isHostedPasskeySupported()
+}
+
 const setRuntimeMode = (
   root: HTMLElement,
   mode: StaticLoginRuntimeMode,
@@ -180,6 +189,7 @@ const setRuntimeMode = (
     loginHint.textContent = isHosted ? copy.authHostedStatus : copy.loginDescription
   }
   syncHostedProviders(root, mode)
+  syncHostedPasskey(root, mode)
 
   if (!formsEnabled) {
     setMode(root, 'login')
@@ -363,6 +373,35 @@ export const mountStaticLoginController = ({ lang }: MountStaticLoginControllerO
     })
   }
 
+  const attachPasskeyButton = () => {
+    if (runtimeMode !== 'hosted') return
+
+    const button = root.querySelector<HTMLButtonElement>('[data-static-login-passkey]')
+    if (!button) return
+
+    const handler = () => {
+      if (busy) return
+      busy = true
+      applyBusy()
+      setStatus(root, 'neutral', copy.authPasskeyHint)
+      void signInHostedPasskey()
+        .then((session) => {
+          if (!session) {
+            throw new Error('The hosted passkey sign-in did not create a session.')
+          }
+          redirectToProfile()
+        })
+        .catch((error) => {
+          busy = false
+          applyBusy()
+          setStatus(root, 'error', error instanceof Error ? error.message : copy.authStartFailed)
+        })
+    }
+
+    button.addEventListener('click', handler)
+    cleanupFns.push(() => button.removeEventListener('click', handler))
+  }
+
   const attachTabs = () => {
     root.querySelectorAll<HTMLButtonElement>('[data-static-login-tab]').forEach((button) => {
       const mode: StaticLoginMode =
@@ -415,6 +454,16 @@ export const mountStaticLoginController = ({ lang }: MountStaticLoginControllerO
             if (!session) {
               throw new Error('The hosted sign-in flow did not create a session.')
             }
+
+            if (formMode === 'signup' && isHostedPasskeySupported()) {
+              try {
+                await registerHostedPasskey({
+                  name: values.name || values.email
+                })
+              } catch (error) {
+                console.warn('[auth:passkey-enroll]', error)
+              }
+            }
           } else {
             if (formMode === 'signup') {
               await registerDevLocalAccount({
@@ -461,6 +510,7 @@ export const mountStaticLoginController = ({ lang }: MountStaticLoginControllerO
   attachTabs()
   attachLocalForms()
   attachMethodButtons()
+  attachPasskeyButton()
   primeExistingSession()
 
   return {

@@ -27,7 +27,11 @@ const normalizeCredentialDescriptor = (descriptor: CredentialDescriptorInput) =>
   } as PublicKeyCredentialDescriptor
 }
 
-export const normalizePublicKeyOptions = (options: unknown): PublicKeyCredentialRequestOptions => {
+export const normalizePublicKeyOptions = <
+  T extends PublicKeyCredentialCreationOptions | PublicKeyCredentialRequestOptions
+>(
+  options: unknown
+): T => {
   const candidate = options && typeof options === 'object' ? (options as Record<string, unknown>) : {}
   const publicKey = (candidate.publicKey ?? candidate) as Record<string, unknown>
   const normalized: Record<string, unknown> = { ...publicKey }
@@ -55,7 +59,7 @@ export const normalizePublicKeyOptions = (options: unknown): PublicKeyCredential
     )
   }
 
-  return normalized as unknown as PublicKeyCredentialRequestOptions
+  return normalized as unknown as T
 }
 
 export const serializeCredential = (credential: PublicKeyCredential) => {

@@ -34,7 +34,12 @@ import { StaticPageRoot } from '../../shell/core/StaticPageRoot'
 import { createStaticIslandRouteData } from '../../shell/core/island-static-data'
 import { STATIC_ISLAND_DATA_SCRIPT_ID } from '../../shell/core/constants'
 import { isStaticShellBuild } from '../../shell/core/build-mode'
-import { signOutSpacetimeAuth } from '../../features/auth/spacetime-auth'
+import {
+  getSpacetimeAuthMode,
+  isHostedPasskeySupported,
+  registerHostedPasskey,
+  signOutSpacetimeAuth
+} from '../../features/auth/spacetime-auth'
 import { buildGlobalStylesheetLinks } from '../../shell/core/global-style-assets'
 
 type ProtectedRouteData = {
@@ -162,6 +167,9 @@ export default component$(() => {
   const copy = useLangCopy(useSharedLangSignal(data.value.lang))
   const logoutBusy = useSignal(false)
   const logoutMessage = useSignal<string | null>(null)
+  const passkeyBusy = useSignal(false)
+  const passkeySupported = useSignal(false)
+  const passkeyMessage = useSignal<{ tone: 'success' | 'error'; message: string } | null>(null)
   const chatSettings = useSignal<ChatSettings>(data.value.chatSettings ?? { ...defaultChatSettings })
   const swOptOut = useSignal(Boolean(data.value.swOptOut))
   const swStatus = useSignal<{ tone: 'success' | 'error' | 'info'; message: string } | null>(null)
@@ -181,6 +189,10 @@ export default component$(() => {
   useVisibleTask$(() => {
     if (typeof window === 'undefined') return
     saveChatSettings(userId, chatSettings.value)
+  })
+
+  useVisibleTask$(() => {
+    passkeySupported.value = getSpacetimeAuthMode() === 'hosted' && isHostedPasskeySupported()
   })
 
   useVisibleTask$((ctx) => {
@@ -252,6 +264,32 @@ export default component$(() => {
       logoutMessage.value = error instanceof Error ? error.message : copy.value.settingsLogoutFailed
     } finally {
       logoutBusy.value = false
+    }
+  })
+
+  const handleAddPasskey = $(async () => {
+    if (passkeyBusy.value || typeof window === 'undefined') return
+    if (!passkeySupported.value) {
+      passkeyMessage.value = { tone: 'error', message: copy.value.settingsPasskeyUnavailable }
+      return
+    }
+    passkeyBusy.value = true
+    passkeyMessage.value = null
+    try {
+      await registerHostedPasskey(
+        {
+          name: user?.name || user?.email || siteBrand.name
+        },
+        appConfig.apiBase
+      )
+      passkeyMessage.value = { tone: 'success', message: copy.value.settingsPasskeySuccess }
+    } catch (error) {
+      passkeyMessage.value = {
+        tone: 'error',
+        message: error instanceof Error ? error.message : copy.value.settingsPasskeyFailed
+      }
+    } finally {
+      passkeyBusy.value = false
     }
   })
 
@@ -558,6 +596,32 @@ export default component$(() => {
             </button>
           </div>
         </section>
+      ) : null}
+      <div class={settingsClass.actionRow} data-static-settings-passkey-row hidden={!passkeySupported.value}>
+        <div class={settingsClass.actionLabel}>
+          <span class={settingsClass.toggleTitle}>{copy.value.settingsPasskeyTitle}</span>
+          <span class={settingsClass.toggleHint}>{copy.value.settingsPasskeyDescription}</span>
+        </div>
+        <button
+          type="button"
+          class={settingsClass.actionButton}
+          data-static-settings-action="add-passkey"
+          disabled={passkeyBusy.value}
+          onClick$={handleAddPasskey}
+        >
+          {copy.value.settingsPasskeyAction}
+        </button>
+      </div>
+      {passkeyMessage.value ? (
+        <div
+          class={authClass.status}
+          role="status"
+          aria-live="polite"
+          data-tone={passkeyMessage.value.tone}
+          data-static-settings-passkey-status
+        >
+          {passkeyMessage.value.message}
+        </div>
       ) : null}
       {logoutMessage.value ? (
         <div class={authClass.status} role="status" aria-live="polite" data-tone="error" data-static-settings-logout-status>

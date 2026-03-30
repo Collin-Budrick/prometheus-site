@@ -3,10 +3,12 @@ import { appConfig } from '@site/site-config'
 import { buildPublicSiteAuthUrl } from '@site/shared/public-api-url'
 import { attemptBootstrapSession, clearBootstrapSession } from './auth-bootstrap'
 import { clearClientAuthSessionCache } from './auth-session-client'
+import { normalizePublicKeyOptions, serializeCredential } from './passkey'
 
 export const hostedSocialProviders = ['google', 'facebook', 'twitter', 'github'] as const
 export type HostedSocialProvider = (typeof hostedSocialProviders)[number]
 const hostedSocialProviderSet = new Set<string>(hostedSocialProviders)
+export type HostedPasskeyAttachment = 'platform' | 'cross-platform'
 
 export const isHostedSocialProvider = (value: unknown): value is HostedSocialProvider =>
   typeof value === 'string' && hostedSocialProviderSet.has(value)
@@ -99,6 +101,10 @@ type BetterAuthRedirectResponse = {
   url?: string
 }
 
+type BetterAuthPasskeyResponse = {
+  response?: Record<string, unknown>
+}
+
 type BetterAuthErrorResponse = {
   code?: string
   error?: string
@@ -112,6 +118,11 @@ type DevSessionResponse = {
 type HostedAuthResult = {
   next: string
   session: StoredSpacetimeAuthSession
+}
+
+type RegisterHostedPasskeyOptions = {
+  authenticatorAttachment?: HostedPasskeyAttachment
+  name?: string
 }
 
 const pendingRequestStorageKey = 'spacetimeauth:pkce:v1'
@@ -235,6 +246,23 @@ const buildAuthUrl = (path: string, origin: string) => {
   const basePath = buildAuthBasePath()
   const resolvedPath = path.startsWith('/') ? path : `/${path}`
   return `${origin}${basePath}${resolvedPath}`
+}
+
+const isBrowserPasskeyAvailable = () =>
+  typeof PublicKeyCredential !== 'undefined' &&
+  typeof navigator !== 'undefined' &&
+  typeof navigator.credentials?.create === 'function' &&
+  typeof navigator.credentials?.get === 'function'
+
+const resolvePasskeyErrorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof DOMException) {
+    if (error.name === 'NotAllowedError') return fallback
+    if (error.message.trim()) return error.message
+  }
+  if (error instanceof Error && error.message.trim()) {
+    return error.message
+  }
+  return fallback
 }
 
 export const resolveSpacetimeAuthMode = ({
@@ -521,6 +549,45 @@ const postHostedJson = async <TResponse>(
   return (await readResponseJson<TResponse>(response)) as TResponse
 }
 
+const getHostedJson = async <TResponse>(origin: string, path: string, fallbackMessage: string) => {
+  const response = await fetch(buildAuthUrl(path, origin), {
+    credentials: 'include',
+    headers: {
+      accept: 'application/json'
+    }
+  })
+
+  if (!response.ok) {
+    throw new Error(await resolveHostedErrorMessage(response, fallbackMessage))
+  }
+
+  return (await readResponseJson<TResponse>(response)) as TResponse
+}
+
+const requestPasskeyAuthenticationCredential = async (options: unknown) => {
+  const credential = await navigator.credentials.get({
+    publicKey: normalizePublicKeyOptions<PublicKeyCredentialRequestOptions>(options)
+  })
+
+  if (!credential) {
+    throw new Error('Passkey sign-in was canceled.')
+  }
+
+  return serializeCredential(credential as PublicKeyCredential)
+}
+
+const createPasskeyRegistrationCredential = async (options: unknown) => {
+  const credential = await navigator.credentials.create({
+    publicKey: normalizePublicKeyOptions<PublicKeyCredentialCreationOptions>(options)
+  })
+
+  if (!credential) {
+    throw new Error('Passkey setup was canceled.')
+  }
+
+  return serializeCredential(credential as PublicKeyCredential)
+}
+
 export const loginHostedLocalAccount = async (
   account: DevLocalAccountRequestBody,
   apiBase = appConfig.apiBase
@@ -558,6 +625,80 @@ export const registerHostedLocalAccount = async (
     'Unable to create the hosted account.'
   )
   return await restoreHostedSession(origin, apiBase)
+}
+
+export const isHostedPasskeySupported = () =>
+  getSpacetimeAuthMode() === 'hosted' && isBrowserPasskeyAvailable()
+
+export const signInHostedPasskey = async (apiBase = appConfig.apiBase) => {
+  if (typeof window === 'undefined') return null
+  if (!isHostedPasskeySupported()) {
+    throw new Error('Passkeys are not available in this browser.')
+  }
+
+  const origin = window.location.origin
+  try {
+    const options = await getHostedJson<unknown>(
+      origin,
+      '/passkey/generate-authenticate-options',
+      'Unable to start passkey sign-in.'
+    )
+    const credential = await requestPasskeyAuthenticationCredential(options)
+    await postHostedJson<BetterAuthPasskeyResponse>(
+      origin,
+      '/passkey/verify-authentication',
+      { response: credential },
+      'Unable to verify the passkey sign-in.'
+    )
+    return await restoreHostedSession(origin, apiBase)
+  } catch (error) {
+    throw new Error(resolvePasskeyErrorMessage(error, 'Passkey sign-in was canceled or failed.'))
+  }
+}
+
+export const registerHostedPasskey = async (
+  options: RegisterHostedPasskeyOptions = {},
+  apiBase = appConfig.apiBase
+) => {
+  if (typeof window === 'undefined') return null
+  if (!isHostedPasskeySupported()) {
+    throw new Error('Passkeys are not available in this browser.')
+  }
+
+  const origin = window.location.origin
+  const query = new URLSearchParams()
+  const name = options.name?.trim()
+  if (name) {
+    query.set('name', name)
+  }
+  if (options.authenticatorAttachment) {
+    query.set('authenticatorAttachment', options.authenticatorAttachment)
+  }
+
+  const generatePath = query.size
+    ? `/passkey/generate-register-options?${query.toString()}`
+    : '/passkey/generate-register-options'
+
+  try {
+    const registrationOptions = await getHostedJson<unknown>(
+      origin,
+      generatePath,
+      'Unable to start passkey setup.'
+    )
+    const credential = await createPasskeyRegistrationCredential(registrationOptions)
+    await postHostedJson<BetterAuthPasskeyResponse>(
+      origin,
+      '/passkey/verify-registration',
+      {
+        ...(name ? { name } : {}),
+        response: credential
+      },
+      'Unable to finish passkey setup.'
+    )
+    return await restoreHostedSession(origin, apiBase)
+  } catch (error) {
+    throw new Error(resolvePasskeyErrorMessage(error, 'Passkey setup was canceled or failed.'))
+  }
 }
 
 export const startSpacetimeAuthLogin = async (

@@ -14,6 +14,8 @@ type StaticLoginRouteProps = {
     | 'authMethodsLabel'
     | 'authEmailLabel'
     | 'authNameLabel'
+    | 'authPasskeyHint'
+    | 'authPasskeyLabel'
     | 'authPasswordLabel'
     | 'authRememberLabel'
     | 'authSocialSectionLabel'
@@ -53,6 +55,9 @@ const authClass = {
   check: authModuleStyles['auth-check'],
   checkInput: authModuleStyles['auth-check-input'],
   actions: authModuleStyles['auth-actions'],
+  passkey: authModuleStyles['auth-passkey'],
+  passkeyHint: authModuleStyles['auth-passkey-hint'],
+  passkeyLabel: authModuleStyles['auth-passkey-label'],
   primary: authModuleStyles['auth-primary'],
   social: authModuleStyles['auth-social'],
   socialLabel: authModuleStyles['auth-social-label'],
@@ -129,7 +134,7 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang,
                       class={authClass.input}
                       type="email"
                       name="email"
-                      autocomplete="email"
+                      autocomplete="email webauthn"
                       required
                       data-static-login-disable
                     />
@@ -140,7 +145,7 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang,
                       class={authClass.input}
                       type="password"
                       name="password"
-                      autocomplete="current-password"
+                      autocomplete="current-password webauthn"
                       required
                       data-static-login-disable
                     />
@@ -158,6 +163,16 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang,
                   <div class={authClass.actions}>
                     <button class={authClass.primary} type="submit" data-static-login-disable>
                       {copy.loginAction}
+                    </button>
+                    <button
+                      class={authClass.passkey}
+                      type="button"
+                      hidden
+                      data-static-login-passkey
+                      data-static-login-disable
+                    >
+                      <span class={authClass.passkeyLabel}>{copy.authPasskeyLabel}</span>
+                      <span class={authClass.passkeyHint}>{copy.authPasskeyHint}</span>
                     </button>
                   </div>
                   <div

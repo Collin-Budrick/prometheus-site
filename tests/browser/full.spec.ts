@@ -166,6 +166,16 @@ test.describe('full preset live route audit', () => {
       await expect(page.getByRole('button', { name: 'SIGN IN' })).toBeVisible()
 
       const runtimeModeAfterSignIn = await page.locator('[data-static-login-root]').getAttribute('data-runtime-mode')
+      const passkeysSupported = await page.evaluate(() => {
+        return (
+          typeof PublicKeyCredential === 'function' &&
+          typeof navigator.credentials?.create === 'function' &&
+          typeof navigator.credentials?.get === 'function'
+        )
+      })
+      if (runtimeModeAfterSignIn === 'hosted' && passkeysSupported) {
+        await expect(page.getByRole('button', { name: /USE PASSKEY/i })).toBeVisible()
+      }
       if (runtimeModeAfterSignIn === 'hosted' && expectedHostedSocialProviders.length > 0) {
         await expect(page.locator('[data-static-login-social]')).toBeVisible()
         for (const provider of expectedHostedSocialProviders) {

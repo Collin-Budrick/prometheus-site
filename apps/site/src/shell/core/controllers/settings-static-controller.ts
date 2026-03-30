@@ -12,7 +12,12 @@ import { getPrivacyScreenAlwaysOn, setPrivacyScreenAlwaysOn } from '../../../nat
 import { applyTextZoom, getStoredTextZoom } from '../../../native/text-zoom'
 import { clearNativeAuthCredentials } from '../../../native/native-auth'
 import { isNativeShellRuntime } from '../../../native/runtime'
-import { signOutSpacetimeAuth } from '../../../features/auth/spacetime-auth'
+import {
+  getSpacetimeAuthMode,
+  isHostedPasskeySupported,
+  registerHostedPasskey,
+  signOutSpacetimeAuth
+} from '../../../features/auth/spacetime-auth'
 
 type SettingsUser = {
   id?: string
@@ -81,6 +86,8 @@ const ensureStatusElement = (root: HTMLElement, selector: string) => {
     next.dataset.staticSettingsSwStatus = ''
   } else if (selector === '[data-static-settings-friend-status]') {
     next.dataset.staticSettingsFriendStatus = ''
+  } else if (selector === '[data-static-settings-passkey-status]') {
+    next.dataset.staticSettingsPasskeyStatus = ''
   } else {
     next.dataset.staticSettingsLogoutStatus = ''
   }
@@ -121,6 +128,8 @@ export const mountStaticSettingsController = ({ lang, user }: MountStaticSetting
   const logoutButton =
     root.querySelector<HTMLButtonElement>('[data-static-settings-action="logout"]') ??
     document.querySelector<HTMLButtonElement>('[data-static-route-action]')
+  const passkeyRow = root.querySelector<HTMLElement>('[data-static-settings-passkey-row]')
+  const passkeyButton = root.querySelector<HTMLButtonElement>('[data-static-settings-action="add-passkey"]')
   const readReceiptsButton = root.querySelector<HTMLButtonElement>('[data-static-settings-toggle="read-receipts"]')
   const typingIndicatorsButton = root.querySelector<HTMLButtonElement>('[data-static-settings-toggle="typing-indicators"]')
   const offlineCacheButton = root.querySelector<HTMLButtonElement>('[data-static-settings-toggle="offline-cache"]')
@@ -134,8 +143,10 @@ export const mountStaticSettingsController = ({ lang, user }: MountStaticSetting
   const nativeRuntime = isNativeShellRuntime()
 
   let logoutBusy = false
+  let passkeyBusy = false
   let chatSettings: ChatSettings = user?.id ? loadChatSettings(user.id) : { ...defaultChatSettings }
   let swOptOut = false
+  const passkeySupported = getSpacetimeAuthMode() === 'hosted' && isHostedPasskeySupported()
 
   try {
     swOptOut = window.localStorage.getItem('fragment:sw-opt-out') === '1'
@@ -147,6 +158,12 @@ export const mountStaticSettingsController = ({ lang, user }: MountStaticSetting
   updateToggleButton(typingIndicatorsButton, chatSettings.typingIndicators)
   updateToggleButton(offlineCacheButton, !swOptOut)
   updateToggleButton(privacyAlwaysOnButton, getPrivacyScreenAlwaysOn())
+  if (passkeyRow) {
+    passkeyRow.hidden = !passkeySupported
+  }
+  if (passkeyButton) {
+    passkeyButton.disabled = !passkeySupported
+  }
 
   if (textZoomInput) {
     const zoom = getStoredTextZoom()
@@ -277,6 +294,39 @@ export const mountStaticSettingsController = ({ lang, user }: MountStaticSetting
     })()
   }
 
+  const handleAddPasskey = () => {
+    void (async () => {
+      if (passkeyBusy) return
+      if (!passkeySupported) {
+        setStatus(root, '[data-static-settings-passkey-status]', 'error', copy.settingsPasskeyUnavailable)
+        return
+      }
+      passkeyBusy = true
+      if (passkeyButton) {
+        passkeyButton.disabled = true
+      }
+      setStatus(root, '[data-static-settings-passkey-status]', 'error', null)
+      try {
+        await registerHostedPasskey({
+          name: user?.name || user?.email || 'Prometheus'
+        })
+        setStatus(root, '[data-static-settings-passkey-status]', 'success', copy.settingsPasskeySuccess)
+      } catch (error) {
+        setStatus(
+          root,
+          '[data-static-settings-passkey-status]',
+          'error',
+          error instanceof Error ? error.message : copy.settingsPasskeyFailed
+        )
+      } finally {
+        passkeyBusy = false
+        if (passkeyButton) {
+          passkeyButton.disabled = !passkeySupported
+        }
+      }
+    })()
+  }
+
   const handleCacheRefreshed = () => {
     setStatus(root, '[data-static-settings-sw-status]', 'success', copy.settingsOfflineRefreshSuccess)
   }
@@ -296,6 +346,10 @@ export const mountStaticSettingsController = ({ lang, user }: MountStaticSetting
   if (logoutButton) {
     logoutButton.addEventListener('click', handleLogout)
     cleanupFns.push(() => logoutButton.removeEventListener('click', handleLogout))
+  }
+  if (passkeyButton) {
+    passkeyButton.addEventListener('click', handleAddPasskey)
+    cleanupFns.push(() => passkeyButton.removeEventListener('click', handleAddPasskey))
   }
   if (readReceiptsButton) {
     readReceiptsButton.addEventListener('click', toggleReadReceipts)

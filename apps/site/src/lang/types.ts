@@ -130,6 +130,12 @@ export type UiCopy = {
   settingsNativeTextZoomAriaLabel: string
   settingsNativePrivacyShieldAction: string
   settingsNativePrivacyShieldHint: string
+  settingsPasskeyTitle: string
+  settingsPasskeyDescription: string
+  settingsPasskeyAction: string
+  settingsPasskeySuccess: string
+  settingsPasskeyUnavailable: string
+  settingsPasskeyFailed: string
   settingsLogoutFailed: string
   networkOfflineTitle: string
   networkOfflineHint: string

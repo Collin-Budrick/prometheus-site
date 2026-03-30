@@ -247,6 +247,19 @@ const deleteFacebookLinkedAuthData = async (ctx: ActionCtx, facebookUserId: stri
       },
       paginationOpts: getDeleteManyPagination()
     }),
+    ctx.runMutation(components.betterAuth.adapter.deleteMany, {
+      input: {
+        model: 'passkey',
+        where: [
+          {
+            field: 'userId',
+            operator: 'eq',
+            value: userId
+          }
+        ]
+      },
+      paginationOpts: getDeleteManyPagination()
+    }),
     ctx.runMutation(components.betterAuth.adapter.deleteOne, {
       input: {
         model: 'twoFactor',
@@ -397,7 +410,7 @@ const handleFacebookDataDeletionStatus = httpAction(async (_ctx, request) => {
 const handleAuthRequest = httpAction(async (ctx, request) => {
   try {
     const normalizedRequest = await buildNormalizedAuthRequest(request)
-    const response = await createAuth(ctx as unknown as Record<string, unknown>).handler(normalizedRequest)
+    const response = await createAuth(ctx as unknown as Record<string, unknown>, normalizedRequest).handler(normalizedRequest)
     return withCorsHeaders(request, await toPlainResponse(response))
   } catch (error) {
     console.error('[better-auth:http]', {
