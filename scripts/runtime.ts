@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdirSync, createWriteStream } from 'node:fs'
+import { createWriteStream, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import https from 'node:https'
 import path from 'node:path'
 import { getTemplatePresetDescriptor, templateBranding } from '../packages/template-config/src/index.ts'
@@ -14,6 +14,25 @@ const bunBin =
   'bun'
 
 const command = process.argv[2]?.trim() || 'dev'
+
+const loadEnvFile = (relativePath: string) => {
+  const absolutePath = path.join(root, relativePath)
+  if (!existsSync(absolutePath)) return
+  const content = readFileSync(absolutePath, 'utf8')
+  content.split(/\r?\n/).forEach((line) => {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) return
+    const separatorIndex = trimmed.indexOf('=')
+    if (separatorIndex <= 0) return
+    const key = trimmed.slice(0, separatorIndex).trim()
+    const value = trimmed.slice(separatorIndex + 1)
+    if (!key || process.env[key]?.trim()) return
+    process.env[key] = value
+  })
+}
+
+loadEnvFile('.env')
+loadEnvFile('.env.local')
 
 const importLocalScript = async (scriptPath: string) => {
   await import(new URL(scriptPath, import.meta.url).href)
