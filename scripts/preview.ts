@@ -233,6 +233,52 @@ const previewEnableWebTransportDatagramsServer =
   process.env.WEBTRANSPORT_ENABLE_DATAGRAMS?.trim() || (realtimeEnabled ? '1' : '0')
 const previewWebTransportMaxDatagramSize = process.env.WEBTRANSPORT_MAX_DATAGRAM_SIZE?.trim() || '1200'
 const betterAuthSecret = process.env.BETTER_AUTH_SECRET?.trim() || 'dev-better-auth-secret-please-change-32'
+const resolvePreviewSocialCredential = (key: string, peerKey: string, fallback: string) => {
+  const value = process.env[key]?.trim()
+  if (value) return value
+  if (process.env[peerKey]?.trim()) return ''
+  return fallback
+}
+const previewGoogleClientId = resolvePreviewSocialCredential(
+  'AUTH_GOOGLE_CLIENT_ID',
+  'AUTH_GOOGLE_CLIENT_SECRET',
+  'preview-google-client-id'
+)
+const previewGoogleClientSecret = resolvePreviewSocialCredential(
+  'AUTH_GOOGLE_CLIENT_SECRET',
+  'AUTH_GOOGLE_CLIENT_ID',
+  'preview-google-client-secret'
+)
+const previewFacebookClientId = resolvePreviewSocialCredential(
+  'AUTH_FACEBOOK_CLIENT_ID',
+  'AUTH_FACEBOOK_CLIENT_SECRET',
+  'preview-facebook-client-id'
+)
+const previewFacebookClientSecret = resolvePreviewSocialCredential(
+  'AUTH_FACEBOOK_CLIENT_SECRET',
+  'AUTH_FACEBOOK_CLIENT_ID',
+  'preview-facebook-client-secret'
+)
+const previewTwitterClientId = resolvePreviewSocialCredential(
+  'AUTH_TWITTER_CLIENT_ID',
+  'AUTH_TWITTER_CLIENT_SECRET',
+  'preview-twitter-client-id'
+)
+const previewTwitterClientSecret = resolvePreviewSocialCredential(
+  'AUTH_TWITTER_CLIENT_SECRET',
+  'AUTH_TWITTER_CLIENT_ID',
+  'preview-twitter-client-secret'
+)
+const previewGithubClientId = resolvePreviewSocialCredential(
+  'AUTH_GITHUB_CLIENT_ID',
+  'AUTH_GITHUB_CLIENT_SECRET',
+  'preview-github-client-id'
+)
+const previewGithubClientSecret = resolvePreviewSocialCredential(
+  'AUTH_GITHUB_CLIENT_SECRET',
+  'AUTH_GITHUB_CLIENT_ID',
+  'preview-github-client-secret'
+)
 const includeRealtimeServices = runtimeCompose.includeOptionalServices
 const composeProfiles = Array.from(new Set(runtimeCompose.profiles))
 const resolvedAuthConfig = resolveSpacetimeAuthConfig(process.env)
@@ -291,6 +337,14 @@ const composeEnv = withResolvedSpacetimeAuthEnv({
   ...(composeProfiles.length > 0 ? { COMPOSE_PROFILES: composeProfiles.join(',') } : {}),
   BETTER_AUTH_SECRET: betterAuthSecret,
   BETTER_AUTH_COOKIE_SECRET: process.env.BETTER_AUTH_COOKIE_SECRET?.trim() || betterAuthSecret,
+  AUTH_GOOGLE_CLIENT_ID: previewGoogleClientId,
+  AUTH_GOOGLE_CLIENT_SECRET: previewGoogleClientSecret,
+  AUTH_FACEBOOK_CLIENT_ID: previewFacebookClientId,
+  AUTH_FACEBOOK_CLIENT_SECRET: previewFacebookClientSecret,
+  AUTH_TWITTER_CLIENT_ID: previewTwitterClientId,
+  AUTH_TWITTER_CLIENT_SECRET: previewTwitterClientSecret,
+  AUTH_GITHUB_CLIENT_ID: previewGithubClientId,
+  AUTH_GITHUB_CLIENT_SECRET: previewGithubClientSecret,
   PROMETHEUS_HTTP_PORT: previewHttpPort,
   PROMETHEUS_HTTPS_PORT: previewHttpsPort,
   PROMETHEUS_API_PORT: previewApiPort,

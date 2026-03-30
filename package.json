@@ -9,8 +9,8 @@
     "packages/*"
   ],
   "scripts": {
-    "dev:core": "PROMETHEUS_TEMPLATE_PRESET=core bun run scripts/runtime.ts dev",
-    "dev": "bun run scripts/runtime.ts dev",
+    "dev:core": "PROMETHEUS_TEMPLATE_PRESET=core bun ./scripts/runtime.ts dev",
+    "dev": "bun ./scripts/runtime.ts dev",
     "desktop:dev": "bun run --cwd apps/desktop dev",
     "desktop:run": "bun run --cwd apps/desktop run",
     "desktop:build": "bun run --cwd apps/desktop build",
@@ -31,7 +31,7 @@
     "build:core": "PROMETHEUS_TEMPLATE_PRESET=core bun run build",
     "build": "bun run _internal:build:site && bun run _internal:build:api",
     "preview": "bun run _internal:preview",
-    "_internal:preview": "PROMETHEUS_DEVICE_HOST=0 bun run scripts/runtime.ts preview",
+    "_internal:preview": "PROMETHEUS_DEVICE_HOST=0 bun ./scripts/runtime.ts preview",
     "_internal:dev:site": "bun run --cwd apps/site dev",
     "_internal:dev:api": "cargo run --manifest-path packages/platform-rs/Cargo.toml --locked",
     "_internal:dev:storybook": "bun run --cwd apps/site storybook",
@@ -58,8 +58,8 @@
     "_internal:format": "cargo fmt --manifest-path packages/platform-rs/Cargo.toml",
     "_internal:test:retry": "cargo test --manifest-path packages/platform-rs/Cargo.toml --locked",
     "test:core": "PROMETHEUS_TEMPLATE_PRESET=core bun run test",
-    "test:browser:full": "bun run scripts/runtime.ts browser full",
-    "test:browser:core": "bun run scripts/runtime.ts browser core",
+    "test:browser:full": "bun ./scripts/runtime.ts browser full",
+    "test:browser:core": "bun ./scripts/runtime.ts browser core",
     "test": "cargo test --manifest-path packages/platform-rs/Cargo.toml --locked",
     "_internal:hooks:install": "git config core.hooksPath .githooks"
   },
