@@ -1,0 +1,94 @@
+@layer components {
+  .privacy-body {
+    display: grid;
+    gap: 18px;
+    margin-top: 18px;
+  }
+
+  .privacy-notice {
+    display: grid;
+    gap: 8px;
+    padding: 18px;
+    border: 1px solid rgb(var(--stroke) / 0.65);
+    border-radius: 20px;
+    background:
+      radial-gradient(circle at 100% 0%, rgb(var(--signal) / 0.16), transparent 48%),
+      linear-gradient(135deg, rgb(var(--surface) / 0.96), rgb(var(--surface) / 0.75));
+  }
+
+  .privacy-notice strong,
+  .privacy-section h2,
+  .privacy-highlight-card h2 {
+    color: rgb(var(--ink));
+  }
+
+  .privacy-notice p,
+  .privacy-section p,
+  .privacy-highlight-card p,
+  .privacy-list li {
+    margin: 0;
+    color: rgb(var(--muted));
+    line-height: 1.65;
+  }
+
+  .privacy-notice-label {
+    font-size: 10px;
+    font-family: var(--font-mono);
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: rgb(var(--muted-soft));
+  }
+
+  .privacy-highlights {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  }
+
+  .privacy-highlight-card,
+  .privacy-section {
+    display: grid;
+    gap: 10px;
+    padding: 18px;
+    border: 1px solid rgb(var(--stroke) / 0.6);
+    border-radius: 18px;
+    background: rgb(var(--surface) / 0.82);
+  }
+
+  .privacy-highlight-card h2,
+  .privacy-section h2 {
+    margin: 0;
+    font-size: 1rem;
+  }
+
+  .privacy-list {
+    display: grid;
+    gap: 10px;
+    padding-left: 18px;
+    margin: 0;
+  }
+
+  .privacy-contact-card {
+    background:
+      linear-gradient(135deg, rgb(var(--accent) / 0.1), rgb(var(--signal) / 0.1)),
+      rgb(var(--surface) / 0.88);
+  }
+
+  .privacy-contact-link {
+    color: rgb(var(--accent-strong));
+    text-decoration: none;
+    font-weight: 600;
+  }
+
+  .privacy-contact-link:hover {
+    text-decoration: underline;
+  }
+
+  @media (max-width: 640px) {
+    .privacy-notice,
+    .privacy-highlight-card,
+    .privacy-section {
+      padding: 16px;
+    }
+  }
+}
