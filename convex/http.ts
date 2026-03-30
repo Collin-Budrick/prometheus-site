@@ -80,19 +80,26 @@ const handleAuthPreflight = httpAction(async (_ctx, request) => {
   })
 })
 
+const resolveRequestForwardedOrigin = (request: Request) => {
+  const requestUrl = new URL(request.url)
+  const forwardedHost = resolveHeaderValue(request, 'x-forwarded-host')
+  const forwardedProto = resolveHeaderValue(request, 'x-forwarded-proto')
+  const host = forwardedHost ?? resolveHeaderValue(request, 'host') ?? requestUrl.host
+  const protocol = forwardedProto ?? requestUrl.protocol.replace(/:$/, '') ?? 'https'
+  return normalizeOrigin(`${protocol}://${host}`)
+}
+
 const resolveAuthRequestOrigin = (request: Request) => {
   const origin = normalizeOrigin(resolveHeaderValue(request, 'origin'))
   if (origin) return origin
 
-  const referer = normalizeOrigin(resolveHeaderValue(request, 'referer'))
-  if (referer) return referer
+  const forwardedOrigin = resolveRequestForwardedOrigin(request)
+  if (forwardedOrigin) return forwardedOrigin
 
-  const requestUrl = new URL(request.url)
-  const forwardedHost = resolveHeaderValue(request, 'x-forwarded-host')
-  const forwardedProto = resolveHeaderValue(request, 'x-forwarded-proto')
-  const host = resolveHeaderValue(request, 'host') ?? requestUrl.host
-  const protocol = forwardedProto ?? requestUrl.protocol.replace(/:$/, '') ?? 'https'
-  return `${protocol}://${host}`
+  const referer = normalizeOrigin(resolveHeaderValue(request, 'referer'))
+  if (referer && resolveTrustedOrigins().includes(referer)) return referer
+
+  return resolveRequestForwardedOrigin(request) ?? 'https://prometheus.prod'
 }
 
 const buildNormalizedAuthRequest = async (request: Request) => {
