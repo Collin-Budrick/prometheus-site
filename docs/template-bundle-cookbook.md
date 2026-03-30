@@ -14,7 +14,7 @@ Self-hosted Better Auth on Convex, bootstrap tokens, and the login route.
 - Required secrets: `AUTH_BOOTSTRAP_PRIVATE_KEY`, `BETTER_AUTH_SECRET`
 - Quality gates: `build`, `typecheck`, `browser`
 - Adapters: `Convex`, `Better Auth`
-- Migrations: Better Auth base path, JWT issuer/audience, and JWKS settings must stay in sync across Convex, the site bundle, the Rust API, and the SpacetimeDB module.
+- Migrations: Better Auth base path, JWT issuer/audience, and JWKS settings must stay in sync across Convex, the site bundle, the Rust API, and the SpacetimeDB module. OAuth callbacks must include https://prometheus.dev/api/auth/callback/google, https://prometheus.dev/api/auth/callback/facebook, https://prometheus.dev/api/auth/callback/twitter, https://prometheus.prod/api/auth/callback/google, https://prometheus.prod/api/auth/callback/facebook, and https://prometheus.prod/api/auth/callback/twitter. Better Auth uses provider id "twitter" for X, and the X app must request the user.email scope.
 
 ## store
 

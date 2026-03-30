@@ -98,7 +98,7 @@ const fallbackOrigin =
   normalizeOrigin(process.env.PROMETHEUS_WEB_HOST) ??
   defaultFallbackOrigin
 const enabledSocialProviders = new Set(parseList(process.env.AUTH_SOCIAL_PROVIDERS))
-const supportedSocialProviders = ['google', 'facebook', 'github'] as const
+const supportedSocialProviders = ['google', 'facebook', 'twitter', 'github'] as const
 type SupportedSocialProvider = (typeof supportedSocialProviders)[number]
 
 const getSocialProviderCredentials = (providerId: SupportedSocialProvider) => {
@@ -112,6 +112,11 @@ const getSocialProviderCredentials = (providerId: SupportedSocialProvider) => {
       return {
         clientId: normalizeOptionalString(process.env.AUTH_FACEBOOK_CLIENT_ID),
         clientSecret: normalizeOptionalString(process.env.AUTH_FACEBOOK_CLIENT_SECRET)
+      }
+    case 'twitter':
+      return {
+        clientId: normalizeOptionalString(process.env.AUTH_TWITTER_CLIENT_ID),
+        clientSecret: normalizeOptionalString(process.env.AUTH_TWITTER_CLIENT_SECRET)
       }
     case 'github':
       return {
@@ -142,6 +147,7 @@ const buildPreferredUsername = (email: string, name: string) => {
 
 export const authComponent = createClient(components.betterAuth)
 
+export const resolveAuthBasePath = () => authBasePath
 export const resolveTrustedOrigins = () => trustedOrigins
 
 export const resolveEnabledAuthProviders = () =>
@@ -178,6 +184,14 @@ export const createAuth = (ctx: Record<string, unknown>) =>
             facebook: {
               clientId: getSocialProviderCredentials('facebook').clientId ?? '',
               clientSecret: getSocialProviderCredentials('facebook').clientSecret ?? ''
+            }
+          }
+        : {}),
+      ...(isProviderEnabled('twitter')
+        ? {
+            twitter: {
+              clientId: getSocialProviderCredentials('twitter').clientId ?? '',
+              clientSecret: getSocialProviderCredentials('twitter').clientSecret ?? ''
             }
           }
         : {}),

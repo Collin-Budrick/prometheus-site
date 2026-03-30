@@ -6,6 +6,30 @@ import { root, runSync, runSyncCapture } from './compose-utils'
 const cacheDir = path.join(root, '.cache')
 const adminKeyPath = path.join(cacheDir, 'convex-admin-key.txt')
 const envFilePath = path.join(cacheDir, 'convex-self-hosted.env')
+const convexFunctionEnvKeys = [
+  'AUTH_BASE_PATH',
+  'VITE_AUTH_BASE_PATH',
+  'BETTER_AUTH_SECRET',
+  'AUTH_JWT_ISSUER',
+  'AUTH_JWT_AUDIENCE',
+  'AUTH_POST_LOGOUT_REDIRECT_URI',
+  'AUTH_SOCIAL_PROVIDERS',
+  'AUTH_GOOGLE_CLIENT_ID',
+  'AUTH_GOOGLE_CLIENT_SECRET',
+  'AUTH_FACEBOOK_CLIENT_ID',
+  'AUTH_FACEBOOK_CLIENT_SECRET',
+  'AUTH_TWITTER_CLIENT_ID',
+  'AUTH_TWITTER_CLIENT_SECRET',
+  'AUTH_GITHUB_CLIENT_ID',
+  'AUTH_GITHUB_CLIENT_SECRET',
+  'CONVEX_SELF_HOSTED_SITE_URL',
+  'PROMETHEUS_WEB_HOST',
+  'PROMETHEUS_WEB_HOST_PROD',
+  'OIDC_AUTHORITY',
+  'OIDC_CLIENT_ID',
+  'SPACETIMEAUTH_AUTHORITY',
+  'SPACETIMEAUTH_CLIENT_ID'
+] as const
 
 const normalizeOptionalString = (value: string | undefined) => {
   const trimmed = value?.trim()
@@ -69,7 +93,8 @@ export const writeConvexEnvFile = (env: NodeJS.ProcessEnv, adminKey: string) => 
   mkdirSync(cacheDir, { recursive: true })
   const content = [
     `CONVEX_SELF_HOSTED_URL=${resolved.CONVEX_SELF_HOSTED_URL}`,
-    `CONVEX_SELF_HOSTED_ADMIN_KEY=${adminKey}`
+    `CONVEX_SELF_HOSTED_ADMIN_KEY=${adminKey}`,
+    ...convexFunctionEnvKeys.map((key) => `${key}=${resolved[key] ?? ''}`)
   ].join('\n')
   writeFileSync(envFilePath, `${content}\n`, 'utf8')
   return envFilePath
@@ -107,6 +132,14 @@ export const deployConvexProject = ({
   )
   if (result.status !== 0) {
     throw new Error(`[convex] Failed to deploy the Convex auth project (status ${result.status ?? 1}).`)
+  }
+  const envSync = runSync(
+    bunBin,
+    ['x', 'convex', 'env', 'set', '--env-file', envFile, '--from-file', envFile, '--force'],
+    convexEnv
+  )
+  if (envSync.status !== 0) {
+    throw new Error(`[convex] Failed to sync Convex environment variables (status ${envSync.status ?? 1}).`)
   }
   return { adminKey, envFile }
 }

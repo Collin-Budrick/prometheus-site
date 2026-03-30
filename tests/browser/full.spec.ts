@@ -9,6 +9,30 @@ import {
 } from './audit-helpers'
 
 const guardedRoutes = ['/chat/', '/dashboard/', '/profile/', '/settings/'] as const
+const expectedHostedSocialProviders = (
+  process.env.PROMETHEUS_EXPECT_SOCIAL_PROVIDERS?.trim() ||
+  process.env.VITE_AUTH_SOCIAL_PROVIDERS?.trim() ||
+  process.env.AUTH_SOCIAL_PROVIDERS?.trim() ||
+  ''
+)
+  .split(/[,\n]/)
+  .map((provider) => provider.trim().toLowerCase())
+  .filter(Boolean)
+
+const resolveSocialProviderLabel = (provider: string) => {
+  switch (provider) {
+    case 'google':
+      return 'Google'
+    case 'facebook':
+      return 'Facebook'
+    case 'twitter':
+      return 'Twitter (X)'
+    case 'github':
+      return 'GitHub'
+    default:
+      return provider
+  }
+}
 
 const runWithRuntimeTracking = async (
   page: Page,
@@ -119,7 +143,7 @@ test.describe('full preset live route audit', () => {
 
       await expect(page).toHaveTitle('Welcome back | Prometheus')
       await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible()
-      await expect(page.locator('[data-static-login-runtime-banner]')).toContainText('Dev session')
+      await expect(page.locator('[data-static-login-runtime-banner]')).toContainText(/Dev session|Hosted auth/)
       await expectDockShortcuts(page)
       await openAndCloseSettings(page)
 
@@ -127,10 +151,59 @@ test.describe('full preset live route audit', () => {
       await expect(page.getByRole('textbox', { name: 'NAME' })).toBeVisible()
       await expect(page.getByRole('button', { name: 'CREATE ACCOUNT' })).toBeVisible()
 
+      const root = page.locator('[data-static-login-root]')
+      const runtimeMode = await root.getAttribute('data-runtime-mode')
+      if (runtimeMode === 'hosted' && expectedHostedSocialProviders.length > 0) {
+        await expect(page.locator('[data-static-login-social]')).toBeVisible()
+        for (const provider of expectedHostedSocialProviders) {
+          await expect(page.getByRole('button', { name: resolveSocialProviderLabel(provider) })).toBeVisible()
+        }
+      }
+
       await page.getByRole('tab', { name: 'SIGN IN' }).click()
       await expect(page.getByRole('textbox', { name: 'EMAIL' })).toBeVisible()
       await expect(page.getByRole('textbox', { name: 'PASSWORD' })).toBeVisible()
       await expect(page.getByRole('button', { name: 'SIGN IN' })).toBeVisible()
+
+      const runtimeModeAfterSignIn = await page.locator('[data-static-login-root]').getAttribute('data-runtime-mode')
+      if (runtimeModeAfterSignIn === 'hosted' && expectedHostedSocialProviders.length > 0) {
+        await expect(page.locator('[data-static-login-social]')).toBeVisible()
+        for (const provider of expectedHostedSocialProviders) {
+          await expect(page.getByRole('button', { name: resolveSocialProviderLabel(provider) })).toBeVisible()
+        }
+
+        if (expectedHostedSocialProviders.includes('twitter')) {
+          const twitterRedirectRequest = page.waitForResponse((response) => {
+            if (response.request().method() !== 'POST') return false
+            return response.url().endsWith('/api/auth/sign-in/social')
+          })
+
+          await page.getByRole('button', { name: 'Twitter (X)' }).click()
+
+          const twitterRedirectResponse = await twitterRedirectRequest
+          const twitterRedirectBody = twitterRedirectResponse.request().postDataJSON()
+
+          expect(twitterRedirectBody).toMatchObject({
+            disableRedirect: true,
+            provider: 'twitter'
+          })
+          expect(String(twitterRedirectBody.callbackURL ?? '')).toContain('/login/callback?next=')
+
+          if (twitterRedirectResponse.ok()) {
+            const redirectLocation = await twitterRedirectResponse.headerValue('location')
+            if (redirectLocation) {
+              expect(redirectLocation).toMatch(/https:\/\/(?:.*\.)?(?:x\.com|twitter\.com)\//)
+            } else {
+              await expect
+                .poll(() => page.url(), { timeout: 15_000 })
+                .toMatch(/https:\/\/(?:.*\.)?(?:x\.com|twitter\.com)\//)
+            }
+          } else {
+            await expect(page.locator('[data-static-login-status]')).toBeVisible()
+            await expect(page.locator('[data-static-login-status]')).toContainText(/\S+/)
+          }
+        }
+      }
     })
   })
 

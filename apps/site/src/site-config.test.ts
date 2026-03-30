@@ -19,7 +19,7 @@ describe('resolvePublicAppConfig', () => {
   it('falls back to public auth env values when runtime config is missing them', () => {
     const config = resolvePublicAppConfig(undefined, {
       VITE_AUTH_BASE_PATH: '/api/auth',
-      VITE_AUTH_SOCIAL_PROVIDERS: 'google, facebook',
+      VITE_AUTH_SOCIAL_PROVIDERS: 'google, facebook, twitter',
       VITE_OIDC_AUTHORITY: 'urn:prometheus:better-auth',
       VITE_OIDC_CLIENT_ID: 'prometheus-site',
       VITE_OIDC_JWKS_URI: 'https://prometheus.prod/api/auth/jwks',
@@ -28,7 +28,7 @@ describe('resolvePublicAppConfig', () => {
     })
 
     expect(config.authBasePath).toBe('/api/auth')
-    expect(config.authSocialProviders).toEqual(['google', 'facebook'])
+    expect(config.authSocialProviders).toEqual(['google', 'facebook', 'twitter'])
     expect(config.oidcAuthority).toBe('urn:prometheus:better-auth')
     expect(config.oidcClientId).toBe('prometheus-site')
     expect(config.oidcJwksUri).toBe('https://prometheus.prod/api/auth/jwks')

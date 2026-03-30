@@ -46,6 +46,16 @@ Preset selection is controlled by `PROMETHEUS_TEMPLATE_PRESET`, `TEMPLATE_PRESET
 
 Use `bun run template:init` to rewrite defaults repo-wide, then commit the generated follow-up changes from `bun run template:sync`.
 
+## Auth Providers
+
+Better Auth social providers remain mounted at `/api/auth/callback/<provider>` unless `AUTH_BASE_PATH` changes.
+
+- Google callback URLs: `https://prometheus.dev/api/auth/callback/google` and `https://prometheus.prod/api/auth/callback/google`
+- Facebook callback URLs: `https://prometheus.dev/api/auth/callback/facebook` and `https://prometheus.prod/api/auth/callback/facebook`
+- X callback URLs: `https://prometheus.dev/api/auth/callback/twitter` and `https://prometheus.prod/api/auth/callback/twitter`
+- Better Auth uses the provider id `twitter` for X
+- The X app must request the `user.email` scope so the hosted flow can recover the email address
+
 ## Bundle Contract
 
 Each detachable feature belongs to a `FeatureBundleManifest`. A bundle owns:

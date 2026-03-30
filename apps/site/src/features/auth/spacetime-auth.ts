@@ -4,7 +4,7 @@ import { buildPublicSiteAuthUrl } from '@site/shared/public-api-url'
 import { attemptBootstrapSession, clearBootstrapSession } from './auth-bootstrap'
 import { clearClientAuthSessionCache } from './auth-session-client'
 
-export const hostedSocialProviders = ['google', 'facebook', 'github'] as const
+export const hostedSocialProviders = ['google', 'facebook', 'twitter', 'github'] as const
 export type HostedSocialProvider = (typeof hostedSocialProviders)[number]
 const hostedSocialProviderSet = new Set<string>(hostedSocialProviders)
 
@@ -17,6 +17,8 @@ export const getHostedSocialProviderLabel = (provider: HostedSocialProvider) => 
       return 'Google'
     case 'facebook':
       return 'Facebook'
+    case 'twitter':
+      return 'Twitter (X)'
     case 'github':
       return 'GitHub'
   }

@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 
-import { resolveSpacetimeAuthMode, signOutSpacetimeAuth, startSpacetimeAuthLogin } from './spacetime-auth'
+import {
+  getHostedSocialProviderLabel,
+  isHostedSocialProvider,
+  resolveSpacetimeAuthMode,
+  signOutSpacetimeAuth,
+  startSpacetimeAuthLogin
+} from './spacetime-auth'
 
 const originalFetch = globalThis.fetch
 const originalWindow = globalThis.window
@@ -128,13 +134,13 @@ describe('signOutSpacetimeAuth', () => {
 })
 
 describe('startSpacetimeAuthLogin', () => {
-  it('supports Facebook sign-in through Better Auth social redirects', async () => {
+  it('supports Twitter sign-in through Better Auth social redirects', async () => {
     const requests: Array<{ input: RequestInfo | URL; init?: RequestInit }> = []
     const assignCalls: string[] = []
 
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       requests.push({ input, init })
-      return new Response(JSON.stringify({ redirect: true, url: 'https://facebook.example/oauth' }), {
+      return new Response(JSON.stringify({ redirect: true, url: 'https://twitter.example/oauth' }), {
         status: 200,
         headers: {
           'content-type': 'application/json'
@@ -155,12 +161,19 @@ describe('startSpacetimeAuthLogin', () => {
       }
     })
 
-    await expect(startSpacetimeAuthLogin('facebook', { next: '/profile' })).resolves.toBeUndefined()
+    await expect(startSpacetimeAuthLogin('twitter', { next: '/profile' })).resolves.toBeUndefined()
     expect(requests).toHaveLength(1)
     expect(String(requests[0]?.input)).toBe('https://prometheus.prod/api/auth/sign-in/social')
     expect(JSON.parse(String(requests[0]?.init?.body))).toMatchObject({
-      provider: 'facebook'
+      provider: 'twitter'
     })
-    expect(assignCalls).toEqual(['https://facebook.example/oauth'])
+    expect(assignCalls).toEqual(['https://twitter.example/oauth'])
+  })
+})
+
+describe('hosted social providers', () => {
+  it('recognizes twitter and resolves the X label', () => {
+    expect(isHostedSocialProvider('twitter')).toBe(true)
+    expect(getHostedSocialProviderLabel('twitter')).toBe('Twitter (X)')
   })
 })

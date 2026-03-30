@@ -34,6 +34,7 @@ type StaticLoginRouteProps = {
 const hostedSocialProviders = [
   { id: 'google', label: 'Google' },
   { id: 'facebook', label: 'Facebook' },
+  { id: 'twitter', label: 'Twitter (X)' },
   { id: 'github', label: 'GitHub' }
 ] as const
 
@@ -159,24 +160,6 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang,
                       {copy.loginAction}
                     </button>
                   </div>
-                  <div class={authClass.social} data-static-login-social hidden>
-                    <p class={authClass.socialLabel}>{copy.authSocialSectionLabel}</p>
-                    <div class={authClass.socialActions}>
-                      {hostedSocialProviders.map(({ id, label }) => (
-                        <button
-                          key={id}
-                          type="button"
-                          class={authClass.socialButton}
-                          data-static-login-method={id}
-                          data-static-login-provider={id}
-                          data-static-login-disable
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
                   <div
                     class={authClass.status}
                     role="status"
@@ -242,6 +225,24 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang,
                     </button>
                   </div>
                 </form>
+              </div>
+
+              <div class={authClass.social} data-static-login-social hidden>
+                <p class={authClass.socialLabel}>{copy.authSocialSectionLabel}</p>
+                <div class={authClass.socialActions}>
+                  {hostedSocialProviders.map(({ id, label }) => (
+                    <button
+                      key={id}
+                      type="button"
+                      class={authClass.socialButton}
+                      data-static-login-method={id}
+                      data-static-login-provider={id}
+                      data-static-login-disable
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div

@@ -7,7 +7,7 @@ const defaultConvexBackendPort = '3210'
 const defaultConvexSitePort = '3211'
 const defaultConvexDashboardPort = '6791'
 const localDevelopmentHostnames = new Set(['localhost', '127.0.0.1', '::1'])
-const supportedSocialProviders = ['google', 'facebook', 'github'] as const
+const supportedSocialProviders = ['google', 'facebook', 'twitter', 'github'] as const
 type SupportedSocialProvider = (typeof supportedSocialProviders)[number]
 
 type ProcessEnvLike = Record<string, string | undefined>
@@ -51,6 +51,11 @@ const getSocialProviderEnvKeys = (provider: SupportedSocialProvider) => {
         clientId: 'AUTH_FACEBOOK_CLIENT_ID',
         clientSecret: 'AUTH_FACEBOOK_CLIENT_SECRET'
       }
+    case 'twitter':
+      return {
+        clientId: 'AUTH_TWITTER_CLIENT_ID',
+        clientSecret: 'AUTH_TWITTER_CLIENT_SECRET'
+      }
     case 'github':
       return {
         clientId: 'AUTH_GITHUB_CLIENT_ID',
@@ -87,6 +92,20 @@ const resolveSocialProviderIssues = (env: ProcessEnvLike) => {
     }
     if (!normalizeOptionalString(env[keys.clientSecret])) {
       issues.push(`${keys.clientSecret} is required when ${provider} is enabled in AUTH_SOCIAL_PROVIDERS.`)
+    }
+  }
+
+  return issues
+}
+
+const resolveRequestedSocialProviderIssues = (env: ProcessEnvLike) => {
+  const issues: string[] = []
+
+  for (const provider of resolveRequestedSocialProviders(env)) {
+    if (!isSupportedSocialProvider(provider)) {
+      issues.push(
+        `AUTH_SOCIAL_PROVIDERS includes unsupported provider "${provider}". Supported values are ${supportedSocialProviders.join(', ')}.`
+      )
     }
   }
 
@@ -281,6 +300,40 @@ export const assertHostedAuthConfigForNonDevelopmentHosts = ({
 
   throw new Error(
     `[auth-config] ${context} targets non-development host(s) ${nonDevelopmentHosts.join(', ')} but self-hosted auth is not fully configured.\n` +
+      `${issues.map((issue) => `- ${issue}`).join('\n')}`
+  )
+}
+
+export const assertPublicAuthConfigForNonDevelopmentHosts = ({
+  context,
+  env,
+  hosts = resolveConfiguredAuthHosts(env)
+}: {
+  context: string
+  env: ProcessEnvLike
+  hosts?: string[]
+}) => {
+  const nonDevelopmentHosts = hosts.filter((host) => !isDevelopmentHostname(host))
+  if (!nonDevelopmentHosts.length) return
+
+  const resolved = resolveAuthConfig(env)
+  const issues: string[] = []
+
+  if (!normalizeOptionalString(resolved.jwtIssuer)) {
+    issues.push('AUTH_JWT_ISSUER must resolve to a non-empty value.')
+  }
+  if (!normalizeOptionalString(resolved.jwtAudience)) {
+    issues.push('AUTH_JWT_AUDIENCE must resolve to a non-empty value.')
+  }
+  if (!normalizeUrl(resolved.jwksUri)) {
+    issues.push('AUTH_JWKS_URI must resolve to an absolute URL.')
+  }
+  issues.push(...resolveRequestedSocialProviderIssues(env))
+
+  if (!issues.length) return
+
+  throw new Error(
+    `[auth-config] ${context} targets non-development host(s) ${nonDevelopmentHosts.join(', ')} but public auth config is not fully configured.\n` +
       `${issues.map((issue) => `- ${issue}`).join('\n')}`
   )
 }

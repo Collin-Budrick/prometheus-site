@@ -3,7 +3,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symli
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { patchQwikOptimizerFiles } from './vite-run.patches.ts'
-import { assertHostedAuthConfigForNonDevelopmentHosts } from '../../../scripts/spacetime-auth-config.ts'
+import { assertPublicAuthConfigForNonDevelopmentHosts } from '../../../scripts/spacetime-auth-config.ts'
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const siteRoot = path.resolve(scriptDir, '..')
@@ -19,7 +19,7 @@ const viteCommandArgs = process.argv.slice(2)
 const betterAuthSecret = process.env.BETTER_AUTH_SECRET?.trim() || 'dev-better-auth-secret-please-change-32'
 
 if (viteCommandArgs.some((arg) => arg === 'build' || arg === 'preview')) {
-  assertHostedAuthConfigForNonDevelopmentHosts({
+  assertPublicAuthConfigForNonDevelopmentHosts({
     context: 'apps/site vite build',
     env: {
       ...process.env,

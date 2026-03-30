@@ -688,6 +688,8 @@ const AUTH_ENV_KEYS = [
   'AUTH_GOOGLE_CLIENT_SECRET',
   'AUTH_FACEBOOK_CLIENT_ID',
   'AUTH_FACEBOOK_CLIENT_SECRET',
+  'AUTH_TWITTER_CLIENT_ID',
+  'AUTH_TWITTER_CLIENT_SECRET',
   'AUTH_GITHUB_CLIENT_ID',
   'AUTH_GITHUB_CLIENT_SECRET',
   'CONVEX_SELF_HOSTED_URL',
@@ -786,7 +788,8 @@ export const featureBundleManifests: Record<TemplateFeatureId, FeatureBundleMani
     requiredSecrets: ['AUTH_BOOTSTRAP_PRIVATE_KEY', 'BETTER_AUTH_SECRET'],
     docs: ['docs/template-bundle-cookbook.md#auth'],
     migrations: [
-      'Better Auth base path, JWT issuer/audience, and JWKS settings must stay in sync across Convex, the site bundle, the Rust API, and the SpacetimeDB module.'
+      'Better Auth base path, JWT issuer/audience, and JWKS settings must stay in sync across Convex, the site bundle, the Rust API, and the SpacetimeDB module.',
+      `OAuth callbacks must include https://${templateBranding.domains.web}/api/auth/callback/google, https://${templateBranding.domains.web}/api/auth/callback/facebook, https://${templateBranding.domains.web}/api/auth/callback/twitter, https://${templateBranding.domains.webProd}/api/auth/callback/google, https://${templateBranding.domains.webProd}/api/auth/callback/facebook, and https://${templateBranding.domains.webProd}/api/auth/callback/twitter. Better Auth uses provider id "twitter" for X, and the X app must request the user.email scope.`
     ],
     qualityGates: ['build', 'typecheck', 'browser'],
     adapters: ['Convex', 'Better Auth'],

@@ -1,4 +1,5 @@
 import {
+  assertPublicAuthConfigForNonDevelopmentHosts,
   assertHostedAuthConfigForNonDevelopmentHosts,
   isDevelopmentHostname,
   resolveAuthConfig,
@@ -8,7 +9,12 @@ import {
 
 type ProcessEnvLike = Record<string, string | undefined>
 
-export { assertHostedAuthConfigForNonDevelopmentHosts, isDevelopmentHostname, resolveConfiguredAuthHosts }
+export {
+  assertPublicAuthConfigForNonDevelopmentHosts,
+  assertHostedAuthConfigForNonDevelopmentHosts,
+  isDevelopmentHostname,
+  resolveConfiguredAuthHosts
+}
 
 export const resolveSpacetimeAuthConfig = (env: ProcessEnvLike) => {
   const resolved = resolveAuthConfig(env)

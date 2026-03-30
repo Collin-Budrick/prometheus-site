@@ -208,6 +208,34 @@
     "secret": false
   },
   {
+    "envKey": "AUTH_TWITTER_CLIENT_ID",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": false
+  },
+  {
+    "envKey": "AUTH_TWITTER_CLIENT_SECRET",
+    "bundleIds": [
+      "auth"
+    ],
+    "requiredByDefaultIn": [
+      "commerce",
+      "community",
+      "core",
+      "full",
+      "saas"
+    ],
+    "secret": true
+  },
+  {
     "envKey": "BETTER_AUTH_SECRET",
     "bundleIds": [
       "auth"
