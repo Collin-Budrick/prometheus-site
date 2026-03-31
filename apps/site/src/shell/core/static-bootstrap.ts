@@ -1107,7 +1107,6 @@ const destroyController = async (
 };
 
 const buildStaticFragmentMarkup = (model: StaticFragmentRouteModel) => {
-  const leftCount = Math.ceil(model.entries.length / 2);
   const nonce = getCspNonce();
   const nonceAttr = nonce ? ` nonce="${escapeHtmlAttr(nonce)}"` : "";
   const inlineStyles = model.inlineStyles
@@ -1118,7 +1117,7 @@ const buildStaticFragmentMarkup = (model: StaticFragmentRouteModel) => {
     .join("");
   const entries = model.entries
     .map((entry, index) => {
-      const column = index < leftCount ? "1" : "2";
+      const column = entry.layout.column || "span 12";
       const versionAttr = entry.version
         ? ` ${STATIC_FRAGMENT_VERSION_ATTR}="${entry.version}"`
         : "";

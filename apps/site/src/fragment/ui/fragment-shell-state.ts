@@ -16,7 +16,11 @@ import {
 import { isStaticHomeShellMode, resolveFragmentShellMode } from './fragment-shell-mode'
 import { resolveFragments, resolvePlan } from './utils'
 import { useFragmentShellDrag } from './fragment-shell-drag'
-import { useFragmentShellLayout } from './fragment-shell-layout'
+import {
+  resolveEffectiveMainGridSlots,
+  resolveMainGridLayoutMode,
+  useFragmentShellLayout
+} from './fragment-shell-layout'
 import {
   createInitialLayoutSettleScheduler,
   INITIAL_LAYOUT_SETTLE_FALLBACK_MS
@@ -147,8 +151,17 @@ export const useFragmentShellState = ({
   const streamPaused = useSignal(!isStaticHome && Boolean(cachedEntry))
   const orderedEntries = useComputed$(() => buildOrderedEntries(planValue.fragments, orderIds.value))
   const slottedEntries = useComputed$<SlottedEntry[]>(() => {
+    layoutTick.value
     const entries = orderedEntries.value
-    const slots = buildBentoSlots(entries.length, columnSplit.value)
+    const mode = resolveMainGridLayoutMode({
+      entries,
+      viewportWidth: typeof window !== 'undefined' ? window.innerWidth : null
+    })
+    const slots = resolveEffectiveMainGridSlots({
+      entries,
+      slots: buildBentoSlots(entries.length, columnSplit.value),
+      mode
+    })
     const rowCounts = new Map<number, number>()
     const slotRows = slots.map((slot, index) => {
       const entry = entries[index]

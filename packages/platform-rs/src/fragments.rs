@@ -1719,9 +1719,9 @@ fn store_plan_entries() -> Vec<FragmentPlanEntry> {
     vec![
         home_entry(STORE_STREAM_ID, true, "span 12", Some("small"), 579, None)
             .with_render_html(false),
-        home_entry(STORE_CART_ID, true, "span 12", Some("small"), 440, None)
+        home_entry(STORE_CART_ID, true, "span 6", Some("small"), 440, None)
             .with_render_html(false),
-        home_entry(STORE_CREATE_ID, false, "span 12", Some("small"), 489, None)
+        home_entry(STORE_CREATE_ID, false, "span 6", Some("small"), 489, None)
             .with_render_html(false),
     ]
 }
@@ -1874,6 +1874,17 @@ mod tests {
         let payload = build_fragment_bundle(&state, &ids, "en", 2, &known, &plan, false).await;
 
         assert!(payload.is_empty());
+    }
+
+    #[test]
+    fn store_plan_uses_half_width_secondary_cards() {
+        let plan = store_plan_entries();
+        let columns = plan
+            .iter()
+            .map(|entry| entry.layout.column.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(columns, vec!["span 12", "span 6", "span 6"]);
     }
 }
 

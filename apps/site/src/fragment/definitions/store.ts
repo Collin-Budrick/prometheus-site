@@ -10,6 +10,28 @@ const baseMeta = {
 }
 
 const storeFragmentCss = `
+.fragment-grid.fragment-grid-static-home {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 24px;
+  align-items: start;
+}
+
+.fragment-grid.fragment-grid-static-home > .fragment-card[data-fragment-id^='fragment://page/store/'] {
+  width: 100%;
+  min-width: 0;
+}
+
+@media (max-width: 1024px) {
+  .fragment-grid.fragment-grid-static-home {
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+  }
+
+  .fragment-grid.fragment-grid-static-home > .fragment-card[data-fragment-id^='fragment://page/store/'] {
+    grid-column: 1 / -1 !important;
+  }
+}
+
 .store-fragment {
   display: grid;
   gap: 18px;
@@ -563,11 +585,15 @@ const storeFragmentCss = `
   display: grid;
   gap: 16px;
   container-type: inline-size;
+  width: 100%;
+  min-width: 0;
 }
 
 .store-create-form {
   display: grid;
   gap: 12px;
+  width: 100%;
+  min-width: 0;
 }
 
 .store-create-grid {
@@ -575,11 +601,14 @@ const storeFragmentCss = `
   grid-template-columns: minmax(0, 1.6fr) minmax(0, 0.7fr) minmax(0, 0.6fr) auto;
   gap: 12px;
   align-items: end;
+  width: 100%;
+  min-width: 0;
 }
 
 .store-create-input {
   display: grid;
   gap: 6px;
+  min-width: 0;
 }
 
 .store-create-input span,
@@ -597,6 +626,8 @@ const storeFragmentCss = `
 }
 
 .store-create-input input {
+  width: 100%;
+  min-width: 0;
   padding: 12px 14px;
   min-height: 44px;
   line-height: 1.2;
@@ -1171,7 +1202,7 @@ export const storeFragments: FragmentPlanEntry[] = [
     id: storeCart.id,
     critical: true,
     layout: {
-      column: 'span 12',
+      column: 'span 6',
       size: 'small',
       minHeight: 440,
       heightHint: { desktop: 440, mobile: 440 },
@@ -1186,7 +1217,7 @@ export const storeFragments: FragmentPlanEntry[] = [
     id: storeCreate.id,
     critical: false,
     layout: {
-      column: 'span 12',
+      column: 'span 6',
       size: 'small',
       minHeight: 489,
       heightHint: { desktop: 489, mobile: 489 },

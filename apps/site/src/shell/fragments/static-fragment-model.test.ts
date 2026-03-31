@@ -68,6 +68,86 @@ describe('static-fragment-model', () => {
     expect(model.routeData.planSignature).toBe(planSignature)
   })
 
+  it('promotes the first main-grid card in the static model when the desktop grid has an odd count', () => {
+    const plan = {
+      path: '/store',
+      createdAt: 1,
+      fragments: [
+        {
+          id: 'fragment://page/store/stream@v5',
+          critical: true,
+          layout: { column: 'span 6', size: 'small' }
+        },
+        {
+          id: 'fragment://page/store/cart@v1',
+          critical: true,
+          layout: { column: 'span 6', size: 'small' }
+        },
+        {
+          id: 'fragment://page/store/create@v1',
+          critical: true,
+          layout: { column: 'span 6', size: 'small' }
+        }
+      ]
+    } as const
+
+    const model = buildStaticFragmentRouteModel({
+      plan: plan as never,
+      fragments: {
+        'fragment://page/store/stream@v5': {
+          id: 'fragment://page/store/stream@v5',
+          tree: h('section', null, [h('p', null, [t('stream')])]),
+          head: [],
+          css: '',
+          meta: {
+            cacheKey: 'stream:1',
+            ttl: 30,
+            staleTtl: 60,
+            tags: [],
+            runtime: 'edge'
+          },
+          cacheUpdatedAt: 1
+        },
+        'fragment://page/store/cart@v1': {
+          id: 'fragment://page/store/cart@v1',
+          tree: h('section', null, [h('p', null, [t('cart')])]),
+          head: [],
+          css: '',
+          meta: {
+            cacheKey: 'cart:1',
+            ttl: 30,
+            staleTtl: 60,
+            tags: [],
+            runtime: 'edge'
+          },
+          cacheUpdatedAt: 2
+        },
+        'fragment://page/store/create@v1': {
+          id: 'fragment://page/store/create@v1',
+          tree: h('section', null, [h('p', null, [t('create')])]),
+          head: [],
+          css: '',
+          meta: {
+            cacheKey: 'create:1',
+            ttl: 30,
+            staleTtl: 60,
+            tags: [],
+            runtime: 'edge'
+          },
+          cacheUpdatedAt: 3
+        }
+      },
+      lang: 'en'
+    })
+
+    expect(model.entries.map((entry) => entry.layout.column)).toEqual(['span 12', 'span 6', 'span 6'])
+    expect(model.routeData.runtimePlanEntries.map((entry) => entry.layout.column)).toEqual([
+      'span 12',
+      'span 6',
+      'span 6'
+    ])
+  })
+
   it('renders static fragment replacements from the provided fragment copy', () => {
     const plan = {
       path: '/store',

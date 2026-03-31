@@ -48,6 +48,12 @@ const runWithRuntimeTracking = async (
   }
 }
 
+const expectBoundingBox = async (locator: ReturnType<Page['locator']>) => {
+  const box = await locator.boundingBox()
+  expect(box).not.toBeNull()
+  return box!
+}
+
 test.describe('full preset live route audit', () => {
   test('home route keeps the demo shell interactive', async ({ page }) => {
     test.slow()
@@ -120,6 +126,52 @@ test.describe('full preset live route audit', () => {
       const itemNameInput = page.getByRole('textbox', { name: 'ITEM NAME' })
       await expect.soft(itemNameInput).toHaveAttribute('name', /\S+/)
       await expect.soft(itemNameInput).toHaveAttribute('autocomplete', /\S+/)
+    })
+  })
+
+  test('store route promotes the first card when the desktop grid has an odd card count', async ({ page }) => {
+    test.slow()
+
+    await runWithRuntimeTracking(page, 'store route odd-card layout', async () => {
+      await page.setViewportSize({ width: 1440, height: 1200 })
+      await page.goto('/store/', { waitUntil: 'domcontentloaded' })
+
+      const streamPanel = page.locator('article').filter({ has: page.getByText('LIVE CATALOG') }).first()
+      const cartPanel = page.locator('article').filter({ has: page.getByText(/^Cart$/) }).first()
+      const createPanel = page
+        .locator('article')
+        .filter({ has: page.getByRole('button', { name: 'ADD ITEM' }) })
+        .first()
+
+      await expect(streamPanel).toBeVisible()
+      await expect(cartPanel).toBeVisible()
+      await expect(createPanel).toBeVisible()
+
+      const streamBox = await expectBoundingBox(streamPanel)
+      const cartBox = await expectBoundingBox(cartPanel)
+      const createBox = await expectBoundingBox(createPanel)
+
+      expect(streamBox.width).toBeGreaterThan(cartBox.width * 1.75)
+      expect(Math.abs(streamBox.x - cartBox.x)).toBeLessThan(24)
+      expect(Math.abs(cartBox.y - createBox.y)).toBeLessThan(40)
+      expect(Math.abs(cartBox.width - createBox.width)).toBeLessThan(60)
+      expect(createBox.x).toBeGreaterThan(cartBox.x + cartBox.width * 0.7)
+
+      await page.setViewportSize({ width: 430, height: 1200 })
+      await page.goto('/store/', { waitUntil: 'domcontentloaded' })
+
+      await expect(streamPanel).toBeVisible()
+      await expect(cartPanel).toBeVisible()
+      await expect(createPanel).toBeVisible()
+
+      const mobileStreamBox = await expectBoundingBox(streamPanel)
+      const mobileCartBox = await expectBoundingBox(cartPanel)
+      const mobileCreateBox = await expectBoundingBox(createPanel)
+
+      expect(Math.abs(mobileStreamBox.x - mobileCartBox.x)).toBeLessThan(20)
+      expect(Math.abs(mobileCartBox.x - mobileCreateBox.x)).toBeLessThan(20)
+      expect(mobileCartBox.y).toBeGreaterThan(mobileStreamBox.y + mobileStreamBox.height - 10)
+      expect(mobileCreateBox.y).toBeGreaterThan(mobileCartBox.y + mobileCartBox.height - 10)
     })
   })
 

@@ -6,6 +6,7 @@ import type { ContactInvitesSeed } from '../../features/messaging/contact-invite
 import type { StoreSeed } from '../../features/store/store-seed'
 import type { StaticFragmentRouteData } from './fragment-static-data'
 import { renderStaticFragmentPayloadHtml } from './static-fragment-render'
+import { resolveEffectiveMainGridEntries } from '../../fragment/ui/fragment-shell-layout'
 import { getStaticShellRouteConfig } from '../core/constants'
 import {
   buildFragmentHeightPlanSignature,
@@ -109,9 +110,13 @@ export const buildStaticFragmentRouteModel = ({
   cookieHeader,
   viewportHint
 }: BuildStaticFragmentRouteModelOptions): StaticFragmentRouteModel => {
-  const fragmentOrder = plan.fragments.map((entry) => entry.id)
+  const effectivePlanEntries = resolveEffectiveMainGridEntries(
+    plan.fragments,
+    viewportHint === 'mobile' ? 'stacked' : 'desktop-two-column'
+  )
+  const fragmentOrder = effectivePlanEntries.map((entry) => entry.id)
   const planSignature = buildFragmentHeightPlanSignature(fragmentOrder)
-  const fragmentVersions = plan.fragments.reduce<Record<string, number>>((acc, entry) => {
+  const fragmentVersions = effectivePlanEntries.reduce<Record<string, number>>((acc, entry) => {
     const value = fragments[entry.id]?.cacheUpdatedAt
     if (typeof value === 'number' && Number.isFinite(value)) {
       acc[entry.id] = value
@@ -119,7 +124,7 @@ export const buildStaticFragmentRouteModel = ({
     return acc
   }, {})
   const versionSignature = buildFragmentHeightVersionSignature(fragmentVersions, fragmentOrder)
-  const runtimePlanEntries = plan.fragments.map<FragmentRuntimePlanEntry>((entry) => ({
+  const runtimePlanEntries = effectivePlanEntries.map<FragmentRuntimePlanEntry>((entry) => ({
     id: entry.id,
     critical: entry.critical,
     layout: entry.layout,
@@ -137,7 +142,7 @@ export const buildStaticFragmentRouteModel = ({
           versionSignature
         })
       : null
-  const entries = plan.fragments.map((entry) => {
+  const entries = effectivePlanEntries.map((entry) => {
     const fragment = fragments[entry.id]
     const planIndex = fragmentOrder.indexOf(entry.id)
     const reservedHeight = resolveReservedFragmentHeight({
@@ -192,7 +197,7 @@ export const buildStaticFragmentRouteModel = ({
     }
   })
 
-  const inlineStyles = plan.fragments
+  const inlineStyles = effectivePlanEntries
     .map((entry) => fragments[entry.id])
     .filter((fragment) => fragment?.css && !getFragmentCssHref(fragment.id))
     .map((fragment) => ({
@@ -213,7 +218,7 @@ export const buildStaticFragmentRouteModel = ({
       versionSignature,
       runtimePlanEntries,
       runtimeFetchGroups,
-      runtimeInitialFragments: plan.fragments
+      runtimeInitialFragments: effectivePlanEntries
         .map((entry) => fragments[entry.id])
         .filter((fragment): fragment is NonNullable<typeof fragment> => Boolean(fragment)),
       fragmentVersions,

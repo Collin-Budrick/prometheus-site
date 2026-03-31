@@ -26,7 +26,6 @@ const serializeJson = (value: unknown) =>
 
 export const StaticFragmentRoute = component$<StaticFragmentRouteProps>(({ model }) => {
   const entries = model.entries
-  const leftCount = Math.ceil(entries.length / 2)
   const nonce = useCspNonce()
 
   return (
@@ -51,7 +50,7 @@ export const StaticFragmentRoute = component$<StaticFragmentRouteProps>(({ model
       </noscript>
       <div class="fragment-grid fragment-grid-static-home" data-fragment-grid="main">
         {entries.map((entry, index) => {
-          const column = index < leftCount ? '1' : '2'
+          const column = entry.layout.column || 'span 12'
           const style = {
             '--fragment-min-height': `${entry.reservedHeight}px`,
             gridColumn: column
@@ -59,7 +58,7 @@ export const StaticFragmentRoute = component$<StaticFragmentRouteProps>(({ model
 
           return (
             <article
-              key={entry.id}
+              key={entry.id ?? `fragment-card-${index}`}
               class="fragment-card fragment-card-static-home"
               data-critical={entry.critical ? 'true' : undefined}
               data-fragment-id={entry.id}
