@@ -271,6 +271,72 @@ describe('static-fragment-model', () => {
     expect(model.entries[1]?.html).toContain('data-fragment-widget="store-create"')
   })
 
+  it('marks widget-backed static fragment cards as fallback and text-only cards as floors', () => {
+    const plan = {
+      path: '/store',
+      createdAt: 1,
+      fragments: [
+        {
+          id: 'fragment://page/store/summary@v1',
+          critical: true,
+          layout: { column: 'span 12' }
+        },
+        {
+          id: 'fragment://page/store/stream@v5',
+          critical: true,
+          layout: { column: 'span 12' }
+        }
+      ]
+    } as const
+
+    const model = buildStaticFragmentRouteModel({
+      plan: plan as never,
+      fragments: {
+        'fragment://page/store/summary@v1': {
+          id: 'fragment://page/store/summary@v1',
+          tree: h('section', null, [
+            h('div', { class: 'meta-line' }, [t('store summary')]),
+            h('h2', null, [t('Summary')]),
+            h('p', null, [t('Static summary shell.')])
+          ]),
+          head: [],
+          css: '',
+          meta: {
+            cacheKey: 'summary:1',
+            ttl: 30,
+            staleTtl: 60,
+            tags: [],
+            runtime: 'edge'
+          },
+          cacheUpdatedAt: 1
+        },
+        'fragment://page/store/stream@v5': {
+          id: 'fragment://page/store/stream@v5',
+          tree: h('store-stream', { class: 'store-stream' }, []),
+          head: [],
+          css: '',
+          meta: {
+            cacheKey: 'stream:3',
+            ttl: 30,
+            staleTtl: 60,
+            tags: [],
+            runtime: 'edge'
+          },
+          cacheUpdatedAt: 2
+        }
+      },
+      lang: 'en',
+      storeSeed: {
+        stream: { items: [], sort: 'id', dir: 'asc' },
+        cart: { items: [], queuedCount: 0 }
+      }
+    })
+
+    expect(model.entries[0]?.pretextCardMode).toBe('floor')
+    expect(model.entries[0]?.html).toContain('data-pretext-text="store summary"')
+    expect(model.entries[1]?.pretextCardMode).toBe('fallback')
+  })
+
   it('renders custom fragment tags from tree payloads even when raw html is present', () => {
     const plan = {
       path: '/store',

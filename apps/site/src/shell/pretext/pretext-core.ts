@@ -8,6 +8,7 @@ export type PretextTextSpec = {
   whiteSpace?: PretextWhiteSpace
   maxLines?: number
   maxHeight?: number
+  maxWidthCh?: number
 }
 
 export type PretextMeasurement = {
@@ -21,6 +22,7 @@ export type PretextAdapterDeps<PreparedText> = {
     height: number
     lineCount: number
   }
+  measureTextWidth?: (text: string, font: string) => number
   prepare: (
     text: string,
     font: string,
@@ -42,6 +44,7 @@ type NormalizedPretextTextSpec = {
   lineHeight: number
   maxHeight?: number
   maxLines?: number
+  maxWidthCh?: number
   text: string
   whiteSpace: PretextWhiteSpace
 }
@@ -70,6 +73,13 @@ const normalizeMaxHeight = (value: number | undefined) => {
   return Math.max(1, Number((value as number).toFixed(3)))
 }
 
+const normalizeMaxWidthCh = (value: number | undefined) => {
+  if (!Number.isFinite(value) || (value ?? 0) <= 0) {
+    return undefined
+  }
+  return Math.max(1, Math.floor(value as number))
+}
+
 export const normalizePretextTextSpec = (
   spec: PretextTextSpec
 ): NormalizedPretextTextSpec => ({
@@ -78,6 +88,7 @@ export const normalizePretextTextSpec = (
   lineHeight: normalizeLineHeight(spec.lineHeight),
   maxHeight: normalizeMaxHeight(spec.maxHeight),
   maxLines: normalizeLimit(spec.maxLines),
+  maxWidthCh: normalizeMaxWidthCh(spec.maxWidthCh),
   text: spec.text,
   whiteSpace: normalizeWhiteSpace(spec.whiteSpace)
 })
@@ -91,6 +102,7 @@ export const buildPretextCacheKey = (spec: PretextTextSpec) => {
     normalized.whiteSpace,
     normalized.maxLines ? `lines:${normalized.maxLines}` : 'lines:',
     normalized.maxHeight ? `height:${normalized.maxHeight}` : 'height:',
+    normalized.maxWidthCh ? `width-ch:${normalized.maxWidthCh}` : 'width-ch:',
     normalized.text
   ]
   return segments.join('\u241f')
@@ -98,6 +110,7 @@ export const buildPretextCacheKey = (spec: PretextTextSpec) => {
 
 export const createPretextAdapter = <PreparedText>({
   layout,
+  measureTextWidth,
   prepare,
   setLocale
 }: PretextAdapterDeps<PreparedText>): PretextAdapter => {
@@ -132,6 +145,15 @@ export const createPretextAdapter = <PreparedText>({
       return null
     }
 
+    const chWidth =
+      normalized.maxWidthCh && normalized.maxWidthCh > 0
+        ? measureTextWidth?.('0'.repeat(normalized.maxWidthCh), normalized.font)
+        : undefined
+    const clampedWidth =
+      typeof chWidth === 'number' && Number.isFinite(chWidth) && chWidth > 0
+        ? Math.max(1, Math.floor(Math.min(normalizedWidth, chWidth)))
+        : normalizedWidth
+
     syncLocale(normalized.lang)
     const cacheKey = buildPretextCacheKey(normalized)
     let prepared = preparedCache.get(cacheKey)
@@ -142,7 +164,7 @@ export const createPretextAdapter = <PreparedText>({
       preparedCache.set(cacheKey, prepared)
     }
 
-    const measured = layout(prepared, normalizedWidth, normalized.lineHeight)
+    const measured = layout(prepared, clampedWidth, normalized.lineHeight)
     const maxLineHeight =
       normalized.maxLines && normalized.maxLines > 0
         ? normalized.maxLines * normalized.lineHeight

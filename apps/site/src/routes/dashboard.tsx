@@ -16,6 +16,7 @@ import { createStaticIslandRouteData } from '../shell/core/island-static-data'
 import { STATIC_ISLAND_DATA_SCRIPT_ID } from '../shell/core/constants'
 import { isStaticShellBuild } from '../shell/core/build-mode'
 import { buildGlobalStylesheetLinks } from '../shell/core/global-style-assets'
+import { buildStaticRouteTemplatePretextProps } from '../shell/pretext/pretext-template'
 
 type ProtectedRouteData = {
   lang: Lang
@@ -73,6 +74,12 @@ export default component$(() => {
         description={description}
         actionLabel={copy.value.protectedAction}
         closeLabel={copy.value.fragmentClose}
+        {...buildStaticRouteTemplatePretextProps({
+          description,
+          lang: data.value.lang,
+          metaLine: copy.value.protectedMetaLine,
+          title: copy.value.navDashboard
+        })}
       />
     </StaticPageRoot>
   )

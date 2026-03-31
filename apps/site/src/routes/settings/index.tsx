@@ -41,6 +41,7 @@ import {
   signOutSpacetimeAuth
 } from '../../features/auth/spacetime-auth'
 import { buildGlobalStylesheetLinks } from '../../shell/core/global-style-assets'
+import { buildStaticRouteTemplatePretextProps } from '../../shell/pretext/pretext-template'
 
 type ProtectedRouteData = {
   lang: Lang
@@ -382,6 +383,13 @@ export default component$(() => {
         actionDisabled={logoutBusy.value}
         onAction$={handleLogout}
         closeLabel={copy.value.fragmentClose}
+        {...buildStaticRouteTemplatePretextProps({
+          cardMode: 'fallback',
+          description,
+          lang: data.value.lang,
+          metaLine: copy.value.protectedMetaLine,
+          title: copy.value.navSettings
+        })}
       >
         <div data-static-settings-root>
       {messagingEnabled ? (

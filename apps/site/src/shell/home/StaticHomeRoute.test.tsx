@@ -135,6 +135,8 @@ describe('StaticHomeRoute', () => {
     expect(manifestoCard?.html).toContain('data-pretext-role="title"')
     expect(manifestoCard?.html).toContain('data-pretext-role="body"')
     expect(manifestoCard?.html).toContain('data-pretext-role="pill"')
+    expect(manifestoCard?.html).toContain('data-pretext-text="fragment manifesto"')
+    expect(manifestoCard?.html).toContain('data-pretext-width-kind="static-home-card"')
     expect(manifestoCard?.html).not.toContain('<p class="inline-list"')
     expect(state?.runtimePlanEntries).toEqual([
       {
@@ -158,6 +160,8 @@ describe('StaticHomeRoute', () => {
     expect(plannerCard?.html).toContain('data-pretext-role="meta"')
     expect(plannerCard?.html).toContain('data-pretext-role="title"')
     expect(plannerCard?.html).toContain('data-pretext-role="body"')
+    expect(plannerCard?.html).toContain('data-pretext-text="fragment planner"')
+    expect(plannerCard?.html).toContain('data-pretext-width-desktop=')
     expect(plannerCard?.html).toContain('planner-demo')
     expect(plannerCard?.html).toContain('Resolve deps')
     expect(plannerCard?.html).not.toContain('home-fragment-shell')

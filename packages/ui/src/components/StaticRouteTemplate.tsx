@@ -8,6 +8,10 @@ type StaticRouteTemplateProps = {
   description: string
   metaLine: string
   onAction$?: PropFunction<() => void | Promise<void>>
+  pretextCardAttrs?: Record<string, string>
+  pretextDescriptionAttrs?: Record<string, string>
+  pretextMetaAttrs?: Record<string, string>
+  pretextTitleAttrs?: Record<string, string>
   title: string
   expandable?: boolean
   fullWidth?: boolean
@@ -23,6 +27,10 @@ export const StaticRouteTemplate = component$<StaticRouteTemplateProps>(
     description,
     metaLine,
     onAction$,
+    pretextCardAttrs,
+    pretextDescriptionAttrs,
+    pretextMetaAttrs,
+    pretextTitleAttrs,
     title,
     expandable,
     fullWidth,
@@ -96,17 +104,22 @@ export const StaticRouteTemplate = component$<StaticRouteTemplateProps>(
             motionDelay={0}
             expandedId={expandedId}
             layoutTick={layoutTick}
-            closeLabel={closeLabel}
-            expandable={expandable}
-            fullWidth={fullWidth}
-            inlineSpan={inlineSpan}
-            size={size}
-          >
-            <div class="meta-line" data-pretext-role="meta">
+          closeLabel={closeLabel}
+          expandable={expandable}
+          fullWidth={fullWidth}
+          inlineSpan={inlineSpan}
+          rootAttrs={pretextCardAttrs}
+          size={size}
+        >
+            <div class="meta-line" data-pretext-role="meta" {...pretextMetaAttrs}>
               {metaLine}
             </div>
-            <h1 data-pretext-role="title">{title}</h1>
-            <p data-pretext-role="body">{description}</p>
+            <h1 data-pretext-role="title" {...pretextTitleAttrs}>
+              {title}
+            </h1>
+            <p data-pretext-role="body" {...pretextDescriptionAttrs}>
+              {description}
+            </p>
             <Slot />
             <button
               class="action-button"

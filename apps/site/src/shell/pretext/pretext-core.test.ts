@@ -56,7 +56,8 @@ describe('pretext-core', () => {
       lang: ' EN ',
       whiteSpace: undefined,
       maxLines: 3.8,
-      maxHeight: 44.5678
+      maxHeight: 44.5678,
+      maxWidthCh: 64.9
     }
 
     expect(normalizePretextTextSpec(baseSpec)).toEqual({
@@ -66,7 +67,8 @@ describe('pretext-core', () => {
       lang: 'en',
       whiteSpace: 'normal',
       maxLines: 3,
-      maxHeight: 44.568
+      maxHeight: 44.568,
+      maxWidthCh: 64
     })
 
     expect(buildPretextCacheKey(baseSpec)).toBe(
@@ -189,5 +191,38 @@ describe('pretext-core', () => {
       height: 40,
       lineCount: 3
     })
+  })
+
+  it('clamps layout width by maxWidthCh without re-preparing text', () => {
+    const prepareCalls: string[] = []
+    const layoutWidths: number[] = []
+    const adapter = createPretextAdapter({
+      prepare: (text, font) => {
+        prepareCalls.push(`${font}:${text}`)
+        return { font, text }
+      },
+      layout: (_prepared, maxWidth, lineHeight) => {
+        layoutWidths.push(maxWidth)
+        return {
+          height: lineHeight,
+          lineCount: 1
+        }
+      },
+      measureTextWidth: (text) => text.length * 6,
+      setLocale: () => {}
+    })
+
+    const spec = {
+      text: 'Field brief',
+      font: '600 16px system-ui',
+      lineHeight: 24,
+      lang: 'en',
+      maxWidthCh: 4
+    }
+
+    expect(adapter.measure(spec, 320)?.height).toBe(24)
+    expect(adapter.measure(spec, 320)?.height).toBe(24)
+    expect(layoutWidths).toEqual([24, 24])
+    expect(prepareCalls).toHaveLength(1)
   })
 })

@@ -93,7 +93,21 @@ const readCardWidthBucketHint = (
   return fallbackValue || null
 }
 
+const resolveCardWidthFromBucketHint = (widthBucket: string | null) => {
+  if (!widthBucket) {
+    return null
+  }
+
+  const [, rawMaxWidth = ''] = widthBucket.split(':', 2)
+  const parsed = Number.parseInt(rawMaxWidth.trim(), 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+}
+
 const readCardWidth = (card: HTMLElement) => {
+  const hintedWidth = resolveCardWidthFromBucketHint(readCardWidthBucketHint(card))
+  if (hintedWidth) {
+    return hintedWidth
+  }
   const width = Math.ceil(card.getBoundingClientRect().width)
   return width > 0 ? width : null
 }
@@ -116,10 +130,11 @@ const readFragmentCardMetrics = (card: HTMLElement): FragmentCardMetrics => {
 }
 
 const resolveCardHeightBucket = (card: HTMLElement, cardWidth: number | null = null) => {
-  const resolvedCardWidth = cardWidth ?? readCardWidth(card)
-  const viewport = getFragmentHeightViewport(resolvedCardWidth ?? undefined)
-  const layout = readCardHeightLayout(card) ?? buildFallbackCardHeightLayout(card)
+  const viewport = getFragmentHeightViewport()
   const hintedWidthBucket = readCardWidthBucketHint(card, viewport)
+  const hintedCardWidth = resolveCardWidthFromBucketHint(hintedWidthBucket)
+  const resolvedCardWidth = cardWidth ?? hintedCardWidth ?? readCardWidth(card)
+  const layout = readCardHeightLayout(card) ?? buildFallbackCardHeightLayout(card)
   if (!layout) {
     return {
       layout: null,

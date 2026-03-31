@@ -1,18 +1,49 @@
 import { normalizeFragmentHeight } from '@prometheus/ui/fragment-height'
 import type { PretextAdapter, PretextTextSpec, PretextWhiteSpace } from './pretext-core'
 import { pretextAdapter } from './pretext-runtime'
+import {
+  PRETEXT_CARD_BASE_DESKTOP_ATTR,
+  PRETEXT_CARD_BASE_MOBILE_ATTR,
+  PRETEXT_CARD_CONTRACT_ATTR,
+  PRETEXT_CARD_HEIGHT_ATTR,
+  PRETEXT_FONT_ATTR,
+  PRETEXT_HEIGHT_ATTR,
+  PRETEXT_LANG_ATTR,
+  PRETEXT_LINE_HEIGHT_ATTR,
+  PRETEXT_MAX_HEIGHT_ATTR,
+  PRETEXT_MAX_LINES_ATTR,
+  PRETEXT_MAX_WIDTH_CH_ATTR,
+  PRETEXT_ROLE_ATTR,
+  PRETEXT_TEXT_ATTR,
+  PRETEXT_WHITE_SPACE_ATTR,
+  PRETEXT_WIDTH_DESKTOP_ATTR,
+  PRETEXT_WIDTH_KIND_ATTR,
+  PRETEXT_WIDTH_MOBILE_ATTR,
+  resolveStaticWidthByKind,
+  type PretextCardContractMode,
+  type PretextRole,
+  type PretextStaticWidthKind
+} from './pretext-static'
 
-export const PRETEXT_ROLE_ATTR = 'data-pretext-role'
-export const PRETEXT_FONT_ATTR = 'data-pretext-font'
-export const PRETEXT_LINE_HEIGHT_ATTR = 'data-pretext-line-height'
-export const PRETEXT_WHITE_SPACE_ATTR = 'data-pretext-white-space'
-export const PRETEXT_LANG_ATTR = 'data-pretext-lang'
-export const PRETEXT_MAX_LINES_ATTR = 'data-pretext-max-lines'
-export const PRETEXT_MAX_HEIGHT_ATTR = 'data-pretext-max-height'
-export const PRETEXT_HEIGHT_ATTR = 'data-pretext-height'
-export const PRETEXT_CARD_HEIGHT_ATTR = 'data-pretext-card-height'
-
-type PretextRole = 'body' | 'meta' | 'pill' | 'title'
+export {
+  PRETEXT_CARD_BASE_DESKTOP_ATTR,
+  PRETEXT_CARD_BASE_MOBILE_ATTR,
+  PRETEXT_CARD_CONTRACT_ATTR,
+  PRETEXT_CARD_HEIGHT_ATTR,
+  PRETEXT_FONT_ATTR,
+  PRETEXT_HEIGHT_ATTR,
+  PRETEXT_LANG_ATTR,
+  PRETEXT_LINE_HEIGHT_ATTR,
+  PRETEXT_MAX_HEIGHT_ATTR,
+  PRETEXT_MAX_LINES_ATTR,
+  PRETEXT_MAX_WIDTH_CH_ATTR,
+  PRETEXT_ROLE_ATTR,
+  PRETEXT_TEXT_ATTR,
+  PRETEXT_WHITE_SPACE_ATTR,
+  PRETEXT_WIDTH_DESKTOP_ATTR,
+  PRETEXT_WIDTH_KIND_ATTR,
+  PRETEXT_WIDTH_MOBILE_ATTR
+} from './pretext-static'
 
 type PretextTextElement = HTMLElement & {
   dataset: DOMStringMap
@@ -25,10 +56,20 @@ type PretextMeasureResult = {
 
 type ResolvedPretextTextSpec = Pick<
   PretextTextSpec,
-  'font' | 'lang' | 'lineHeight' | 'maxHeight' | 'maxLines' | 'text'
+  'font' | 'lang' | 'lineHeight' | 'maxHeight' | 'maxLines' | 'maxWidthCh' | 'text'
 > & {
   role: PretextRole
   whiteSpace: PretextWhiteSpace
+}
+
+type ResolvedContractMeasurement = {
+  spec: ResolvedPretextTextSpec
+  width: number
+}
+
+type PretextCardAggregate = {
+  fallbackMeasured: boolean
+  sumHeight: number
 }
 
 type PretextDomController = {
@@ -147,17 +188,14 @@ const resolveRole = (element: HTMLElement): PretextRole | null => {
 }
 
 const resolveText = (element: HTMLElement, whiteSpace: PretextWhiteSpace) => {
-  const raw =
-    element.getAttribute('data-pretext-text') ??
-    element.textContent ??
-    ''
+  const raw = element.getAttribute(PRETEXT_TEXT_ATTR) ?? element.textContent ?? ''
   if (whiteSpace === 'pre-wrap') {
     return raw
   }
   return raw.replace(/\s+/g, ' ').trim()
 }
 
-const resolveWidth = (element: HTMLElement) => {
+const resolveFallbackWidth = (element: HTMLElement) => {
   const rect =
     typeof element.getBoundingClientRect === 'function'
       ? element.getBoundingClientRect()
@@ -171,6 +209,9 @@ const resolveWidth = (element: HTMLElement) => {
 
 const shouldSkipElement = (element: HTMLElement) => {
   if (element.closest('button, label, textarea, input, select, option, code, pre')) {
+    return true
+  }
+  if (element.closest('[hidden], [aria-hidden="true"]')) {
     return true
   }
   if (element.getAttribute('aria-hidden') === 'true') {
@@ -208,6 +249,86 @@ const resolveLang = (element: HTMLElement, fallbackLang?: string) => {
   return explicit.toLowerCase()
 }
 
+const resolveContractWidth = (element: HTMLElement) => {
+  const desktopHint = readNumberAttr(element, PRETEXT_WIDTH_DESKTOP_ATTR)
+  const mobileHint = readNumberAttr(element, PRETEXT_WIDTH_MOBILE_ATTR)
+  if (desktopHint === undefined && mobileHint === undefined) {
+    return null
+  }
+
+  const viewportWidth =
+    typeof window !== 'undefined'
+      ? Math.max(0, Math.floor(window.innerWidth || document.documentElement?.clientWidth || 0))
+      : 0
+  const viewport = viewportWidth >= 1025 ? 'desktop' : 'mobile'
+  const widthKind = element.getAttribute(PRETEXT_WIDTH_KIND_ATTR)?.trim() as
+    | PretextStaticWidthKind
+    | undefined
+
+  const hintedWidth =
+    viewport === 'desktop'
+      ? desktopHint ?? mobileHint ?? null
+      : mobileHint ?? desktopHint ?? null
+
+  if (!widthKind) {
+    return hintedWidth
+  }
+
+  const derivedWidth =
+    viewportWidth > 0
+      ? resolveStaticWidthByKind(widthKind, viewportWidth)
+      : viewport === 'desktop'
+        ? desktopHint ?? null
+        : mobileHint ?? null
+  if (hintedWidth === null) {
+    return derivedWidth
+  }
+  if (derivedWidth === null) {
+    return hintedWidth
+  }
+  return Math.max(1, Math.floor(Math.min(hintedWidth, derivedWidth)))
+}
+
+const resolveContractSpec = (
+  element: HTMLElement,
+  fallbackLang?: string
+): ResolvedContractMeasurement | null => {
+  if (shouldSkipElement(element)) {
+    return null
+  }
+
+  const role = resolveRole(element)
+  const text = element.getAttribute(PRETEXT_TEXT_ATTR)
+  const font = element.getAttribute(PRETEXT_FONT_ATTR)?.trim()
+  const lineHeight = readNumberAttr(element, PRETEXT_LINE_HEIGHT_ATTR)
+  const width = resolveContractWidth(element)
+
+  if (!role || !text || !font || !lineHeight || !width || width <= 0) {
+    return null
+  }
+
+  const whiteSpace = resolveWhiteSpace(element.getAttribute(PRETEXT_WHITE_SPACE_ATTR), null)
+  const lang = resolveLang(element, fallbackLang)
+  const maxLines = readNumberAttr(element, PRETEXT_MAX_LINES_ATTR)
+  const maxHeight = readNumberAttr(element, PRETEXT_MAX_HEIGHT_ATTR)
+  const maxWidthCh = readNumberAttr(element, PRETEXT_MAX_WIDTH_CH_ATTR)
+
+  return {
+    width,
+    spec: {
+      role,
+      text,
+      font,
+      lineHeight,
+      lang,
+      whiteSpace,
+      ...(maxLines ? { maxLines } : {}),
+      ...(maxHeight ? { maxHeight } : {}),
+      ...(maxWidthCh ? { maxWidthCh } : {})
+    }
+  }
+}
+
 const writeElementContract = (
   element: HTMLElement,
   spec: Pick<PretextTextSpec, 'font' | 'lang' | 'lineHeight'> & {
@@ -233,7 +354,7 @@ const writeElementContract = (
   }
 }
 
-const resolveSpec = (
+const resolveFallbackSpec = (
   element: HTMLElement,
   fallbackLang?: string
 ): ResolvedPretextTextSpec | null => {
@@ -258,6 +379,7 @@ const resolveSpec = (
   const lang = resolveLang(element, fallbackLang)
   const maxLines = readNumberAttr(element, PRETEXT_MAX_LINES_ATTR)
   const maxHeight = readNumberAttr(element, PRETEXT_MAX_HEIGHT_ATTR)
+  const maxWidthCh = readNumberAttr(element, PRETEXT_MAX_WIDTH_CH_ATTR)
 
   if (!font || lineHeight <= 0) {
     return null
@@ -271,7 +393,8 @@ const resolveSpec = (
     lang,
     whiteSpace,
     ...(maxLines ? { maxLines } : {}),
-    ...(maxHeight ? { maxHeight } : {})
+    ...(maxHeight ? { maxHeight } : {}),
+    ...(maxWidthCh ? { maxWidthCh } : {})
   }
 }
 
@@ -292,6 +415,90 @@ const applyMeasuredHeight = (element: HTMLElement, height: number) => {
   element.style.setProperty('min-height', `${normalizedHeight}px`)
 }
 
+const getCardAggregate = (
+  aggregates: Map<HTMLElement, PretextCardAggregate>,
+  card: HTMLElement
+) => {
+  let aggregate = aggregates.get(card)
+  if (!aggregate) {
+    aggregate = {
+      fallbackMeasured: false,
+      sumHeight: 0
+    }
+    aggregates.set(card, aggregate)
+  }
+  return aggregate
+}
+
+const readCardContractMode = (card: HTMLElement): PretextCardContractMode => {
+  const value = card.getAttribute(PRETEXT_CARD_CONTRACT_ATTR)?.trim()
+  return value === 'full' || value === 'floor' ? value : 'fallback'
+}
+
+const readCardBaseHeight = (card: HTMLElement) => {
+  const viewportWidth =
+    typeof window !== 'undefined'
+      ? Math.max(0, Math.floor(window.innerWidth || document.documentElement?.clientWidth || 0))
+      : 0
+  const viewport = viewportWidth >= 1025 ? 'desktop' : 'mobile'
+  const desktop = readNumberAttr(card, PRETEXT_CARD_BASE_DESKTOP_ATTR)
+  const mobile = readNumberAttr(card, PRETEXT_CARD_BASE_MOBILE_ATTR)
+  return viewport === 'desktop' ? desktop ?? mobile ?? null : mobile ?? desktop ?? null
+}
+
+const applyCardHeightFromContract = ({
+  card,
+  contractMode,
+  aggregate
+}: {
+  aggregate: PretextCardAggregate
+  card: HTMLElement
+  contractMode: PretextCardContractMode
+}) => {
+  const baseHeight = readCardBaseHeight(card)
+  const nextHeight =
+    contractMode === 'full' && baseHeight !== null
+      ? aggregate.sumHeight + baseHeight
+      : contractMode === 'floor' && aggregate.sumHeight > 0
+        ? aggregate.sumHeight
+        : null
+
+  if (!nextHeight || nextHeight <= 0) {
+    return null
+  }
+
+  const normalizedHeight = normalizeFragmentHeight(nextHeight)
+  if (normalizedHeight === null) {
+    return null
+  }
+
+  const nextValue = `${normalizedHeight}`
+  if (card.getAttribute(PRETEXT_CARD_HEIGHT_ATTR) !== nextValue) {
+    card.setAttribute(PRETEXT_CARD_HEIGHT_ATTR, nextValue)
+  }
+
+  const currentHint = normalizeFragmentHeight(card.getAttribute('data-fragment-height-hint') ?? null) ?? 0
+  if (normalizedHeight > currentHint) {
+    card.style.setProperty('--fragment-min-height', `${normalizedHeight}px`)
+    card.setAttribute('data-fragment-height-hint', nextValue)
+  }
+
+  return normalizedHeight
+}
+
+const applyCardHeightFromDom = (card: HTMLElement) => {
+  const measuredHeight = normalizeFragmentHeight(card.scrollHeight) ?? 0
+  if (measuredHeight <= 0) {
+    card.removeAttribute(PRETEXT_CARD_HEIGHT_ATTR)
+    return null
+  }
+  const nextValue = `${measuredHeight}`
+  if (card.getAttribute(PRETEXT_CARD_HEIGHT_ATTR) !== nextValue) {
+    card.setAttribute(PRETEXT_CARD_HEIGHT_ATTR, nextValue)
+  }
+  return measuredHeight
+}
+
 export const measurePretextLayout = ({
   adapter = pretextAdapter,
   lang,
@@ -308,21 +515,41 @@ export const measurePretextLayout = ({
 
   adapter.syncLocale(lang)
   const touchedCards = new Set<HTMLElement>()
+  const cardAggregates = new Map<HTMLElement, PretextCardAggregate>()
   let elementCount = 0
 
   collectTextElements(resolvedRoot).forEach((element) => {
-    const spec = resolveSpec(element, lang)
-    if (!spec) {
+    const contract = resolveContractSpec(element, lang)
+    if (contract) {
+      const measurement = adapter.measure(contract.spec, contract.width)
+      if (!measurement) {
+        return
+      }
+
+      applyMeasuredHeight(element, measurement.height)
+      elementCount += 1
+      const card = element.closest<HTMLElement>('.fragment-card')
+      if (card) {
+        touchedCards.add(card)
+        if (contract.spec.role !== 'pill') {
+          getCardAggregate(cardAggregates, card).sumHeight += measurement.height
+        }
+      }
       return
     }
 
-    const width = resolveWidth(element)
+    const fallbackSpec = resolveFallbackSpec(element, lang)
+    if (!fallbackSpec) {
+      return
+    }
+
+    const width = resolveFallbackWidth(element)
     if (width <= 0) {
       return
     }
 
-    writeElementContract(element, spec)
-    const measurement = adapter.measure(spec, width)
+    writeElementContract(element, fallbackSpec)
+    const measurement = adapter.measure(fallbackSpec, width)
     if (!measurement) {
       return
     }
@@ -332,20 +559,29 @@ export const measurePretextLayout = ({
     const card = element.closest<HTMLElement>('.fragment-card')
     if (card) {
       touchedCards.add(card)
+      if (fallbackSpec.role !== 'pill') {
+        getCardAggregate(cardAggregates, card).sumHeight += measurement.height
+      }
+      getCardAggregate(cardAggregates, card).fallbackMeasured = true
     }
   })
 
   const cards = [...touchedCards].flatMap((card) => {
-    const measuredHeight = normalizeFragmentHeight(card.scrollHeight) ?? 0
-    if (measuredHeight <= 0) {
-      card.removeAttribute(PRETEXT_CARD_HEIGHT_ATTR)
-      return []
+    const aggregate = cardAggregates.get(card) ?? {
+      fallbackMeasured: false,
+      sumHeight: 0
     }
-    const nextValue = `${measuredHeight}`
-    if (card.getAttribute(PRETEXT_CARD_HEIGHT_ATTR) !== nextValue) {
-      card.setAttribute(PRETEXT_CARD_HEIGHT_ATTR, nextValue)
-    }
-    return [{ card, height: measuredHeight }]
+    const contractMode = readCardContractMode(card)
+    const contractHeight =
+      contractMode !== 'fallback' && !aggregate.fallbackMeasured
+        ? applyCardHeightFromContract({
+            card,
+            contractMode,
+            aggregate
+          })
+        : null
+    const height = contractHeight ?? applyCardHeightFromDom(card)
+    return height ? [{ card, height }] : []
   })
 
   return {
@@ -454,7 +690,7 @@ const createPretextDomController = ({
   }
 
   reconnectObservers()
-  schedule()
+  measureNow()
 
   return {
     destroy: () => {
@@ -513,6 +749,7 @@ export const acquirePretextDomController = ({
   const { controller } = win.__PROM_PRETEXT_CONTROLLER__
   controller.updateRoot(root)
   controller.setLang(initialLang)
+  controller.measureNow()
 
   return {
     controller,

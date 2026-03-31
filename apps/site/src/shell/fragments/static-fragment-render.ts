@@ -3,12 +3,14 @@ import type { FragmentPayload, RenderNode } from '../../fragment/types'
 import type { ContactInvitesSeed } from '../../features/messaging/contact-invites-seed'
 import type { StoreSeed } from '../../features/store/store-seed'
 import { buildFragmentWidgetId, createFragmentWidgetMarkerNode } from '../../fragment/widget-markup'
+import { annotateRenderNodePretext } from '../pretext/pretext-render-tree'
 
 type StaticFragmentRenderContext = {
   fragmentId?: string
   storeSeed?: StoreSeed | null
   contactInvitesSeed?: ContactInvitesSeed | null
   copy?: Record<string, unknown> | null
+  lang?: string
 }
 
 type StaticStoreItem = {
@@ -36,8 +38,6 @@ type StaticInvite = {
   id: string
   user: StaticInviteUser
 }
-
-const staticReplacementTags = new Set(['store-stream', 'store-create', 'store-cart', 'contact-invites'])
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null
@@ -512,20 +512,17 @@ const replaceStaticNodes = (node: RenderNode, context: StaticFragmentRenderConte
   }
 }
 
-const hasStaticReplacementNode = (node: RenderNode): boolean => {
-  if (node.type !== 'element') return false
-  if (typeof node.tag === 'string' && staticReplacementTags.has(node.tag)) return true
-  return (node.children ?? []).some((child) => hasStaticReplacementNode(child))
-}
-
 export const renderStaticFragmentTreeHtml = (node: RenderNode, context: StaticFragmentRenderContext = {}) =>
-  renderToHtml(replaceStaticNodes(node, context))
+  renderToHtml(
+    annotateRenderNodePretext(replaceStaticNodes(node, context), {
+      lang: context.lang ?? 'en',
+      widthKind: 'layout-shell-card'
+    })
+  )
 
 export const renderStaticFragmentPayloadHtml = (
   payload: Pick<FragmentPayload, 'id' | 'tree' | 'html'>,
   context: StaticFragmentRenderContext = {}
 ) => {
-  const html = payload.html?.trim()
-  if (html && !hasStaticReplacementNode(payload.tree)) return html
   return renderStaticFragmentTreeHtml(payload.tree, { ...context, fragmentId: payload.id })
 }

@@ -25,6 +25,7 @@ import { buildStaticFragmentRouteModel, type StaticFragmentRouteModel } from '..
 import { buildOfflineShellFragment, offlineShellFragmentId } from '../offline-shell-fragment'
 import { isStaticShellBuild } from '../../shell/core/build-mode'
 import { buildGlobalStylesheetLinks } from '../../shell/core/global-style-assets'
+import { buildStaticRouteTemplatePretextProps } from '../../shell/pretext/pretext-template'
 const storeEnabled = isSiteFeatureEnabled('store')
 type FragmentResource = {
   plan: FragmentPlanValue | null
@@ -157,6 +158,12 @@ const DisabledStoreRoute = component$<{ lang: Lang }>(({ lang }) => {
       description={copy.value.featureUnavailableDescription}
       actionLabel={copy.value.featureUnavailableAction}
       closeLabel={copy.value.fragmentClose}
+      {...buildStaticRouteTemplatePretextProps({
+        description: copy.value.featureUnavailableDescription,
+        lang,
+        metaLine: copy.value.featureUnavailableMeta,
+        title: copy.value.featureUnavailableTitle
+      })}
     />
   )
 })
@@ -171,6 +178,12 @@ const EnabledStoreRoute = component$<{ lang: Lang }>(({ lang }) => {
       description={copy.value.storeDescription}
       actionLabel={copy.value.storeAction}
       closeLabel={copy.value.fragmentClose}
+      {...buildStaticRouteTemplatePretextProps({
+        description: copy.value.storeDescription,
+        lang,
+        metaLine: copy.value.storeMetaLine,
+        title: copy.value.storeTitle
+      })}
     />
   )
 })

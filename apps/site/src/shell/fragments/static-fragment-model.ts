@@ -1,5 +1,10 @@
 import { getFragmentCssHref } from '../../fragment/fragment-css'
-import type { FragmentPayload, FragmentPayloadValue, FragmentPlanValue } from '../../fragment/types'
+import type {
+  FragmentPayload,
+  FragmentPayloadValue,
+  FragmentPlanEntry,
+  FragmentPlanValue
+} from '../../fragment/types'
 import type { FragmentRuntimePlanEntry } from '../../fragment/runtime/protocol'
 import type { Lang } from '../../lang'
 import type { ContactInvitesSeed } from '../../features/messaging/contact-invites-seed'
@@ -15,7 +20,6 @@ import {
   readFragmentStableHeight,
   resolveFragmentHeightWidthBucket,
   resolveReservedFragmentHeight,
-  type FragmentHeightLayout,
   type FragmentHeightViewport
 } from '@prometheus/ui/fragment-height'
 
@@ -24,13 +28,14 @@ const DEFAULT_RESERVED_CARD_HEIGHT = 180
 export type StaticFragmentRouteEntryModel = {
   id: string
   critical?: boolean
-  size?: string
-  layout: FragmentHeightLayout
+  size?: FragmentPlanEntry['layout']['size']
+  layout: FragmentPlanEntry['layout']
   reservedHeight: number
   version?: number
   html: string
   desktopWidthBucket?: string | null
   mobileWidthBucket?: string | null
+  pretextCardMode: 'fallback' | 'floor'
 }
 
 export type StaticFragmentRouteModel = {
@@ -142,7 +147,7 @@ export const buildStaticFragmentRouteModel = ({
           versionSignature
         })
       : null
-  const entries = effectivePlanEntries.map((entry) => {
+  const entries = effectivePlanEntries.map<StaticFragmentRouteEntryModel>((entry) => {
     const fragment = fragments[entry.id]
     const planIndex = fragmentOrder.indexOf(entry.id)
     const reservedHeight = resolveReservedFragmentHeight({
@@ -164,6 +169,7 @@ export const buildStaticFragmentRouteModel = ({
           htmlOverride ? { ...fragment, html: htmlOverride } : fragment,
           {
             copy: fragmentCopy,
+            lang,
             storeSeed,
             contactInvitesSeed
           }
@@ -184,6 +190,12 @@ export const buildStaticFragmentRouteModel = ({
         viewport: 'mobile'
       }) ?? null
 
+    const pretextCardMode: StaticFragmentRouteEntryModel['pretextCardMode'] = html.includes(
+      'data-fragment-widget='
+    )
+      ? 'fallback'
+      : 'floor'
+
     return {
       id: entry.id,
       critical: entry.critical || undefined,
@@ -193,7 +205,8 @@ export const buildStaticFragmentRouteModel = ({
       version,
       html,
       desktopWidthBucket,
-      mobileWidthBucket
+      mobileWidthBucket,
+      pretextCardMode
     }
   })
 

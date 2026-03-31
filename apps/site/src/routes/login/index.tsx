@@ -19,6 +19,7 @@ import { getOrCreateRequestCspNonce } from '../../security/server'
 import { StaticPageRoot } from '../../shell/core/StaticPageRoot'
 import { StaticLoginRoute } from '../../shell/auth/StaticLoginRoute'
 import { buildGlobalStylesheetLinks } from '../../shell/core/global-style-assets'
+import { buildStaticRouteTemplatePretextProps } from '../../shell/pretext/pretext-template'
 
 const loginEnabled = isSiteFeatureEnabled('auth')
 type LoginResource = {
@@ -80,6 +81,12 @@ const DisabledLoginRoute = component$<{ lang: Lang }>(({ lang }) => {
       description={copy.value.featureUnavailableDescription}
       actionLabel={copy.value.featureUnavailableAction}
       closeLabel={copy.value.fragmentClose}
+      {...buildStaticRouteTemplatePretextProps({
+        description: copy.value.featureUnavailableDescription,
+        lang,
+        metaLine: copy.value.featureUnavailableMeta,
+        title: copy.value.featureUnavailableTitle
+      })}
     />
   )
 })

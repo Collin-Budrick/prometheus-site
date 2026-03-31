@@ -52,6 +52,14 @@ import {
 } from './home-bootstrap-data'
 import { normalizeHomeDemoAssetMap } from './home-demo-runtime-types'
 import { isSiteFeatureEnabled, siteBrand, siteTemplateConfig } from '../../site-config'
+import {
+  buildPretextCardAttrs,
+  buildPretextTextAttrs,
+  PRETEXT_BODY_SPEC,
+  PRETEXT_META_SPEC,
+  PRETEXT_PILL_SPEC,
+  PRETEXT_TITLE_SPEC
+} from '../pretext/pretext-static'
 
 type StaticHomeRouteProps = {
   plan: FragmentPlanValue
@@ -114,6 +122,7 @@ type StaticHomeRenderedCard = {
   previewVisible: boolean
   lcpStable: boolean
   placement: 'hero' | 'main'
+  pretextCardMode: 'fallback' | 'floor'
 }
 
 type StaticHomeRouteState = {
@@ -290,6 +299,7 @@ export const buildStaticHomeRouteState = ({
     const lcpStable = Boolean(entry.critical || fragmentKind === 'dock')
     const html = fragment
       ? renderHomeStaticFragmentHtml(fragment.tree, copyBundle, {
+          lang,
           mode: renderMode,
           fragmentId: entry.id,
           fragmentHeaders
@@ -335,7 +345,8 @@ export const buildStaticHomeRouteState = ({
       revealPhase: patchState === 'ready' || previewVisible ? 'visible' : 'holding',
       previewVisible,
       lcpStable,
-      placement
+      placement,
+      pretextCardMode: html.includes('data-fragment-widget=') ? 'fallback' : 'floor'
     }
   })
 
@@ -431,6 +442,66 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
       ? { href: '/offline', label: uiCopy.homeSecondaryOfflineAction }
       : null
   ].filter((action): action is { href: string; label: string } => action !== null)
+  const introCardAttrs = buildPretextCardAttrs({ mode: 'floor' })
+  const introMetaLine = `${siteTemplateConfig.preset} preset`
+  const introTitle = `${siteBrand.name} template surface`
+  const introMetaAttrs = buildPretextTextAttrs({
+    ...PRETEXT_META_SPEC,
+    lang,
+    role: 'meta',
+    text: introMetaLine,
+    widthKind: 'layout-shell-card'
+  })
+  const introTitleAttrs = buildPretextTextAttrs({
+    ...PRETEXT_TITLE_SPEC,
+    lang,
+    maxWidthCh: 42,
+    role: 'title',
+    text: introTitle,
+    widthKind: 'layout-shell-card'
+  })
+  const introTaglineAttrs = buildPretextTextAttrs({
+    ...PRETEXT_BODY_SPEC,
+    lang,
+    maxWidthCh: 64,
+    role: 'body',
+    text: siteBrand.tagline,
+    widthKind: 'layout-shell-card'
+  })
+  const introAuditAttrs = buildPretextTextAttrs({
+    ...PRETEXT_BODY_SPEC,
+    lang,
+    maxWidthCh: 64,
+    role: 'body',
+    text: uiCopy.homeIntroAuditLine,
+    widthKind: 'layout-shell-card'
+  })
+  const primaryActionAttrs = buildPretextTextAttrs({
+    ...PRETEXT_PILL_SPEC,
+    lang,
+    role: 'pill',
+    text: primaryAction.label,
+    widthKind: 'layout-shell-card'
+  })
+  const secondaryActionAttrs = new Map(
+    secondaryActions.map((action) => [
+      action.href,
+      buildPretextTextAttrs({
+        ...PRETEXT_PILL_SPEC,
+        lang,
+        role: 'pill',
+        text: action.label,
+        widthKind: 'layout-shell-card'
+      })
+    ])
+  )
+  const introProductAttrs = buildPretextTextAttrs({
+    ...PRETEXT_PILL_SPEC,
+    lang,
+    role: 'pill',
+    text: siteBrand.product,
+    widthKind: 'layout-shell-card'
+  })
   const renderHomeCard = (card: StaticHomeRenderedCard) => {
     const style = {
       '--fragment-min-height': `${card.reservedHeight}px`,
@@ -456,6 +527,7 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
         data-size={card.size}
         style={style}
         {...{
+          ...buildPretextCardAttrs({ mode: card.pretextCardMode }),
           [STATIC_FRAGMENT_CARD_ATTR]: 'true',
           [STATIC_FRAGMENT_VERSION_ATTR]: card.version,
           [STATIC_FRAGMENT_WIDTH_BUCKET_ATTR]:
@@ -507,6 +579,7 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
             data-draggable="false"
             data-critical="true"
             data-pretext-card-root="true"
+            {...introCardAttrs}
             {...{ [STATIC_HOME_LCP_STABLE_ATTR]: 'true' }}
             data-fragment-id="shell-intro"
             data-fragment-loaded="true"
@@ -517,15 +590,17 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
           >
             <div class="fragment-card-body">
               <div class="home-intro-copy-block">
-                <div class="meta-line" data-pretext-role="meta">
-                  {`${siteTemplateConfig.preset} preset`}
+                <div class="meta-line" data-pretext-role="meta" {...introMetaAttrs}>
+                  {introMetaLine}
                 </div>
                 <div class="home-intro-copy">
-                  <h1 data-pretext-role="title">{`${siteBrand.name} template surface`}</h1>
-                  <span class="home-intro-copy-line" data-pretext-role="body">
+                  <h1 data-pretext-role="title" {...introTitleAttrs}>
+                    {introTitle}
+                  </h1>
+                  <span class="home-intro-copy-line" data-pretext-role="body" {...introTaglineAttrs}>
                     {siteBrand.tagline}
                   </span>
-                  <span class="home-intro-copy-line" data-pretext-role="body">
+                  <span class="home-intro-copy-line" data-pretext-role="body" {...introAuditAttrs}>
                     {uiCopy.homeIntroAuditLine}
                   </span>
                 </div>
@@ -535,6 +610,7 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
                       class="home-intro-pill"
                       href={withStaticRouteLang(primaryAction.href, lang)}
                       data-pretext-role="pill"
+                      {...primaryActionAttrs}
                       data-fragment-link
                     >
                       {primaryAction.label}
@@ -546,20 +622,24 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
                         class="home-intro-pill"
                         href={withStaticRouteLang(action.href, lang)}
                         data-pretext-role="pill"
+                        {...(secondaryActionAttrs.get(action.href) ?? {})}
                         data-fragment-link
                       >
                         {action.label}
                       </a>
                     </li>
                   ))}
-                  <li class="home-intro-pill" data-pretext-role="pill">
+                  <li class="home-intro-pill" data-pretext-role="pill" {...introProductAttrs}>
                     {siteBrand.product}
                   </li>
                 </ul>
               </div>
               <div
                 class="home-intro"
-                dangerouslySetInnerHTML={asTrustedHtml(renderHomeIntroMarkdownToHtml(introMarkdown), 'template') as string}
+                dangerouslySetInnerHTML={asTrustedHtml(
+                  renderHomeIntroMarkdownToHtml(introMarkdown, lang),
+                  'template'
+                ) as string}
               />
             </div>
           </article>

@@ -5,6 +5,14 @@ import type { UiCopy } from '../../lang/types'
 import { STATIC_ISLAND_DATA_SCRIPT_ID } from '../core/constants'
 import { createStaticIslandRouteData } from '../core/island-static-data'
 import { StaticPageRoot } from '../core/StaticPageRoot'
+import {
+  buildPretextCardAttrs,
+  buildPretextTextAttrs,
+  PRETEXT_BODY_SPEC,
+  PRETEXT_LOGIN_STATUS_SPEC,
+  PRETEXT_META_SPEC,
+  PRETEXT_TITLE_SPEC
+} from '../pretext/pretext-static'
 
 type StaticLoginRouteProps = {
   copy: Pick<
@@ -68,7 +76,79 @@ const authClass = {
   status: authModuleStyles['auth-status']
 } as const
 
+const STATIC_LOGIN_CARD_HEIGHT_HINTS: Record<Lang, { default: number; withNext: number }> = {
+  en: { default: 420, withNext: 456 },
+  ja: { default: 440, withNext: 476 },
+  ko: { default: 452, withNext: 488 }
+}
+
 export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang, nextPath = null }) => {
+  const cardAttrs = buildPretextCardAttrs({ mode: 'floor' })
+  const cardHeightProfile =
+    STATIC_LOGIN_CARD_HEIGHT_HINTS[lang] ?? STATIC_LOGIN_CARD_HEIGHT_HINTS.en
+  const cardHeightHint = nextPath ? cardHeightProfile.withNext : cardHeightProfile.default
+  const headerMetaAttrs = buildPretextTextAttrs({
+    ...PRETEXT_META_SPEC,
+    lang,
+    role: 'meta',
+    text: copy.loginMetaLine,
+    widthKind: 'layout-shell-card'
+  })
+  const headerTitleAttrs = buildPretextTextAttrs({
+    ...PRETEXT_TITLE_SPEC,
+    lang,
+    maxWidthCh: 42,
+    role: 'title',
+    text: copy.loginTitle,
+    widthKind: 'layout-shell-card'
+  })
+  const headerBodyAttrs = buildPretextTextAttrs({
+    ...PRETEXT_BODY_SPEC,
+    lang,
+    maxWidthCh: 64,
+    role: 'body',
+    text: copy.loginDescription,
+    widthKind: 'layout-shell-card'
+  })
+  const runtimeLabelAttrs = buildPretextTextAttrs({
+    ...PRETEXT_META_SPEC,
+    lang,
+    role: 'meta',
+    text: copy.loginRuntimePendingLabel,
+    widthKind: 'static-login-status'
+  })
+  const runtimeHintAttrs = buildPretextTextAttrs({
+    ...PRETEXT_LOGIN_STATUS_SPEC,
+    lang,
+    maxWidthCh: 64,
+    role: 'body',
+    text: copy.loginDescription,
+    widthKind: 'static-login-status'
+  })
+  const nextLabelAttrs = buildPretextTextAttrs({
+    ...PRETEXT_META_SPEC,
+    lang,
+    role: 'meta',
+    text: copy.loginNextLabel,
+    widthKind: 'static-login-status'
+  })
+  const hostedStatusAttrs = buildPretextTextAttrs({
+    ...PRETEXT_LOGIN_STATUS_SPEC,
+    lang,
+    maxWidthCh: 64,
+    role: 'body',
+    text: copy.authHostedStatus,
+    widthKind: 'static-login-status'
+  })
+  const signupStatusAttrs = buildPretextTextAttrs({
+    ...PRETEXT_LOGIN_STATUS_SPEC,
+    lang,
+    maxWidthCh: 64,
+    role: 'body',
+    text: copy.signupDescription,
+    widthKind: 'static-login-status'
+  })
+
   return (
     <StaticPageRoot
       routeDataScriptId={STATIC_ISLAND_DATA_SCRIPT_ID}
@@ -76,7 +156,16 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang,
     >
       <section class={['fragment-shell', authClass.shell].join(' ')}>
         <div class={['fragment-grid', authClass.grid].join(' ')} data-fragment-grid="main">
-          <article class="fragment-card" style={{ gridColumn: 'span 12' }} data-pretext-card-root="true">
+          <article
+            class="fragment-card"
+            style={{
+              gridColumn: 'span 12',
+              '--fragment-min-height': `${cardHeightHint}px`
+            }}
+            data-pretext-card-root="true"
+            data-fragment-height-hint={`${cardHeightHint}`}
+            {...cardAttrs}
+          >
             <div
               class={authClass.card}
               data-static-login-root
@@ -86,24 +175,37 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang,
               data-state="idle"
             >
               <div class={authClass.header}>
-                <div class="meta-line" data-pretext-role="meta">
+                <div class="meta-line" data-pretext-role="meta" {...headerMetaAttrs}>
                   {copy.loginMetaLine}
                 </div>
                 <div class={authClass.title}>
-                  <h1 data-pretext-role="title">{copy.loginTitle}</h1>
-                  <p data-pretext-role="body">{copy.loginDescription}</p>
+                  <h1 data-pretext-role="title" {...headerTitleAttrs}>
+                    {copy.loginTitle}
+                  </h1>
+                  <p data-pretext-role="body" {...headerBodyAttrs}>
+                    {copy.loginDescription}
+                  </p>
                 </div>
               </div>
 
               <div class={authClass.status} data-tone="neutral" data-static-login-runtime-banner>
-                <div class="meta-line" data-static-login-runtime-label data-pretext-role="meta">
+                <div
+                  class="meta-line"
+                  data-static-login-runtime-label
+                  data-pretext-role="meta"
+                  {...runtimeLabelAttrs}
+                >
                   {copy.loginRuntimePendingLabel}
                 </div>
-                <p data-static-login-runtime-hint data-pretext-role="body">
+                <p data-static-login-runtime-hint data-pretext-role="body" {...runtimeHintAttrs}>
                   {copy.loginDescription}
                 </p>
                 <p hidden={!nextPath} data-static-login-next>
-                  <strong data-static-login-next-label data-pretext-role="meta">
+                  <strong
+                    data-static-login-next-label
+                    data-pretext-role="meta"
+                    {...nextLabelAttrs}
+                  >
                     {copy.loginNextLabel}
                   </strong>{' '}
                   <code data-static-login-next-code>{nextPath ?? ''}</code>
@@ -190,6 +292,7 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang,
                     data-tone="neutral"
                     data-static-login-login-hint
                     data-pretext-role="body"
+                    {...hostedStatusAttrs}
                   >
                     {copy.authHostedStatus}
                   </div>
@@ -246,6 +349,7 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang,
                     aria-live="polite"
                     data-tone="neutral"
                     data-pretext-role="body"
+                    {...signupStatusAttrs}
                   >
                     {copy.signupDescription}
                   </div>

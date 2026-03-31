@@ -15,6 +15,7 @@ import {
   type LanguageSeedPayload
 } from '../lang/selection'
 import { buildGlobalStylesheetLinks } from '../shell/core/global-style-assets'
+import { buildStaticRouteTemplatePretextProps } from '../shell/pretext/pretext-template'
 
 type OfflineRouteData = {
   lang: Lang
@@ -49,6 +50,12 @@ export default component$(() => {
         description={copy.value.networkOfflineHint}
         actionLabel={copy.value.networkRetrySync}
         closeLabel={copy.value.fragmentClose}
+        {...buildStaticRouteTemplatePretextProps({
+          description: copy.value.networkOfflineHint,
+          lang: data.value.lang,
+          metaLine: copy.value.networkOfflineTitle,
+          title: copy.value.networkOfflineTitle
+        })}
       />
     </StaticPageRoot>
   )

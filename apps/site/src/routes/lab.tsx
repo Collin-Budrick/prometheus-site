@@ -22,6 +22,7 @@ import { StaticFragmentRoute } from '../shell/fragments/StaticFragmentRoute'
 import { buildStaticFragmentRouteModel, type StaticFragmentRouteModel } from '../shell/fragments/static-fragment-model'
 import { isStaticShellBuild } from '../shell/core/build-mode'
 import { buildGlobalStylesheetLinks } from '../shell/core/global-style-assets'
+import { buildStaticRouteTemplatePretextProps } from '../shell/pretext/pretext-template'
 const featureLabModule = await import('@site/features/lab/lab-route')
 const { default: LabRoute, LabSkeleton: FeatureLabSkeleton } = featureLabModule
 type LabCopy = import('@site/features/lab/lab-route').LabCopy
@@ -114,6 +115,12 @@ const DisabledLabRoute = component$<{ lang: Lang }>(({ lang }) => {
       description={copy.value.featureUnavailableDescription}
       actionLabel={copy.value.featureUnavailableAction}
       closeLabel={copy.value.fragmentClose}
+      {...buildStaticRouteTemplatePretextProps({
+        description: copy.value.featureUnavailableDescription,
+        lang,
+        metaLine: copy.value.featureUnavailableMeta,
+        title: copy.value.featureUnavailableTitle
+      })}
     />
   )
 })

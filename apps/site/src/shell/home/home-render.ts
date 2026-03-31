@@ -13,6 +13,7 @@ import {
   createFragmentWidgetMarkerNode,
   type FragmentWidgetPriority
 } from '../../fragment/widget-markup'
+import { annotateRenderNodePretext } from '../pretext/pretext-render-tree'
 
 export type HomeStaticCopyBundle = {
   ui: Pick<UiCopy, 'demoActivate' | 'homeIntroMarkdown'>
@@ -27,6 +28,7 @@ export type HomeStaticFragmentKind = 'manifest' | 'planner' | 'ledger' | 'island
 export type HomeStaticRenderMode = 'preview' | 'rich' | 'shell' | 'stub' | 'active-shell'
 
 export type HomeStaticRenderOptions = {
+  lang?: string
   mode?: HomeStaticRenderMode
   fragmentId?: string
   fragmentHeaders?: Record<string, FragmentHeaderCopy>
@@ -35,7 +37,6 @@ export type HomeStaticRenderOptions = {
 type DemoKind = 'planner' | 'wasm-renderer' | 'react-binary' | 'preact-island'
 type DemoWidgetKind = 'planner-demo' | 'wasm-renderer-demo' | 'react-binary-demo' | 'preact-island'
 type DemoRenderVariant = 'preview' | 'active'
-type PretextRole = 'body' | 'meta' | 'pill' | 'title'
 type DemoWidgetNodeOptions = {
   fragmentId?: string
   widgetId?: string
@@ -99,88 +100,13 @@ const joinFragmentSentences = (copy: HomeStaticCopyBundle, values: string[]) =>
     .filter(Boolean)
     .join(' ')
 
-const PRETEXT_META_CLASSES = new Set([
-  'meta-line',
-  'home-demo-compact-kicker',
-  'home-demo-compact-meta',
-  'home-fragment-shell-meta'
-])
-
-const PRETEXT_PILL_CLASSES = new Set([
-  'home-demo-compact-action',
-  'home-intro-pill',
-  'home-manifest-pill'
-])
-
-const PRETEXT_BODY_CLASSES = new Set([
-  'home-demo-compact-copy',
-  'home-fragment-copy',
-  'home-fragment-shell-copy',
-  'home-fragment-stub-copy',
-  'home-manifest-copy'
-])
-
-const getClassList = (attrs?: Record<string, string>) =>
-  (attrs?.class ?? '')
-    .split(/\s+/)
-    .map((value) => value.trim())
-    .filter(Boolean)
-
-const resolvePretextRole = (node: RenderNode): PretextRole | null => {
-  if (node.type !== 'element') {
-    return null
-  }
-
-  const explicit = node.attrs?.['data-pretext-role']
-  if (explicit === 'body' || explicit === 'meta' || explicit === 'pill' || explicit === 'title') {
-    return explicit
-  }
-
-  const classes = getClassList(node.attrs)
-  if (classes.some((className) => PRETEXT_META_CLASSES.has(className))) {
-    return 'meta'
-  }
-  if (classes.some((className) => PRETEXT_PILL_CLASSES.has(className))) {
-    return 'pill'
-  }
-  if (classes.some((className) => PRETEXT_BODY_CLASSES.has(className))) {
-    return 'body'
-  }
-
-  switch (node.tag) {
-    case 'h1':
-    case 'h2':
-    case 'h3':
-      return 'title'
-    case 'p':
-      return 'body'
-    default:
-      return null
-  }
-}
-
-const applyPretextContract = (node: RenderNode): RenderNode => {
-  if (node.type !== 'element') {
-    return node
-  }
-
-  const role = resolvePretextRole(node)
-  const nextAttrs =
-    role && node.attrs?.['data-pretext-role'] !== role
-      ? {
-          ...(node.attrs ?? {}),
-          'data-pretext-role': role
-        }
-      : node.attrs
-
-  return {
-    ...node,
-    ...(nextAttrs ? { attrs: nextAttrs } : {}),
-    children: node.children?.map((child) => applyPretextContract(child))
-  }
-}
-
-const renderHomeStaticNode = (node: RenderNode) => renderToHtml(applyPretextContract(node))
+const renderHomeStaticNode = (node: RenderNode, lang: string) =>
+  renderToHtml(
+    annotateRenderNodePretext(node, {
+      lang,
+      widthKind: 'static-home-card'
+    })
+  )
 
 const demoRootAttrs = (kind: DemoKind, props?: Record<string, string>) => ({
   class: `home-demo-compact home-demo-compact--${kind}`,
@@ -1162,6 +1088,7 @@ export const renderHomeStaticFragmentHtml = (
   copy: HomeStaticCopyBundle,
   options: HomeStaticRenderOptions = {}
 ) => {
+    const lang = options.lang ?? 'en'
     if (options.fragmentId) {
       if (options.mode === 'preview') {
         switch (getHomeStaticFragmentKind(options.fragmentId)) {
@@ -1169,10 +1096,11 @@ export const renderHomeStaticFragmentHtml = (
           case 'ledger':
           case 'island':
           case 'react':
-            return renderHomeStaticNode(buildHomeStaticPreviewNode(node, copy, options.fragmentId))
+            return renderHomeStaticNode(buildHomeStaticPreviewNode(node, copy, options.fragmentId), lang)
           case 'dock':
             return renderHomeStaticNode(
-              buildDockPreviewNode(options.fragmentId, copy, options.fragmentHeaders)
+              buildDockPreviewNode(options.fragmentId, copy, options.fragmentHeaders),
+              lang
             )
         }
       }
@@ -1183,24 +1111,24 @@ export const renderHomeStaticFragmentHtml = (
         case 'ledger':
         case 'island':
         case 'react':
-          return renderHomeStaticNode(buildHomeStaticActiveShellNode(node, copy, options.fragmentId))
+          return renderHomeStaticNode(buildHomeStaticActiveShellNode(node, copy, options.fragmentId), lang)
       }
     }
 
     if (options.mode === 'shell') {
       const shellNode = buildHomeStaticShellNode(options.fragmentId, copy, options.fragmentHeaders)
       if (shellNode) {
-        return renderHomeStaticNode(shellNode)
+        return renderHomeStaticNode(shellNode, lang)
       }
     }
 
     if (options.mode === 'stub') {
       const stubNode = buildHomeStaticStubForFragment(options.fragmentId, copy, options.fragmentHeaders)
       if (stubNode) {
-        return renderHomeStaticNode(stubNode)
+        return renderHomeStaticNode(stubNode, lang)
       }
     }
   }
 
-  return renderHomeStaticNode(replaceDemoNodes(node, copy, options.fragmentId))
+  return renderHomeStaticNode(replaceDemoNodes(node, copy, options.fragmentId), lang)
 }

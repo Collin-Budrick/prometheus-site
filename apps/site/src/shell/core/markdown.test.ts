@@ -13,6 +13,8 @@ Fragments stream as deterministic binary trees. The shell stays fixed while payl
     expect(html).toContain('home-intro-copy-block')
     expect(html).toContain('home-intro-copy-line')
     expect(html).toContain('home-intro-pills')
+    expect(html).toContain('data-pretext-text="Field brief"')
+    expect(html).toContain('data-pretext-width-kind="layout-shell-card"')
     expect(html).not.toContain('<p>')
     expect(html).not.toContain('<ul><li>')
   })
@@ -20,6 +22,7 @@ Fragments stream as deterministic binary trees. The shell stays fixed while payl
   it('falls back to generic markdown rendering when the intro shape is not recognized', () => {
     const html = renderHomeIntroMarkdownToHtml('Plain fallback copy')
 
-    expect(html).toContain('<div class="home-intro-copy"><span class="home-intro-copy-line">Plain fallback copy</span></div>')
+    expect(html).toContain('<div class="home-intro-copy"><span class="home-intro-copy-line"')
+    expect(html).toContain('data-pretext-text="Plain fallback copy"')
   })
 })

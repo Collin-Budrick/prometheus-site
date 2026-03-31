@@ -13,6 +13,7 @@ import {
 } from '../core/constants'
 import type { StaticFragmentRouteModel } from './static-fragment-model'
 import { READY_STAGGER_STATE_ATTR } from '@prometheus/ui/ready-stagger'
+import { buildPretextCardAttrs } from '../pretext/pretext-static'
 
 type StaticFragmentRouteProps = {
   model: StaticFragmentRouteModel
@@ -73,6 +74,7 @@ export const StaticFragmentRoute = component$<StaticFragmentRouteProps>(({ model
               data-size={entry.size}
               style={style}
               {...{
+                ...buildPretextCardAttrs({ mode: entry.pretextCardMode }),
                 [STATIC_FRAGMENT_CARD_ATTR]: 'true',
                 [STATIC_FRAGMENT_VERSION_ATTR]: entry.version ? `${entry.version}` : undefined,
                 [STATIC_FRAGMENT_WIDTH_BUCKET_ATTR]:

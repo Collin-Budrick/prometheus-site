@@ -6,6 +6,7 @@ import { siteBrand } from '../../site-config'
 import { buildGlobalStylesheetLinks } from '../../shell/core/global-style-assets'
 import { StaticPageRoot } from '../../shell/core/StaticPageRoot'
 import { createCacheHandler, PUBLIC_SWR_CACHE } from '../route-utils'
+import { buildStaticRouteTemplatePretextProps } from '../../shell/pretext/pretext-template'
 import privacyModuleStyles from './privacy.module.css'
 
 const privacyClass = {
@@ -52,6 +53,13 @@ export default component$(() => {
         closeLabel="Close"
         onAction$={contactPrivacyTeam}
         size="big"
+        {...buildStaticRouteTemplatePretextProps({
+          cardMode: 'fallback',
+          description: policyDescription,
+          lang: 'en',
+          metaLine: 'Trust and transparency',
+          title: 'Privacy Policy'
+        })}
       >
         <div class={privacyClass.body}>
           <div class={privacyClass.notice}>

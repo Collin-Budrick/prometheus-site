@@ -236,6 +236,7 @@ export type FragmentCardProps = {
     draggingId?: string | null
   } | null>
   fragmentHeightPersistence?: FragmentHeightPersistenceContext | null
+  rootAttrs?: Record<string, string>
 }
 
 type FragmentCardOverflowEffectsProps = {
@@ -299,7 +300,8 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
     variant,
     row,
     critical,
-    dragState
+    dragState,
+    rootAttrs
   } = props
     const isFullWidth = fullWidth === true
     const resolvedVariant = variant ?? 'card'
@@ -1092,6 +1094,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
           data-reveal-phase={fragmentId ? revealPhase.value : undefined}
           data-reveal-locked={revealLocked.value ? 'true' : 'false'}
           onClick$={canToggleExpand ? handleToggle : undefined}
+          {...rootAttrs}
         >
           {isDraggable ? <span class="fragment-card-drag" data-drag-handle aria-hidden="true" /> : null}
           <div ref={bodyRef} class="fragment-card-body">

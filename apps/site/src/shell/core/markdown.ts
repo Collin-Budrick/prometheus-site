@@ -1,3 +1,10 @@
+import {
+  buildPretextTextAttrs,
+  PRETEXT_BODY_SPEC,
+  PRETEXT_PILL_SPEC,
+  PRETEXT_TITLE_SPEC
+} from '../pretext/pretext-static'
+
 const escapeHtml = (value: string) =>
   value
     .replace(/&/g, '&amp;')
@@ -5,6 +12,11 @@ const escapeHtml = (value: string) =>
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
+
+const renderHtmlAttrs = (attrs: Record<string, string>) =>
+  Object.entries(attrs)
+    .map(([key, value]) => ` ${key}="${escapeHtml(value)}"`)
+    .join('')
 
 const sanitizeUrl = (value: string) => {
   const trimmed = value.trim()
@@ -188,7 +200,7 @@ export const renderMarkdownToHtml = (source: string) => {
   return blocks.join('')
 }
 
-export const renderHomeIntroMarkdownToHtml = (source: string) => {
+export const renderHomeIntroMarkdownToHtml = (source: string, lang = 'en') => {
   const lines = source.replace(/\r\n?/g, '\n').split('\n')
   const headingLine = lines.find((line) => headingMatch(line))
   const heading = headingLine ? headingMatch(headingLine)?.[2]?.trim() ?? '' : ''
@@ -205,14 +217,49 @@ export const renderHomeIntroMarkdownToHtml = (source: string) => {
 
   const parts: string[] = ['<section class="home-intro-copy-block">']
   if (heading) {
-    parts.push(`<h2>${renderInline(heading)}</h2>`)
+    parts.push(
+      `<h2${renderHtmlAttrs(
+        buildPretextTextAttrs({
+          ...PRETEXT_TITLE_SPEC,
+          lang,
+          maxWidthCh: 42,
+          role: 'title',
+          text: heading,
+          widthKind: 'layout-shell-card'
+        })
+      )}>${renderInline(heading)}</h2>`
+    )
   }
   if (lead) {
-    parts.push(`<div class="home-intro-copy"><span class="home-intro-copy-line">${renderInline(lead)}</span></div>`)
+    parts.push(
+      `<div class="home-intro-copy"><span class="home-intro-copy-line"${renderHtmlAttrs(
+        buildPretextTextAttrs({
+          ...PRETEXT_BODY_SPEC,
+          lang,
+          maxWidthCh: 64,
+          role: 'body',
+          text: lead,
+          widthKind: 'layout-shell-card'
+        })
+      )}>${renderInline(lead)}</span></div>`
+    )
   }
   if (bullets.length > 0) {
     parts.push(
-      `<ul class="home-intro-pills">${bullets.map((item) => `<li class="home-intro-pill">${renderInline(item)}</li>`).join('')}</ul>`
+      `<ul class="home-intro-pills">${bullets
+        .map(
+          (item) =>
+            `<li class="home-intro-pill"${renderHtmlAttrs(
+              buildPretextTextAttrs({
+                ...PRETEXT_PILL_SPEC,
+                lang,
+                role: 'pill',
+                text: item,
+                widthKind: 'layout-shell-card'
+              })
+            )}>${renderInline(item)}</li>`
+        )
+        .join('')}</ul>`
     )
   }
   parts.push('</section>')
