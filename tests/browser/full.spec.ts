@@ -59,6 +59,13 @@ const expectBoundingBox = async (locator: ReturnType<Page['locator']>) => {
   return box!
 }
 
+const waitForStoreRuntimeReady = async (page: Page) => {
+  await expect(page.getByRole('button', { name: 'Add to cart' }).first()).toBeEnabled({
+    timeout: 15000
+  })
+  await expect(page.getByText(/Store snapshot ready|Live snapshot/i)).toBeVisible()
+}
+
 test.describe('full preset live route audit', () => {
   test('home route keeps the demo shell interactive', async ({ page }) => {
     test.slow()
@@ -139,8 +146,7 @@ test.describe('full preset live route audit', () => {
       await expectDockShortcuts(page)
       await openAndCloseSettings(page)
 
-      await expect(page.getByRole('button', { name: 'Add to cart' }).first()).toBeEnabled({ timeout: 15000 })
-      await expect(page.getByText(/Store snapshot ready|Live snapshot/i)).toBeVisible()
+      await waitForStoreRuntimeReady(page)
 
       const search = page.getByRole('searchbox', { name: 'Search the store...' })
       await search.fill('Item 15')
@@ -172,6 +178,8 @@ test.describe('full preset live route audit', () => {
       const streamCard = page.locator('article').filter({ has: page.getByText('LIVE CATALOG') }).first()
       const cartCard = page.locator('article').filter({ has: page.getByText(/^Cart$/) }).first()
       const search = page.getByRole('searchbox', { name: 'Search the store...' })
+
+      await waitForStoreRuntimeReady(page)
 
       await search.fill('Item 15')
       await expect(page.locator('.store-stream-meta')).toContainText('1 results')

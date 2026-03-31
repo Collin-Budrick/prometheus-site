@@ -57,6 +57,7 @@ const shouldIgnoreRequestFailure = (request: Request) => {
   }
   return failureText === 'net::ERR_ABORTED' && request.url().includes('/api/fragments/stream')
     || failureText === 'net::ERR_ABORTED' && request.url().includes('/api/auth/get-session')
+    || failureText === 'net::ERR_ABORTED' && request.url().includes('/auth/session')
     || failureText === 'net::ERR_ABORTED' && request.url().includes('/build/static-shell/')
 }
 
