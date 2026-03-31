@@ -5,6 +5,9 @@ export const FRAGMENT_HEIGHT_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30
 export const DEFAULT_FRAGMENT_RESERVED_HEIGHT = 180
 export const FRAGMENT_HEIGHT_DESKTOP_MIN_WIDTH = 1025
 export const FRAGMENT_HEIGHT_BUCKET_STEP = 160
+export const FRAGMENT_RESERVED_HEIGHT_VAR = '--fragment-reserved-height'
+export const FRAGMENT_LIVE_MIN_HEIGHT_VAR = '--fragment-live-min-height'
+export const FRAGMENT_LEGACY_MIN_HEIGHT_VAR = '--fragment-min-height'
 
 const DEFAULT_FRAGMENT_HEIGHTS = {
   small: 440,
@@ -70,6 +73,13 @@ export type ResolveFragmentHeightWidthBucketOptions = {
 }
 
 type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
+type FragmentHeightStyleTarget = Pick<CSSStyleDeclaration, 'getPropertyValue' | 'setProperty' | 'removeProperty'>
+type FragmentHeightReservationTarget = {
+  getAttribute: (name: string) => string | null
+  setAttribute: (name: string, value: string) => void
+  removeAttribute?: (name: string) => void
+  style: FragmentHeightStyleTarget
+}
 
 type ReadFragmentHeightCookieOptions = {
   path: string
@@ -109,6 +119,67 @@ export const normalizeFragmentHeight = (value: unknown) => {
         : Number.NaN
   if (!Number.isFinite(parsed) || parsed <= 0) return null
   return Math.max(1, Math.round(parsed))
+}
+
+const clearStyleProperty = (style: FragmentHeightStyleTarget, property: string) => {
+  if (typeof style.removeProperty === 'function') {
+    style.removeProperty(property)
+    return
+  }
+  style.setProperty(property, '')
+}
+
+export const readFragmentReservationHeight = (
+  element: Pick<FragmentHeightReservationTarget, 'getAttribute' | 'style'>
+) =>
+  normalizeFragmentHeight(
+    element.getAttribute('data-fragment-height-hint') ??
+      element.style.getPropertyValue(FRAGMENT_RESERVED_HEIGHT_VAR) ??
+      element.style.getPropertyValue(FRAGMENT_LEGACY_MIN_HEIGHT_VAR) ??
+      null
+  )
+
+export const writeFragmentReservationHeight = (
+  element: FragmentHeightReservationTarget,
+  height: unknown
+) => {
+  const normalizedHeight = normalizeFragmentHeight(height)
+  if (normalizedHeight === null) {
+    element.removeAttribute?.('data-fragment-height-hint')
+    clearStyleProperty(element.style, FRAGMENT_RESERVED_HEIGHT_VAR)
+    clearStyleProperty(element.style, FRAGMENT_LEGACY_MIN_HEIGHT_VAR)
+    return null
+  }
+
+  element.style.setProperty(FRAGMENT_RESERVED_HEIGHT_VAR, `${normalizedHeight}px`)
+  clearStyleProperty(element.style, FRAGMENT_LEGACY_MIN_HEIGHT_VAR)
+  element.setAttribute('data-fragment-height-hint', `${normalizedHeight}`)
+  return normalizedHeight
+}
+
+export const readFragmentLiveMinHeight = (
+  element: Pick<FragmentHeightReservationTarget, 'style'>
+) =>
+  normalizeFragmentHeight(element.style.getPropertyValue(FRAGMENT_LIVE_MIN_HEIGHT_VAR) ?? null)
+
+export const writeFragmentLiveMinHeight = (
+  element: Pick<FragmentHeightReservationTarget, 'style'>,
+  height: unknown
+) => {
+  const normalizedHeight = normalizeFragmentHeight(height)
+  if (normalizedHeight === null) {
+    clearStyleProperty(element.style, FRAGMENT_LIVE_MIN_HEIGHT_VAR)
+    return null
+  }
+
+  element.style.setProperty(FRAGMENT_LIVE_MIN_HEIGHT_VAR, `${normalizedHeight}px`)
+  return normalizedHeight
+}
+
+export const clearFragmentLiveMinHeight = (
+  element: Pick<FragmentHeightReservationTarget, 'style'>
+) => {
+  clearStyleProperty(element.style, FRAGMENT_LIVE_MIN_HEIGHT_VAR)
 }
 
 const normalizeFragmentWidth = (value: unknown) => {

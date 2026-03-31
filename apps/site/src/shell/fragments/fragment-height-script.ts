@@ -165,8 +165,33 @@ export const buildFragmentHeightPersistenceScript = ({
   const readCardHint = (card) =>
     normalizeHeight(card.getAttribute('data-fragment-height-hint')) ??
     normalizeHeight(card.getAttribute('data-pretext-card-height')) ??
+    normalizeHeight(getComputedStyle(card).getPropertyValue('--fragment-reserved-height')) ??
     normalizeHeight(getComputedStyle(card).getPropertyValue('--fragment-min-height')) ??
     0;
+
+  const writeReservedHeight = (card, height) => {
+    const normalizedHeight = normalizeHeight(height);
+    if (normalizedHeight === null) return null;
+    card.style.setProperty('--fragment-reserved-height', normalizedHeight + 'px');
+    card.style.removeProperty('--fragment-min-height');
+    card.setAttribute('data-fragment-height-hint', String(normalizedHeight));
+    return normalizedHeight;
+  };
+
+  const dispatchStableHeight = (card, fragmentId, height, previousHeight, force = false) => {
+    const normalizedHeight = normalizeHeight(height);
+    if (normalizedHeight === null) return false;
+    if (!force && Math.abs(normalizedHeight - (normalizeHeight(previousHeight) ?? 0)) <= 1) {
+      return false;
+    }
+    card.dispatchEvent(
+      new CustomEvent('prom:fragment-stable-height', {
+        bubbles: true,
+        detail: { fragmentId, height: normalizedHeight }
+      })
+    );
+    return true;
+  };
 
   const readCardSize = (card) => {
     const raw = String(card.getAttribute('data-size') || '').trim();
@@ -388,8 +413,7 @@ export const buildFragmentHeightPersistenceScript = ({
     const currentStableHeight = readCurrentStableHeight(fragmentId, viewport, resolvedWidthBucket);
 
     if (reservedHeight > readCardHint(card)) {
-      card.style.setProperty('--fragment-min-height', reservedHeight + 'px');
-      card.setAttribute('data-fragment-height-hint', String(reservedHeight));
+      writeReservedHeight(card, reservedHeight);
     }
 
     return {
@@ -407,7 +431,12 @@ export const buildFragmentHeightPersistenceScript = ({
     const targets = Array.from(document.querySelectorAll('.fragment-card[data-fragment-id]'))
       .map((card) => buildTarget(card))
       .filter(Boolean);
-    const measurableTargets = targets.filter((target) => target.shouldMeasure);
+    const measurableTargets = targets
+      .filter((target) => target.shouldMeasure)
+      .map((target) => ({
+        ...target,
+        previousRenderedHeight: Math.ceil(target.card.getBoundingClientRect?.().height || 0)
+      }));
 
     if (measurableTargets.length === 0) {
       return;
@@ -419,11 +448,10 @@ export const buildFragmentHeightPersistenceScript = ({
     );
 
     measurableTargets.forEach((target, index) => {
-      const { card, fragmentId, planIndex, viewport, widthBucket, reservedHeight } = target;
-      const settledHeight = Math.max(normalizeHeight(measuredHeights[index]) ?? 0, reservedHeight);
+      const { card, fragmentId, planIndex, viewport, widthBucket, reservedHeight, previousRenderedHeight } = target;
+      const settledHeight = normalizeHeight(measuredHeights[index]) ?? 0;
       if (settledHeight <= 0) return;
-      card.style.setProperty('--fragment-min-height', settledHeight + 'px');
-      card.setAttribute('data-fragment-height-hint', String(settledHeight));
+      writeReservedHeight(card, settledHeight);
       try {
         window.localStorage.setItem(buildStorageKey(fragmentId, viewport, widthBucket), String(settledHeight));
       } catch {}
@@ -436,12 +464,7 @@ export const buildFragmentHeightPersistenceScript = ({
           })
         );
       }
-      card.dispatchEvent(
-        new CustomEvent('prom:fragment-stable-height', {
-          bubbles: true,
-          detail: { fragmentId, height: settledHeight }
-        })
-      );
+      dispatchStableHeight(card, fragmentId, settledHeight, previousRenderedHeight, false);
     });
   };
 

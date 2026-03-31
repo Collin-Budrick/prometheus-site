@@ -3,13 +3,49 @@ import {
   buildFragmentHeightCookieValue,
   buildFragmentHeightPlanSignature,
   buildFragmentHeightVersionSignature,
+  clearFragmentLiveMinHeight,
+  FRAGMENT_LIVE_MIN_HEIGHT_VAR,
+  FRAGMENT_RESERVED_HEIGHT_VAR,
   mergeFragmentHeightCookieValue,
+  readFragmentLiveMinHeight,
+  readFragmentReservationHeight,
   readFragmentHeightCookieHeights,
   resolveFragmentHeightWidthBucket,
-  resolveReservedFragmentHeight
+  resolveReservedFragmentHeight,
+  writeFragmentLiveMinHeight,
+  writeFragmentReservationHeight
 } from './fragment-height'
 
 describe('fragment height helpers', () => {
+  const createTarget = () => {
+    const attrs = new Map<string, string>()
+    const styles = new Map<string, string>()
+
+    return {
+      attrs,
+      styles,
+      element: {
+        getAttribute: (name: string) => attrs.get(name) ?? null,
+        setAttribute: (name: string, value: string) => {
+          attrs.set(name, value)
+        },
+        removeAttribute: (name: string) => {
+          attrs.delete(name)
+        },
+        style: {
+          getPropertyValue: (name: string) => styles.get(name) ?? '',
+          setProperty: (name: string, value: string) => {
+            styles.set(name, value)
+          },
+          removeProperty: (name: string) => {
+            styles.delete(name)
+            return ''
+          }
+        }
+      }
+    }
+  }
+
   it('prefers learned height, then cookie height, then authored profile and fallback sizes', () => {
     expect(
       resolveReservedFragmentHeight({
@@ -159,5 +195,26 @@ describe('fragment height helpers', () => {
     })
 
     expect(cookieValue).toBe(`v2|%2F|en|desktop|${planSignature}|${encodeURIComponent(versionSignature)}|profile%3A560|,640`)
+  })
+
+  it('stores reservation height separately from the temporary live floor', () => {
+    const { attrs, styles, element } = createTarget()
+
+    expect(writeFragmentReservationHeight(element, 320)).toBe(320)
+    expect(readFragmentReservationHeight(element)).toBe(320)
+    expect(attrs.get('data-fragment-height-hint')).toBe('320')
+    expect(styles.get(FRAGMENT_RESERVED_HEIGHT_VAR)).toBe('320px')
+    expect(styles.get(FRAGMENT_LIVE_MIN_HEIGHT_VAR)).toBeUndefined()
+
+    expect(writeFragmentLiveMinHeight(element, 280)).toBe(280)
+    expect(readFragmentLiveMinHeight(element)).toBe(280)
+    expect(styles.get(FRAGMENT_RESERVED_HEIGHT_VAR)).toBe('320px')
+    expect(styles.get(FRAGMENT_LIVE_MIN_HEIGHT_VAR)).toBe('280px')
+
+    clearFragmentLiveMinHeight(element)
+    expect(readFragmentLiveMinHeight(element)).toBeNull()
+    expect(readFragmentReservationHeight(element)).toBe(320)
+    expect(styles.get(FRAGMENT_RESERVED_HEIGHT_VAR)).toBe('320px')
+    expect(styles.get(FRAGMENT_LIVE_MIN_HEIGHT_VAR)).toBeUndefined()
   })
 })

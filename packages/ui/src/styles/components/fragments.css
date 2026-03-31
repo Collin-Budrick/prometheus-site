@@ -311,7 +311,7 @@
 
   .fragment-card {
     @apply relative rounded-(--radius) border border-amber-100/80 bg-white/80 p-6;
-    min-height: var(--fragment-min-height, 0px);
+    min-height: var(--fragment-live-min-height, 0px);
     --motion-fade-duration: 1200ms;
     --motion-fade-distance: 8px;
     --motion-fade-ease: cubic-bezier(0.4, 0, 0.2, 1);
@@ -350,7 +350,7 @@
   }
 
   .fragment-card[data-fragment-id] {
-    contain-intrinsic-size: auto var(--fragment-min-height, 0px);
+    contain-intrinsic-size: auto var(--fragment-reserved-height, var(--fragment-min-height, 0px));
   }
 
   .fragment-card[data-fragment-height-locked='true'] {
@@ -399,7 +399,7 @@
     > .fragment-card[data-static-home-stage='deferred'] {
     content-visibility: auto;
     contain: layout paint;
-    contain-intrinsic-size: auto var(--fragment-min-height, 380px);
+    contain-intrinsic-size: auto var(--fragment-reserved-height, var(--fragment-min-height, 380px));
   }
 
   .layout-shell[data-static-route='home']
@@ -407,7 +407,7 @@
     > .fragment-card[data-static-home-lcp-stable='true'] {
     content-visibility: visible;
     contain: none;
-    contain-intrinsic-size: auto var(--fragment-min-height, 380px);
+    contain-intrinsic-size: auto var(--fragment-reserved-height, var(--fragment-min-height, 380px));
   }
 
   .layout-shell[data-static-route='home'] .fragment-grid[data-fragment-grid='intro'] .fragment-slot,
@@ -420,7 +420,7 @@
     > .fragment-card[data-static-home-stage='anchor'] {
     content-visibility: visible;
     contain: layout paint;
-    contain-intrinsic-size: auto var(--fragment-min-height, 380px);
+    contain-intrinsic-size: auto var(--fragment-reserved-height, var(--fragment-min-height, 380px));
   }
 
   .layout-shell[data-static-route='home']
@@ -428,7 +428,7 @@
     > .fragment-card[data-static-home-stage='deferred']
     .fragment-card-body {
     content-visibility: auto;
-    contain-intrinsic-size: auto var(--fragment-min-height, 380px);
+    contain-intrinsic-size: auto var(--fragment-reserved-height, var(--fragment-min-height, 380px));
   }
 
   .layout-shell[data-static-route='home']
@@ -436,7 +436,7 @@
     > .fragment-card[data-static-home-lcp-stable='true']
     .fragment-card-body {
     content-visibility: visible;
-    contain-intrinsic-size: auto var(--fragment-min-height, 380px);
+    contain-intrinsic-size: auto var(--fragment-reserved-height, var(--fragment-min-height, 380px));
   }
 
   .layout-shell[data-static-route='home'] .fragment-card[data-reveal-phase='visible'] {
@@ -1241,7 +1241,7 @@
     place-items: center;
     width: 100%;
     height: auto;
-    min-height: max(180px, calc(var(--fragment-min-height, 0px) - 3rem));
+    min-height: max(180px, calc(var(--fragment-reserved-height, var(--fragment-live-min-height, 0px)) - 3rem));
   }
 
   .loader {

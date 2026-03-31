@@ -4,6 +4,7 @@ import {
   FragmentMarkdownBlock
 } from '@prometheus/ui'
 import {
+  FRAGMENT_RESERVED_HEIGHT_VAR,
   buildFragmentHeightPlanSignature,
   buildFragmentHeightVersionSignature,
   getFragmentHeightViewport,
@@ -260,7 +261,7 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
               : gridMetrics.h)
           const gridItemStyle = reservedHeight
             ? applyMinHeight
-              ? { '--fragment-min-height': `${reservedHeight}px` }
+              ? { [FRAGMENT_RESERVED_HEIGHT_VAR]: `${reservedHeight}px` }
               : undefined
             : undefined
           const gridItemAttrs = {

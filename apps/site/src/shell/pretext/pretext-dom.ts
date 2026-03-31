@@ -1,4 +1,10 @@
-import { normalizeFragmentHeight } from '@prometheus/ui/fragment-height'
+import {
+  clearFragmentLiveMinHeight,
+  normalizeFragmentHeight,
+  readFragmentReservationHeight,
+  writeFragmentLiveMinHeight,
+  writeFragmentReservationHeight
+} from '@prometheus/ui/fragment-height'
 import type { PretextAdapter, PretextTextSpec, PretextWhiteSpace } from './pretext-core'
 import { pretextAdapter } from './pretext-runtime'
 import {
@@ -205,6 +211,50 @@ const resolveFallbackWidth = (element: HTMLElement) => {
     return fromRect
   }
   return Math.ceil(element.clientWidth)
+}
+
+const PRETEXT_PENDING_FRAGMENT_STAGES = new Set([
+  'waiting-payload',
+  'waiting-css',
+  'waiting-islands',
+  'waiting-client-tasks',
+  'waiting-assets'
+])
+
+const hasPendingImages = (card: HTMLElement) =>
+  Array.from(card.querySelectorAll<HTMLImageElement>('img')).some(
+    (image) => !(image.complete && image.naturalWidth >= 0)
+  )
+
+const isCardUnstableForPretext = (card: HTMLElement) => {
+  const fragmentStage = card.getAttribute('data-fragment-stage')?.trim() ?? ''
+  if (PRETEXT_PENDING_FRAGMENT_STAGES.has(fragmentStage)) {
+    return true
+  }
+
+  if (card.getAttribute('data-reveal-locked') === 'true') {
+    return true
+  }
+
+  if (
+    card.getAttribute('data-fragment-height-locked') === 'true' ||
+    Boolean(card.getAttribute('data-fragment-height-lock-token')?.trim())
+  ) {
+    return true
+  }
+
+  if (card.getAttribute('data-static-home-patch-state') === 'pending') {
+    return true
+  }
+
+  if (
+    card.classList.contains('is-dragging') ||
+    card.closest('.fragment-grid.is-dragging, .grid-stack-item.ui-draggable-dragging')
+  ) {
+    return true
+  }
+
+  return hasPendingImages(card)
 }
 
 const shouldSkipElement = (element: HTMLElement) => {
@@ -477,10 +527,15 @@ const applyCardHeightFromContract = ({
     card.setAttribute(PRETEXT_CARD_HEIGHT_ATTR, nextValue)
   }
 
-  const currentHint = normalizeFragmentHeight(card.getAttribute('data-fragment-height-hint') ?? null) ?? 0
+  const currentHint = readFragmentReservationHeight(card) ?? 0
   if (normalizedHeight > currentHint) {
-    card.style.setProperty('--fragment-min-height', `${normalizedHeight}px`)
-    card.setAttribute('data-fragment-height-hint', nextValue)
+    writeFragmentReservationHeight(card, normalizedHeight)
+  }
+
+  if (isCardUnstableForPretext(card)) {
+    writeFragmentLiveMinHeight(card, Math.max(normalizedHeight, currentHint))
+  } else {
+    clearFragmentLiveMinHeight(card)
   }
 
   return normalizedHeight

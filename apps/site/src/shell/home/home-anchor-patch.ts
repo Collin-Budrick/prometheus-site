@@ -1,4 +1,10 @@
 import type { FragmentPayload } from '@core/fragment/types'
+import {
+  clearFragmentLiveMinHeight,
+  readFragmentReservationHeight,
+  writeFragmentLiveMinHeight,
+  writeFragmentReservationHeight
+} from '@prometheus/ui/fragment-height'
 import type { Lang } from '../../lang/types'
 import { setTrustedInnerHtml } from '../../security/client'
 import {
@@ -10,7 +16,10 @@ import {
   STATIC_HOME_STAGE_ATTR,
   STATIC_HOME_PATCH_STATE_ATTR
 } from '../core/constants'
-import type { FragmentHeightRouteContext } from '../fragments/fragment-height'
+import {
+  dispatchFragmentStableHeight,
+  type FragmentHeightRouteContext
+} from '../fragments/fragment-height'
 import { lockFragmentCardHeight } from '../fragments/fragment-height-lock'
 import { applyHomeFragmentEffects } from './home-fragment-client'
 import { loadFragmentHeightPatchRuntime } from '../fragments/runtime-loaders'
@@ -112,13 +121,7 @@ const markStaticHomeFirstAnchorPatchApplied = ({
 }
 
 const readFragmentHeightHint = (card: HTMLElement) => {
-  const hintedHeight = Number.parseFloat(card.getAttribute('data-fragment-height-hint') ?? '')
-  if (Number.isFinite(hintedHeight) && hintedHeight > 0) {
-    return Math.ceil(hintedHeight)
-  }
-
-  const styleHeight = Number.parseFloat(card.style.getPropertyValue('--fragment-min-height'))
-  return Number.isFinite(styleHeight) && styleHeight > 0 ? Math.ceil(styleHeight) : 0
+  return readFragmentReservationHeight(card) ?? 0
 }
 
 const scheduleFragmentFrame = (callback: FrameRequestCallback) => {
@@ -206,6 +209,10 @@ const settleReadyHomePreviewCardHeight = async ({
   lockToken: string
 }) => {
   const reservedHeight = readFragmentHeightHint(card)
+  const previousRenderedHeight = Math.max(
+    Math.ceil(card.getBoundingClientRect?.().height || 0),
+    Math.ceil(card.scrollHeight || 0)
+  )
   const nextHeight = await waitForFragmentImages(card).then(async () =>
     await waitForStablePreviewCardHeight(card, reservedHeight)
   )
@@ -216,8 +223,8 @@ const settleReadyHomePreviewCardHeight = async ({
 
   try {
     if (nextHeight > 0) {
-      card.style.setProperty('--fragment-min-height', `${nextHeight}px`)
-      card.setAttribute('data-fragment-height-hint', `${nextHeight}`)
+      writeFragmentReservationHeight(card, nextHeight)
+      writeFragmentLiveMinHeight(card, nextHeight)
       if (nextHeight > reservedHeight) {
         card.dispatchEvent(
           new CustomEvent('prom:fragment-height-miss', {
@@ -226,17 +233,18 @@ const settleReadyHomePreviewCardHeight = async ({
           })
         )
       }
-      card.dispatchEvent(
-        new CustomEvent('prom:fragment-stable-height', {
-          bubbles: true,
-          detail: { fragmentId, height: nextHeight }
-        })
-      )
+      dispatchFragmentStableHeight({
+        card,
+        fragmentId,
+        height: nextHeight,
+        previousHeight: previousRenderedHeight
+      })
     }
   } finally {
     card.style.height = ''
     card.removeAttribute(FRAGMENT_HEIGHT_LOCK_ATTR)
     card.removeAttribute(FRAGMENT_HEIGHT_LOCK_TOKEN_ATTR)
+    clearFragmentLiveMinHeight(card)
   }
 
   return nextHeight
@@ -266,16 +274,17 @@ const settlePatchedHomeCardHeightFast = ({
   }
 
   if (reservedHeight > 0) {
-    card.style.setProperty('--fragment-min-height', `${reservedHeight}px`)
-    card.setAttribute('data-fragment-height-hint', `${reservedHeight}`)
+    writeFragmentReservationHeight(card, reservedHeight)
+    writeFragmentLiveMinHeight(card, reservedHeight)
   }
 
-  card.dispatchEvent(
-    new CustomEvent('prom:fragment-stable-height', {
-      bubbles: true,
-      detail: { fragmentId, height: nextHeight }
-    })
-  )
+  dispatchFragmentStableHeight({
+    card,
+    fragmentId,
+    height: nextHeight,
+    previousHeight: reservedHeight,
+    force: false
+  })
 
   return nextHeight
 }
@@ -283,6 +292,7 @@ const settlePatchedHomeCardHeightFast = ({
 const preserveSettledHomeCardHeight = (card: HTMLElement) => {
   const settledHeight = readFragmentHeightHint(card)
   if (settledHeight > 0) {
+    writeFragmentLiveMinHeight(card, settledHeight)
     card.style.height = `${settledHeight}px`
   }
 }
@@ -293,6 +303,7 @@ const clearPatchedHomeHeightLock = (card: HTMLElement, lockToken: string) => {
   }
 
   card.style.height = ''
+  clearFragmentLiveMinHeight(card)
   card.removeAttribute(FRAGMENT_HEIGHT_LOCK_ATTR)
   card.removeAttribute(FRAGMENT_HEIGHT_LOCK_TOKEN_ATTR)
 }
@@ -303,6 +314,7 @@ const releasePatchedHomeCardHeight = (card: HTMLElement, lockToken: string) => {
   }
 
   card.style.height = ''
+  clearFragmentLiveMinHeight(card)
   card.dataset.revealLocked = 'false'
   card.removeAttribute(FRAGMENT_REVEAL_TOKEN_ATTR)
 }

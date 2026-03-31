@@ -362,7 +362,10 @@ const installDeferredHomeUiControls = ({
           controller,
           onLanguageChange: swapStaticHomeLanguage
         })
-        if (isSettingsTriggerTarget(target)) {
+        if (
+          isSettingsTriggerTarget(target) &&
+          settingsRoot.dataset.open !== 'true'
+        ) {
           settingsRoot.querySelector<HTMLButtonElement>('[data-static-settings-toggle]')?.click()
         }
       })

@@ -751,7 +751,7 @@ body {
 .fragment-card {
   position: relative;
   isolation: isolate;
-  min-height: var(--fragment-min-height, 0px);
+  min-height: var(--fragment-live-min-height, 0px);
   --ready-stagger-duration: 180ms;
   --ready-stagger-delay: 0ms;
   --fragment-card-border-width: 1px;
@@ -807,7 +807,7 @@ body {
 }
 
 .fragment-card[data-fragment-id] {
-  contain-intrinsic-size: auto var(--fragment-min-height, 0px);
+  contain-intrinsic-size: auto var(--fragment-reserved-height, var(--fragment-min-height, 0px));
 }
 
 .fragment-card[data-fragment-height-locked='true'] {

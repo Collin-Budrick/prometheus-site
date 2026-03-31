@@ -1,5 +1,6 @@
 import { component$ } from '@builder.io/qwik'
 import authModuleStyles from '@site/features/auth/auth.module.css'
+import { FRAGMENT_RESERVED_HEIGHT_VAR } from '@prometheus/ui/fragment-height'
 import type { Lang } from '../../lang'
 import type { UiCopy } from '../../lang/types'
 import { STATIC_ISLAND_DATA_SCRIPT_ID } from '../core/constants'
@@ -160,7 +161,7 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang,
             class="fragment-card"
             style={{
               gridColumn: 'span 12',
-              '--fragment-min-height': `${cardHeightHint}px`
+              [FRAGMENT_RESERVED_HEIGHT_VAR]: `${cardHeightHint}px`
             }}
             data-pretext-card-root="true"
             data-fragment-height-hint={`${cardHeightHint}`}

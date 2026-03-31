@@ -334,7 +334,7 @@ describe('home-stream patching', () => {
     })
     let settleCalls = 0
 
-    card.style.setProperty('--fragment-min-height', '520px')
+    card.style.setProperty('--fragment-reserved-height', '520px')
 
     const result = patchStaticHomeFragmentCard({
       lang: 'en',

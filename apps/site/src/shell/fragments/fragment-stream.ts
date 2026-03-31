@@ -1,5 +1,10 @@
 import type { FragmentPayload } from '@core/fragment/types'
 import {
+  clearFragmentLiveMinHeight,
+  readFragmentReservationHeight,
+  writeFragmentLiveMinHeight
+} from '@prometheus/ui/fragment-height'
+import {
   applyImmediateReadyStagger,
   READY_STAGGER_DURATION_MS,
   READY_STAGGER_STATE_ATTR,
@@ -77,18 +82,13 @@ const resolvePatchedRevealLockDelay = (delayMs: number, immediate = false) => {
 }
 
 const readPatchedCardHeightHint = (card: HTMLElement) => {
-  const hintedHeight = Number.parseFloat(card.getAttribute('data-fragment-height-hint') ?? '')
-  if (Number.isFinite(hintedHeight) && hintedHeight > 0) {
-    return Math.ceil(hintedHeight)
-  }
-
-  const reservedHeight = Number.parseFloat(card.style.getPropertyValue('--fragment-min-height'))
-  return Number.isFinite(reservedHeight) && reservedHeight > 0 ? Math.ceil(reservedHeight) : 0
+  return readFragmentReservationHeight(card) ?? 0
 }
 
 const preserveSettledFragmentCardHeight = (card: HTMLElement) => {
   const settledHeight = readPatchedCardHeightHint(card)
   if (settledHeight > 0) {
+    writeFragmentLiveMinHeight(card, settledHeight)
     card.style.height = `${settledHeight}px`
   }
 }
@@ -99,6 +99,7 @@ const clearPatchedFragmentHeightLock = (card: HTMLElement, lockToken: string) =>
   }
 
   card.style.height = ''
+  clearFragmentLiveMinHeight(card)
   card.removeAttribute('data-fragment-height-locked')
   card.removeAttribute('data-fragment-height-lock-token')
 }
@@ -109,6 +110,7 @@ const releasePatchedFragmentCardHeight = (card: HTMLElement, lockToken: string) 
   }
 
   card.style.height = ''
+  clearFragmentLiveMinHeight(card)
   card.dataset.revealLocked = 'false'
   card.removeAttribute(FRAGMENT_REVEAL_TOKEN_ATTR)
 }

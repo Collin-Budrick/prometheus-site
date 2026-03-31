@@ -1,4 +1,9 @@
-import { normalizeFragmentHeight } from '@prometheus/ui/fragment-height'
+import {
+  normalizeFragmentHeight,
+  readFragmentReservationHeight,
+  writeFragmentLiveMinHeight,
+  writeFragmentReservationHeight
+} from '@prometheus/ui/fragment-height'
 import { PRETEXT_CARD_HEIGHT_ATTR } from '../pretext/pretext-dom'
 
 const FRAGMENT_HEIGHT_LOCK_ATTR = 'data-fragment-height-locked'
@@ -8,11 +13,7 @@ let nextFragmentHeightLockId = 1
 
 const readCardHeightHint = (card: HTMLElement) =>
   Math.max(
-    normalizeFragmentHeight(
-    card.getAttribute('data-fragment-height-hint') ??
-      card.style.getPropertyValue('--fragment-min-height') ??
-      null
-    ) ?? 0,
+    readFragmentReservationHeight(card) ?? 0,
     normalizeFragmentHeight(card.getAttribute(PRETEXT_CARD_HEIGHT_ATTR) ?? null) ?? 0
   )
 
@@ -45,15 +46,19 @@ const measureFragmentCardHeight = (
 
 export const lockFragmentCardHeight = (card: HTMLElement, reservedHeight?: number | null) => {
   const lockToken = `${nextFragmentHeightLockId++}`
-  const fallbackHeight = normalizeFragmentHeight(reservedHeight) ?? readCardHeightHint(card)
+  const existingReservationAttr = readFragmentReservationHeight(card)
+  const existingReservation = readCardHeightHint(card)
+  const fallbackHeight = normalizeFragmentHeight(reservedHeight) ?? existingReservation
   const cardMetrics = readFragmentCardMetrics(card)
   const lockHeight = Math.max(measureFragmentCardHeight(card, fallbackHeight, cardMetrics), fallbackHeight)
 
   card.setAttribute(FRAGMENT_HEIGHT_LOCK_ATTR, 'true')
   card.setAttribute(FRAGMENT_HEIGHT_LOCK_TOKEN_ATTR, lockToken)
   card.style.height = `${lockHeight}px`
-  card.style.setProperty('--fragment-min-height', `${lockHeight}px`)
-  card.setAttribute('data-fragment-height-hint', `${lockHeight}`)
+  writeFragmentLiveMinHeight(card, lockHeight)
+  if (lockHeight > existingReservation || existingReservationAttr === null) {
+    writeFragmentReservationHeight(card, lockHeight)
+  }
 
   return { lockHeight, lockToken }
 }

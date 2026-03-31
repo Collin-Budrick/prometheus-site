@@ -46,7 +46,8 @@
   > .fragment-card[data-static-home-stage='anchor'] {
   content-visibility: visible;
   contain: layout paint;
-  contain-intrinsic-size: auto var(--fragment-min-height, var(--fragment-card-small-height));
+  contain-intrinsic-size: auto
+    var(--fragment-reserved-height, var(--fragment-min-height, var(--fragment-card-small-height)));
 }
 
 .layout-shell[data-static-route='home']
@@ -54,7 +55,8 @@
   > .fragment-card[data-static-home-stage='deferred'] {
   content-visibility: auto;
   contain: layout paint;
-  contain-intrinsic-size: auto var(--fragment-min-height, var(--fragment-card-small-height));
+  contain-intrinsic-size: auto
+    var(--fragment-reserved-height, var(--fragment-min-height, var(--fragment-card-small-height)));
 }
 
 .layout-shell[data-static-route='home']
@@ -62,7 +64,8 @@
   > .fragment-card[data-static-home-lcp-stable='true'] {
   content-visibility: visible;
   contain: none;
-  contain-intrinsic-size: auto var(--fragment-min-height, var(--fragment-card-small-height));
+  contain-intrinsic-size: auto
+    var(--fragment-reserved-height, var(--fragment-min-height, var(--fragment-card-small-height)));
 }
 
 .layout-shell[data-static-route='home'] .fragment-card[data-reveal-phase='visible'] {
@@ -79,7 +82,8 @@
   > .fragment-card[data-static-home-stage='deferred']
   .fragment-card-body {
   content-visibility: auto;
-  contain-intrinsic-size: auto var(--fragment-min-height, var(--fragment-card-small-height));
+  contain-intrinsic-size: auto
+    var(--fragment-reserved-height, var(--fragment-min-height, var(--fragment-card-small-height)));
 }
 
 .layout-shell[data-static-route='home']
@@ -95,7 +99,8 @@
   > .fragment-card[data-static-home-preview-visible='true'][data-static-home-patch-state='pending']
   .fragment-card-body {
   content-visibility: visible;
-  contain-intrinsic-size: auto var(--fragment-min-height, var(--fragment-card-small-height));
+  contain-intrinsic-size: auto
+    var(--fragment-reserved-height, var(--fragment-min-height, var(--fragment-card-small-height)));
 }
 
 .layout-shell[data-static-route='home']
@@ -103,7 +108,8 @@
   > .fragment-card[data-static-home-lcp-stable='true']
   .fragment-card-body {
   content-visibility: visible;
-  contain-intrinsic-size: auto var(--fragment-min-height, var(--fragment-card-small-height));
+  contain-intrinsic-size: auto
+    var(--fragment-reserved-height, var(--fragment-min-height, var(--fragment-card-small-height)));
 }
 
 .layout-shell[data-static-route='home']

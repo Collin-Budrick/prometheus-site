@@ -413,7 +413,7 @@ describe("static shell performance invariants", () => {
       "[data-static-home-root][data-home-paint='initial']\n  .fragment-grid-static-home-column\n  > .fragment-card {",
     );
     expect(globalCriticalSource).toContain(
-      ".fragment-card[data-fragment-id] {\n  contain-intrinsic-size: auto var(--fragment-min-height, 0px);\n}",
+      ".fragment-card[data-fragment-id] {\n  contain-intrinsic-size: auto var(--fragment-reserved-height, var(--fragment-min-height, 0px));\n}",
     );
     expect(globalCriticalSource).toContain(
       ".fragment-card[data-fragment-height-locked='true'] {\n  overflow: hidden;\n}",

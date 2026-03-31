@@ -2,6 +2,7 @@ import { component$ } from '@builder.io/qwik'
 import { asTrustedHtml } from '../../security/client'
 import { useCspNonce } from '../../security/qwik'
 import { serializeFragmentHeightLayout } from '@prometheus/ui/fragment-height'
+import { FRAGMENT_RESERVED_HEIGHT_VAR } from '@prometheus/ui/fragment-height'
 import {
   STATIC_FRAGMENT_BODY_ATTR,
   STATIC_FRAGMENT_CARD_ATTR,
@@ -53,7 +54,7 @@ export const StaticFragmentRoute = component$<StaticFragmentRouteProps>(({ model
         {entries.map((entry, index) => {
           const column = entry.layout.column || 'span 12'
           const style = {
-            '--fragment-min-height': `${entry.reservedHeight}px`,
+            [FRAGMENT_RESERVED_HEIGHT_VAR]: `${entry.reservedHeight}px`,
             gridColumn: column
           }
 

@@ -1,6 +1,8 @@
 import { expect, test, type Page } from '@playwright/test'
 import {
   createRuntimeIssueTracker,
+  expectCardShrinksBelowInitialReservation,
+  expectCardSettlesToContentHeight,
   expectDockShortcuts,
   expectHeightDriftWithin,
   expectMeasuredCard,
@@ -107,6 +109,10 @@ test.describe('full preset live route audit', () => {
       const manifestoCard = page.locator('[data-fragment-id="fragment://page/home/manifest@v1"]').first()
       const dockCard = page.locator('[data-fragment-id="fragment://page/home/dock@v2"]').first()
 
+      await expectMeasuredCard(manifestoCard)
+      await expectCardShrinksBelowInitialReservation(page, manifestoCard, {
+        label: 'home manifesto card'
+      })
       await expectHeightDriftWithin(page, introCard, {
         label: 'home intro card',
         tolerance: 10
@@ -267,6 +273,9 @@ test.describe('full preset live route audit', () => {
       const mainGrid = page.locator('[data-fragment-grid="main"]').first()
       const loginCard = page.locator('article').filter({ has: page.locator('[data-static-login-root]') }).first()
       await expectMeasuredCard(loginCard)
+      await expectCardSettlesToContentHeight(page, loginCard, {
+        label: 'login card initial settle'
+      })
       const mainGridBox = await expectBoundingBox(mainGrid)
       const loginCardBox = await expectBoundingBox(loginCard)
 
@@ -364,6 +373,15 @@ test.describe('full preset live route audit', () => {
       await expect(page.getByRole('heading', { name: 'Offline' })).toBeVisible()
       await expectDockShortcuts(page)
       await openAndCloseSettings(page)
+
+      const offlineCard = page
+        .locator('article')
+        .filter({ has: page.getByRole('heading', { name: 'Offline' }) })
+        .first()
+      await expectMeasuredCard(offlineCard, { allowFragmentHint: false })
+      await expectCardSettlesToContentHeight(page, offlineCard, {
+        label: 'offline static shell card'
+      })
 
       const retrySync = page.getByRole('button', { name: 'RETRY SYNC' })
       await expect(retrySync).toBeVisible()

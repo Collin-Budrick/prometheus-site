@@ -18,6 +18,13 @@ type AuditCredentials = {
   password: string
 }
 
+type CardHeightSnapshot = {
+  contentHeight: number
+  liveMinHeight: number | null
+  renderedHeight: number
+  reservationHeight: number | null
+}
+
 const dockLabels = ['Home', 'Store', 'Lab', 'Login'] as const
 const ignoredConsolePatterns = [/^\[vite\]\s/i]
 const ignoredNetworkUrlPatterns = [/\/favicon\.ico(?:\?.*)?$/i]
@@ -170,15 +177,103 @@ export const expectMeasuredCard = async (
   await expect(locator).toBeVisible()
   await expect(locator.locator('[data-pretext-role]').first()).toBeVisible()
 
-  const pretextHeight = await locator.getAttribute('data-pretext-card-height')
-  const fragmentHint = await locator.getAttribute('data-fragment-height-hint')
-  const hasPretextHeight = Boolean(pretextHeight?.match(/^\d+$/))
-  const hasFragmentHint = Boolean(fragmentHint?.match(/^\d+$/))
+  await expect
+    .poll(async () => {
+      const pretextHeight = await locator.getAttribute('data-pretext-card-height')
+      const fragmentHint = await locator.getAttribute('data-fragment-height-hint')
+      const hasPretextHeight = Boolean(pretextHeight?.match(/^\d+$/))
+      const hasFragmentHint = Boolean(fragmentHint?.match(/^\d+$/))
+      return hasPretextHeight || (allowFragmentHint && hasFragmentHint)
+    })
+    .toBe(true)
+}
+
+const readCardHeightSnapshot = async (
+  locator: ReturnType<Page['locator']>
+): Promise<CardHeightSnapshot> =>
+  await locator.evaluate((node) => {
+    const element = node as HTMLElement
+    const parseHeight = (value: string | null | undefined) => {
+      const parsed = Number.parseFloat(value ?? '')
+      return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null
+    }
+
+    const computed = getComputedStyle(element)
+
+    return {
+      contentHeight: Math.ceil(element.scrollHeight),
+      liveMinHeight:
+        parseHeight(element.style.getPropertyValue('--fragment-live-min-height')) ??
+        parseHeight(computed.getPropertyValue('--fragment-live-min-height')) ??
+        parseHeight(computed.minHeight),
+      renderedHeight: Math.ceil(element.getBoundingClientRect().height),
+      reservationHeight:
+        parseHeight(element.getAttribute('data-fragment-height-hint')) ??
+        parseHeight(element.getAttribute('data-pretext-card-height')) ??
+        parseHeight(computed.getPropertyValue('--fragment-reserved-height'))
+    }
+  })
+
+export const expectCardSettlesToContentHeight = async (
+  page: Page,
+  locator: ReturnType<Page['locator']>,
+  {
+    label,
+    settleMs = 900,
+    contentTolerance = 8
+  }: {
+    label: string
+    settleMs?: number
+    contentTolerance?: number
+  }
+) => {
+  await expect(locator).toBeVisible()
+  const initial = await readCardHeightSnapshot(locator)
+
+  expect(initial.reservationHeight, `${label} should expose an initial reservation height`).not.toBeNull()
+
+  await page.waitForTimeout(settleMs)
+
+  const settled = await readCardHeightSnapshot(locator)
+  const contentDrift = Math.abs(settled.renderedHeight - settled.contentHeight)
+  expect(
+    contentDrift,
+    `${label} should finish within ${contentTolerance}px of its content height`
+  ).toBeLessThanOrEqual(contentTolerance)
 
   expect(
-    hasPretextHeight || (allowFragmentHint && hasFragmentHint),
-    'expected a measured card to expose either a pretext card height or a fragment height hint'
-  ).toBe(true)
+    settled.liveMinHeight ?? 0,
+    `${label} should release its live min-height floor after settling`
+  ).toBeLessThanOrEqual(1)
+
+  return { initial, settled }
+}
+
+export const expectCardShrinksBelowInitialReservation = async (
+  page: Page,
+  locator: ReturnType<Page['locator']>,
+  {
+    label,
+    settleMs = 900,
+    contentTolerance = 8
+  }: {
+    label: string
+    settleMs?: number
+    contentTolerance?: number
+  }
+) => {
+  const { initial, settled } = await expectCardSettlesToContentHeight(page, locator, {
+    label,
+    settleMs,
+    contentTolerance
+  })
+
+  expect(
+    settled.renderedHeight,
+    `${label} should settle below its initial reservation height`
+  ).toBeLessThan(initial.reservationHeight!)
+
+  return { initial, settled }
 }
 
 export const expectHeightDriftWithin = async (
@@ -219,10 +314,12 @@ export const openAndCloseSettings = async (page: Page) => {
 
   await expect(settingsButton).toBeVisible()
   await settingsButton.click()
-  if (!(await dialog.isVisible())) {
+  try {
+    await expect(dialog).toBeVisible({ timeout: 1500 })
+  } catch {
     await settingsButton.click()
+    await expect(dialog).toBeVisible()
   }
-  await expect(dialog).toBeVisible()
   await expect(dialog.locator('h2.settings-panel-title').first()).toHaveText('Settings')
   await expect(dialog.getByRole('button', { name: /Switch to (dark|light) mode/i })).toBeVisible()
   await page.keyboard.press('Escape')

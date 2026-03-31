@@ -6,6 +6,8 @@ import {
 import {
   buildFragmentHeightVersionSignature,
   getFragmentHeightViewport,
+  readFragmentReservationHeight,
+  writeFragmentReservationHeight,
 } from "@prometheus/ui/fragment-height";
 import type { Lang } from "../../lang";
 import { FragmentRuntimeBridge } from "../../fragment/runtime/client-bridge";
@@ -438,13 +440,7 @@ const getStaticFragmentCard = (fragmentId: string) =>
   );
 
 const readStaticFragmentHeightHint = (card: HTMLElement) => {
-  const hintedHeight = Number.parseFloat(
-    card.getAttribute("data-fragment-height-hint") ??
-      card.style.getPropertyValue("--fragment-min-height"),
-  );
-  return Number.isFinite(hintedHeight) && hintedHeight > 0
-    ? Math.ceil(hintedHeight)
-    : null;
+  return readFragmentReservationHeight(card);
 };
 
 const readStaticFragmentCardWidth = (card: HTMLElement) => {
@@ -502,14 +498,7 @@ const applySharedRuntimeSizing = (sizing: FragmentRuntimeCardSizing) => {
   const card = getStaticFragmentCard(sizing.fragmentId);
   if (!card) return;
   if (sizing.reservedHeight > 0) {
-    card.style.setProperty(
-      "--fragment-min-height",
-      `${sizing.reservedHeight}px`,
-    );
-    card.setAttribute(
-      "data-fragment-height-hint",
-      `${sizing.reservedHeight}`,
-    );
+    writeFragmentReservationHeight(card, sizing.reservedHeight);
   }
 };
 
@@ -1132,7 +1121,7 @@ const buildStaticFragmentMarkup = (model: StaticFragmentRouteModel) => {
         entry.mobileWidthBucket && entry.mobileWidthBucket !== entry.desktopWidthBucket
           ? ` ${STATIC_FRAGMENT_WIDTH_BUCKET_MOBILE_ATTR}="${escapeHtmlAttr(entry.mobileWidthBucket)}"`
           : "";
-      return `<article class="fragment-card fragment-card-static-home" data-fragment-id="${entry.id}" data-fragment-height-hint="${entry.reservedHeight}"${layoutAttr}${criticalAttr} data-fragment-loaded="true" data-fragment-ready="true" data-fragment-stage="ready" data-reveal-phase="visible" data-reveal-locked="false" data-draggable="false" data-ready-stagger-state="done"${sizeAttr}${versionAttr}${desktopWidthBucketAttr}${mobileWidthBucketAttr} ${STATIC_FRAGMENT_CARD_ATTR}="true" style="--fragment-min-height:${entry.reservedHeight}px;grid-column:${column};"><div class="fragment-card-body" ${STATIC_FRAGMENT_BODY_ATTR}="${entry.id}"><div class="fragment-html">${entry.html}</div></div></article>`;
+      return `<article class="fragment-card fragment-card-static-home" data-fragment-id="${entry.id}" data-fragment-height-hint="${entry.reservedHeight}"${layoutAttr}${criticalAttr} data-fragment-loaded="true" data-fragment-ready="true" data-fragment-stage="ready" data-reveal-phase="visible" data-reveal-locked="false" data-draggable="false" data-ready-stagger-state="done"${sizeAttr}${versionAttr}${desktopWidthBucketAttr}${mobileWidthBucketAttr} ${STATIC_FRAGMENT_CARD_ATTR}="true" style="--fragment-reserved-height:${entry.reservedHeight}px;grid-column:${column};"><div class="fragment-card-body" ${STATIC_FRAGMENT_BODY_ATTR}="${entry.id}"><div class="fragment-html">${entry.html}</div></div></article>`;
     })
     .join("");
 

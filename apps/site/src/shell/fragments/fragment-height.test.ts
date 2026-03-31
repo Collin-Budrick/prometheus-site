@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import {
+  dispatchFragmentStableHeight,
   lockFragmentCardHeight,
   persistInitialFragmentCardHeights,
   settlePatchedFragmentCardHeight
@@ -11,6 +12,7 @@ class MockCard {
     height: string
     setProperty: (name: string, value: string) => void
     getPropertyValue: (name: string) => string
+    removeProperty: (name: string) => void
   }
   private styleHeight = ''
 
@@ -37,7 +39,11 @@ class MockCard {
         self.wroteDuringMeasurement = true
         self.styles.set(name, value)
       },
-      getPropertyValue: (name: string) => self.styles.get(name) ?? ''
+      getPropertyValue: (name: string) => self.styles.get(name) ?? '',
+      removeProperty: (name: string) => {
+        self.wroteDuringMeasurement = true
+        self.styles.delete(name)
+      }
     }
   }
 
@@ -101,6 +107,7 @@ describe('fragment height patch helpers', () => {
 
     expect(lockHeight).toBe(260)
     expect(card.style.height).toBe('260px')
+    expect(card.style.getPropertyValue('--fragment-live-min-height')).toBe('260px')
   })
 
   it('locks to the current rendered height and releases after the patched content settles', async () => {
@@ -113,6 +120,7 @@ describe('fragment height patch helpers', () => {
     expect(card.style.height).toBe('260px')
     expect(card.getAttribute('data-fragment-height-locked')).toBe('true')
     expect(card.getAttribute('data-fragment-height-hint')).toBe('260')
+    expect(card.style.getPropertyValue('--fragment-live-min-height')).toBe('260px')
 
     ;(card as unknown as MockCard).setMeasuredHeight(320)
     const settledHeight = await settlePatchedFragmentCardHeight({
@@ -126,7 +134,8 @@ describe('fragment height patch helpers', () => {
     expect(card.style.height).toBe('')
     expect(card.getAttribute('data-fragment-height-locked')).toBeNull()
     expect(card.getAttribute('data-fragment-height-hint')).toBe('320')
-    expect(card.style.getPropertyValue('--fragment-min-height')).toBe('320px')
+    expect(card.style.getPropertyValue('--fragment-reserved-height')).toBe('320px')
+    expect(card.style.getPropertyValue('--fragment-live-min-height')).toBe('')
   })
 
   it('uses pretext card height hints as the reserved floor before patching', () => {
@@ -137,7 +146,8 @@ describe('fragment height patch helpers', () => {
 
     expect(lockHeight).toBe(280)
     expect(card.getAttribute('data-fragment-height-hint')).toBe('280')
-    expect(card.style.getPropertyValue('--fragment-min-height')).toBe('280px')
+    expect(card.style.getPropertyValue('--fragment-reserved-height')).toBe('280px')
+    expect(card.style.getPropertyValue('--fragment-live-min-height')).toBe('280px')
   })
 
   it('measures static cards after paint and persists the settled height without a patch lock', async () => {
@@ -160,6 +170,35 @@ describe('fragment height patch helpers', () => {
 
     expect(heights).toEqual([330])
     expect(card.getAttribute('data-fragment-height-hint')).toBe('330')
-    expect(card.style.getPropertyValue('--fragment-min-height')).toBe('330px')
+    expect(card.style.getPropertyValue('--fragment-reserved-height')).toBe('330px')
+    expect(card.style.getPropertyValue('--fragment-live-min-height')).toBe('')
+  })
+
+  it('only emits stable-height events when the rendered height changed by more than one pixel', () => {
+    const card = new MockCard(240, 240) as unknown as HTMLElement
+    const seenHeights: number[] = []
+    card.addEventListener('prom:fragment-stable-height', (event) => {
+      seenHeights.push((event as CustomEvent<{ height: number }>).detail.height)
+    })
+
+    expect(
+      dispatchFragmentStableHeight({
+        card,
+        fragmentId: 'fragment://page/store/cart@v1',
+        height: 241,
+        previousHeight: 240
+      })
+    ).toBe(false)
+    expect(seenHeights).toEqual([])
+
+    expect(
+      dispatchFragmentStableHeight({
+        card,
+        fragmentId: 'fragment://page/store/cart@v1',
+        height: 243,
+        previousHeight: 240
+      })
+    ).toBe(true)
+    expect(seenHeights).toEqual([243])
   })
 })

@@ -1,5 +1,10 @@
 import { expect, test, type Page } from '@playwright/test'
-import { expectHeightDriftWithin, expectMeasuredCard, toggleLanguageUntil } from './audit-helpers'
+import {
+  expectCardSettlesToContentHeight,
+  expectHeightDriftWithin,
+  expectMeasuredCard,
+  toggleLanguageUntil
+} from './audit-helpers'
 
 const expectLinkHidden = async (page: Page, name: string) => {
   await expect(page.getByRole('link', { name })).toHaveCount(0)
@@ -42,6 +47,9 @@ test('core preset login card keeps measured height stable across language change
   const loginCard = page.locator('article').filter({ has: page.locator('[data-static-login-root]') }).first()
 
   await expectMeasuredCard(loginCard)
+  await expectCardSettlesToContentHeight(page, loginCard, {
+    label: 'core login card initial settle'
+  })
   await expectHeightDriftWithin(page, loginCard, {
     label: 'core login card initial settle',
     tolerance: 12

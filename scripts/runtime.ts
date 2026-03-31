@@ -40,6 +40,14 @@ const importLocalScript = async (scriptPath: string) => {
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
+const pickFirstTrimmed = (...values: Array<string | undefined>) => {
+  for (const value of values) {
+    const trimmed = value?.trim()
+    if (trimmed) return trimmed
+  }
+  return ''
+}
+
 const requestStatus = (url: string) =>
   new Promise<number>((resolve, reject) => {
     const request = https.get(url, { rejectUnauthorized: false }, (response) => {
@@ -82,6 +90,46 @@ const waitForExit = (child: ReturnType<typeof spawn>, timeoutMs: number) =>
       resolve(true)
     })
   })
+
+const requestText = (url: string) =>
+  new Promise<string>((resolve, reject) => {
+    const request = https.get(url, { rejectUnauthorized: false }, (response) => {
+      const chunks: Buffer[] = []
+      response.on('data', (chunk) => {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+      })
+      response.on('end', () => {
+        resolve(Buffer.concat(chunks).toString('utf8'))
+      })
+    })
+    request.on('error', reject)
+  })
+
+const readServedTemplatePreset = async (url: string) => {
+  const html = await requestText(url)
+  const attrMatch = html.match(/data-static-template-preset="([^"]+)"/i)
+  if (attrMatch?.[1]) return attrMatch[1].trim().toLowerCase()
+
+  const labelMatch = html.match(/&middot;\s*([a-z-]+)\s+preset/i) ?? html.match(/·\s*([a-z-]+)\s+preset/i)
+  if (labelMatch?.[1]) return labelMatch[1].trim().toLowerCase()
+
+  return ''
+}
+
+const assertPreviewPreset = async (url: string, expectedPreset: string) => {
+  const resolvedPreset = await readServedTemplatePreset(url)
+  if (!resolvedPreset) {
+    throw new Error(
+      `[runtime] Preview responded at ${url} but did not expose data-static-template-preset or a preset label.`
+    )
+  }
+
+  if (resolvedPreset !== expectedPreset) {
+    throw new Error(
+      `[runtime] Preview served preset '${resolvedPreset}' but '${expectedPreset}' was requested.`
+    )
+  }
+}
 
 const previewWarningPatterns = [
   /didn't resolve at build time, it will remain unchanged to be resolved at runtime/i
@@ -187,14 +235,38 @@ const runBrowserSmoke = async () => {
   const preset = requestedPreset as 'full' | 'core'
   const presetDescriptor = getTemplatePresetDescriptor(preset)
   const specPath = `tests/browser/${preset}.spec.ts`
+  const requestedHomeMode =
+    pickFirstTrimmed(
+      process.env.PROMETHEUS_TEMPLATE_HOME_MODE,
+      process.env.TEMPLATE_HOME_MODE,
+      process.env.VITE_TEMPLATE_HOME_MODE
+    ) || presetDescriptor.homeMode
+  const requestedFeatureOverrides = pickFirstTrimmed(
+    process.env.PROMETHEUS_TEMPLATE_FEATURES,
+    process.env.TEMPLATE_FEATURES,
+    process.env.VITE_TEMPLATE_FEATURES
+  )
+  const requestedDisabledFeatureOverrides = pickFirstTrimmed(
+    process.env.PROMETHEUS_TEMPLATE_DISABLE_FEATURES,
+    process.env.TEMPLATE_DISABLE_FEATURES,
+    process.env.VITE_TEMPLATE_DISABLE_FEATURES
+  )
   const env = {
     ...process.env,
     BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET?.trim() || 'dev-better-auth-secret-please-change-32',
     COMPOSE_PROJECT_NAME: process.env.COMPOSE_PROJECT_NAME?.trim() || templateBranding.composeProjectName,
     PROMETHEUS_TEMPLATE_PRESET: preset,
-    PROMETHEUS_TEMPLATE_HOME_MODE: process.env.PROMETHEUS_TEMPLATE_HOME_MODE?.trim() || presetDescriptor.homeMode,
+    PROMETHEUS_TEMPLATE_HOME_MODE: requestedHomeMode,
+    PROMETHEUS_TEMPLATE_FEATURES: requestedFeatureOverrides,
+    PROMETHEUS_TEMPLATE_DISABLE_FEATURES: requestedDisabledFeatureOverrides,
+    TEMPLATE_PRESET: preset,
+    TEMPLATE_HOME_MODE: requestedHomeMode,
+    TEMPLATE_FEATURES: requestedFeatureOverrides,
+    TEMPLATE_DISABLE_FEATURES: requestedDisabledFeatureOverrides,
     VITE_TEMPLATE_PRESET: preset,
-    VITE_TEMPLATE_HOME_MODE: process.env.VITE_TEMPLATE_HOME_MODE?.trim() || presetDescriptor.homeMode,
+    VITE_TEMPLATE_HOME_MODE: requestedHomeMode,
+    VITE_TEMPLATE_FEATURES: requestedFeatureOverrides,
+    VITE_TEMPLATE_DISABLE_FEATURES: requestedDisabledFeatureOverrides,
     PROMETHEUS_DEVICE_HOST: process.env.PROMETHEUS_DEVICE_HOST?.trim() || '0'
   }
   const runtimeConfig = getRuntimeConfig(env)
@@ -266,6 +338,7 @@ const runBrowserSmoke = async () => {
       url: baseURL,
       timeoutMs: readPositiveIntEnv(process.env.PROMETHEUS_BROWSER_PREVIEW_TIMEOUT_MS, 1200000)
     })
+    await assertPreviewPreset(baseURL, preset)
     assertNoPreviewWarnings(previewStderr, previewStderrPath)
 
     const test = spawnSync(bunBin, ['x', 'playwright', 'test', specPath], {

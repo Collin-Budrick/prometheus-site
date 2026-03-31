@@ -178,6 +178,13 @@ const resolvePreviewOrigin = (host: string, httpsPort: string) => {
   const portSuffix = !hasPort && httpsPort && httpsPort !== '443' ? `:${httpsPort}` : ''
   return `https://${trimmed}${portSuffix}`
 }
+const pickFirstTrimmed = (...values: Array<string | undefined>) => {
+  for (const value of values) {
+    const trimmed = value?.trim()
+    if (trimmed) return trimmed
+  }
+  return ''
+}
 const { command, prefix } = resolveComposeCommand()
 generateFragmentCss()
 
@@ -309,12 +316,27 @@ const previewOrigin = resolvePreviewOrigin(previewWebHost, previewHttpsPort)
 const previewDbOrigin = resolvePreviewOrigin(previewDbHost, previewHttpsPort)
 const previewDeviceApiHost = resolvePreviewDeviceApiHost(previewDeviceHost, previewApiPort)
 const previewDeviceApiBase = resolveDeviceApiBase(previewDeviceApiHost, previewApiPort)
+const resolvedTemplatePreset = runtimeConfig.template.preset
+const resolvedTemplateHomeMode = runtimeConfig.template.homeMode
+const resolvedTemplateFeatures = pickFirstTrimmed(
+  process.env.PROMETHEUS_TEMPLATE_FEATURES,
+  process.env.TEMPLATE_FEATURES,
+  process.env.VITE_TEMPLATE_FEATURES
+)
+const resolvedTemplateDisabledFeatures = pickFirstTrimmed(
+  process.env.PROMETHEUS_TEMPLATE_DISABLE_FEATURES,
+  process.env.TEMPLATE_DISABLE_FEATURES,
+  process.env.VITE_TEMPLATE_DISABLE_FEATURES
+)
 const envApiBase = process.env.VITE_API_BASE?.trim() || ''
 const previewApiBase =
   previewDeviceApiBase && isLocalApiBase(envApiBase)
     ? previewDeviceApiBase
     : envApiBase || (previewOrigin ? `${previewOrigin}/api` : '')
 console.log(
+  `[preview] templatePreset=${resolvedTemplatePreset} templateHomeMode=${resolvedTemplateHomeMode} ` +
+    `templateFeatures=${resolvedTemplateFeatures || '(default)'} ` +
+    `templateDisableFeatures=${resolvedTemplateDisabledFeatures || '(none)'}\n` +
   `[preview] deviceHost=${previewDeviceHost || '(none)'} deviceApiHost=${previewDeviceApiHost || '(none)'} ` +
     `deviceApiBase=${previewDeviceApiBase || '(none)'} envApiBase=${envApiBase || '(empty)'} ` +
     `resolvedApiBase=${previewApiBase || '(empty)'}`
@@ -358,14 +380,18 @@ const composeEnv = withResolvedSpacetimeAuthEnv({
   PROMETHEUS_DB_HOST_PROD: runtimeConfig.domains.dbProd,
   PROMETHEUS_WEB_HOST: previewWebHost,
   PROMETHEUS_WEB_HOST_PROD: runtimeConfig.domains.webProd,
-  PROMETHEUS_TEMPLATE_PRESET: runtimeConfig.template.preset,
-  PROMETHEUS_TEMPLATE_HOME_MODE: runtimeConfig.template.homeMode,
-  PROMETHEUS_TEMPLATE_FEATURES: process.env.PROMETHEUS_TEMPLATE_FEATURES?.trim() || '',
-  PROMETHEUS_TEMPLATE_DISABLE_FEATURES: process.env.PROMETHEUS_TEMPLATE_DISABLE_FEATURES?.trim() || '',
-  VITE_TEMPLATE_PRESET: runtimeConfig.template.preset,
-  VITE_TEMPLATE_HOME_MODE: runtimeConfig.template.homeMode,
-  VITE_TEMPLATE_FEATURES: process.env.PROMETHEUS_TEMPLATE_FEATURES?.trim() || '',
-  VITE_TEMPLATE_DISABLE_FEATURES: process.env.PROMETHEUS_TEMPLATE_DISABLE_FEATURES?.trim() || '',
+  PROMETHEUS_TEMPLATE_PRESET: resolvedTemplatePreset,
+  PROMETHEUS_TEMPLATE_HOME_MODE: resolvedTemplateHomeMode,
+  PROMETHEUS_TEMPLATE_FEATURES: resolvedTemplateFeatures,
+  PROMETHEUS_TEMPLATE_DISABLE_FEATURES: resolvedTemplateDisabledFeatures,
+  TEMPLATE_PRESET: resolvedTemplatePreset,
+  TEMPLATE_HOME_MODE: resolvedTemplateHomeMode,
+  TEMPLATE_FEATURES: resolvedTemplateFeatures,
+  TEMPLATE_DISABLE_FEATURES: resolvedTemplateDisabledFeatures,
+  VITE_TEMPLATE_PRESET: resolvedTemplatePreset,
+  VITE_TEMPLATE_HOME_MODE: resolvedTemplateHomeMode,
+  VITE_TEMPLATE_FEATURES: resolvedTemplateFeatures,
+  VITE_TEMPLATE_DISABLE_FEATURES: resolvedTemplateDisabledFeatures,
   VITE_SPACETIMEDB_URI: process.env.VITE_SPACETIMEDB_URI?.trim() || previewDbOrigin,
   PROMETHEUS_VITE_API_BASE: '/api',
   PROMETHEUS_VITE_WEBTRANSPORT_BASE: resolvedWebTransportBase,
@@ -410,6 +436,10 @@ const composeSiteBuildEnv = {
   PROMETHEUS_TEMPLATE_HOME_MODE: composeEnv.PROMETHEUS_TEMPLATE_HOME_MODE,
   PROMETHEUS_TEMPLATE_FEATURES: composeEnv.PROMETHEUS_TEMPLATE_FEATURES,
   PROMETHEUS_TEMPLATE_DISABLE_FEATURES: composeEnv.PROMETHEUS_TEMPLATE_DISABLE_FEATURES,
+  TEMPLATE_PRESET: composeEnv.TEMPLATE_PRESET,
+  TEMPLATE_HOME_MODE: composeEnv.TEMPLATE_HOME_MODE,
+  TEMPLATE_FEATURES: composeEnv.TEMPLATE_FEATURES,
+  TEMPLATE_DISABLE_FEATURES: composeEnv.TEMPLATE_DISABLE_FEATURES,
   VITE_TEMPLATE_PRESET: composeEnv.VITE_TEMPLATE_PRESET,
   VITE_TEMPLATE_HOME_MODE: composeEnv.VITE_TEMPLATE_HOME_MODE,
   VITE_TEMPLATE_FEATURES: composeEnv.VITE_TEMPLATE_FEATURES,
@@ -506,10 +536,14 @@ const webBuildInputs = [
   'packages'
 ]
 const webBuildExtra = {
-  PROMETHEUS_TEMPLATE_PRESET: process.env.PROMETHEUS_TEMPLATE_PRESET?.trim() || '',
-  PROMETHEUS_TEMPLATE_HOME_MODE: process.env.PROMETHEUS_TEMPLATE_HOME_MODE?.trim() || '',
-  PROMETHEUS_TEMPLATE_FEATURES: process.env.PROMETHEUS_TEMPLATE_FEATURES?.trim() || '',
-  PROMETHEUS_TEMPLATE_DISABLE_FEATURES: process.env.PROMETHEUS_TEMPLATE_DISABLE_FEATURES?.trim() || '',
+  PROMETHEUS_TEMPLATE_PRESET: composeEnv.PROMETHEUS_TEMPLATE_PRESET,
+  PROMETHEUS_TEMPLATE_HOME_MODE: composeEnv.PROMETHEUS_TEMPLATE_HOME_MODE,
+  PROMETHEUS_TEMPLATE_FEATURES: composeEnv.PROMETHEUS_TEMPLATE_FEATURES,
+  PROMETHEUS_TEMPLATE_DISABLE_FEATURES: composeEnv.PROMETHEUS_TEMPLATE_DISABLE_FEATURES,
+  TEMPLATE_PRESET: composeEnv.TEMPLATE_PRESET,
+  TEMPLATE_HOME_MODE: composeEnv.TEMPLATE_HOME_MODE,
+  TEMPLATE_FEATURES: composeEnv.TEMPLATE_FEATURES,
+  TEMPLATE_DISABLE_FEATURES: composeEnv.TEMPLATE_DISABLE_FEATURES,
   VITE_TEMPLATE_PRESET: composeEnv.VITE_TEMPLATE_PRESET,
   VITE_TEMPLATE_HOME_MODE: composeEnv.VITE_TEMPLATE_HOME_MODE,
   VITE_TEMPLATE_FEATURES: composeEnv.VITE_TEMPLATE_FEATURES,
@@ -569,6 +603,14 @@ const composeRuntimeFingerprint = computeFingerprint(
     PROMETHEUS_TEMPLATE_HOME_MODE: composeEnv.PROMETHEUS_TEMPLATE_HOME_MODE ?? '',
     PROMETHEUS_TEMPLATE_FEATURES: composeEnv.PROMETHEUS_TEMPLATE_FEATURES ?? '',
     PROMETHEUS_TEMPLATE_DISABLE_FEATURES: composeEnv.PROMETHEUS_TEMPLATE_DISABLE_FEATURES ?? '',
+    TEMPLATE_PRESET: composeEnv.TEMPLATE_PRESET ?? '',
+    TEMPLATE_HOME_MODE: composeEnv.TEMPLATE_HOME_MODE ?? '',
+    TEMPLATE_FEATURES: composeEnv.TEMPLATE_FEATURES ?? '',
+    TEMPLATE_DISABLE_FEATURES: composeEnv.TEMPLATE_DISABLE_FEATURES ?? '',
+    VITE_TEMPLATE_PRESET: composeEnv.VITE_TEMPLATE_PRESET ?? '',
+    VITE_TEMPLATE_HOME_MODE: composeEnv.VITE_TEMPLATE_HOME_MODE ?? '',
+    VITE_TEMPLATE_FEATURES: composeEnv.VITE_TEMPLATE_FEATURES ?? '',
+    VITE_TEMPLATE_DISABLE_FEATURES: composeEnv.VITE_TEMPLATE_DISABLE_FEATURES ?? '',
     ENABLE_WEBTRANSPORT_FRAGMENTS: composeEnv.ENABLE_WEBTRANSPORT_FRAGMENTS ?? '',
     WEBTRANSPORT_ENABLE_DATAGRAMS: composeEnv.WEBTRANSPORT_ENABLE_DATAGRAMS ?? '',
     VITE_DISABLE_SW: composeEnv.VITE_DISABLE_SW ?? '',

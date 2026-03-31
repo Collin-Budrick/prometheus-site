@@ -25,7 +25,9 @@ import { markStaticShellUserTiming } from "./static-shell-performance";
 import {
   getFragmentHeightViewport,
   parseFragmentHeightLayout,
+  readFragmentReservationHeight,
   resolveFragmentHeightWidthBucket,
+  writeFragmentReservationHeight,
 } from "@prometheus/ui/fragment-height";
 import { scheduleStaticRoutePaintReady } from "../core/static-route-paint";
 import { ensureHomeSharedRuntime } from "./home-shared-runtime";
@@ -61,15 +63,8 @@ const getStaticHomeFragmentCard = (
     )}"]`,
   );
 
-const readStaticHomeHeightHint = (card: HTMLElement) => {
-  const hintedHeight = Number.parseFloat(
-    card.getAttribute("data-fragment-height-hint") ??
-      card.style.getPropertyValue("--fragment-min-height"),
-  );
-  return Number.isFinite(hintedHeight) && hintedHeight > 0
-    ? Math.ceil(hintedHeight)
-    : null;
-};
+const readStaticHomeHeightHint = (card: HTMLElement) =>
+  readFragmentReservationHeight(card);
 
 const resolveStaticHomeViewportWidth = (viewportWidth?: number | null) => {
   const normalizedWidth =
@@ -156,11 +151,7 @@ const applySharedHomeRuntimeSizing = (
   const card = getStaticHomeFragmentCard(sizing.fragmentId, root);
   if (!card) return;
   if (sizing.reservedHeight > 0) {
-    card.style.setProperty(
-      "--fragment-min-height",
-      `${sizing.reservedHeight}px`,
-    );
-    card.setAttribute("data-fragment-height-hint", `${sizing.reservedHeight}`);
+    writeFragmentReservationHeight(card, sizing.reservedHeight);
   }
 };
 

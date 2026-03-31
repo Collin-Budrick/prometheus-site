@@ -1,5 +1,7 @@
 import { $, component$, Slot, useSignal, useVisibleTask$, type Signal } from '@builder.io/qwik'
 import {
+  FRAGMENT_LIVE_MIN_HEIGHT_VAR,
+  FRAGMENT_RESERVED_HEIGHT_VAR,
   getFragmentHeightViewport,
   persistFragmentHeight,
   readFragmentHeightCookieHeights,
@@ -325,6 +327,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
     }
     const columnSpan = parseSpan(resolvedColumn)
     const isInline = !isFullWidth && (columnSpan === null ? true : columnSpan < 12)
+    const hasFragmentLifecycle = Boolean(fragmentId)
     const cardRef = useSignal<HTMLElement>()
     const placeholderRef = useSignal<HTMLDivElement>()
     const autoExpandable = useSignal(false)
@@ -337,13 +340,16 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
     const canToggleExpand = expandable === true || (expandable !== false && autoExpandable.value) || isExpanded
     const layoutVersion = layoutTick.value
     const bodyRef = useSignal<HTMLDivElement>()
-    const fragmentReady = useSignal(false)
-    const currentStage = useSignal<FragmentInitialStage>(props.fragmentStage ?? 'waiting-payload')
-    const revealLocked = useSignal(props.revealLocked !== false)
+    const fragmentReady = useSignal(!hasFragmentLifecycle)
+    const currentStage = useSignal<FragmentInitialStage>(
+      props.fragmentStage ?? (hasFragmentLifecycle ? 'waiting-payload' : 'ready')
+    )
+    const revealLocked = useSignal(hasFragmentLifecycle ? props.revealLocked !== false : false)
     const finalMeasuredHeight = useSignal<number | null>(null)
     const lockedHeight = useSignal<number | null>(props.reservedHeight ?? null)
-    const resolvedHeightHint = useSignal<number | null>(props.reservedHeight ?? null)
-    const hasSettledOnce = useSignal(false)
+    const liveMinHeight = useSignal<number | null>(props.reservedHeight ?? null)
+    const reservedHeightHint = useSignal<number | null>(props.reservedHeight ?? null)
+    const hasSettledOnce = useSignal(!hasFragmentLifecycle)
     const forceReveal = useSignal(false)
     const cssReady = useSignal(Boolean(props.fragmentLoaded && props.fragmentHasCss === false))
     const pendingTaskKeys = useSignal<string[]>([])
@@ -352,7 +358,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
     const readyStaggerState = useSignal<'queued' | 'done' | undefined>(undefined)
     const readyStaggerDelay = useSignal('0ms')
     const readyStaggerApplied = useSignal(false)
-    const revealPhase = useSignal<FragmentCardRevealPhase>(fragmentId ? 'holding' : 'visible')
+    const revealPhase = useSignal<FragmentCardRevealPhase>(hasFragmentLifecycle ? 'holding' : 'visible')
     const revealUnlockDelayMs = useSignal<number | null>(null)
 
     const handleToggle = $((event: MouseEvent) => {
@@ -604,6 +610,25 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
 
     useVisibleTask$(
       (ctx) => {
+        const activeId = ctx.track(() => props.fragmentId)
+        if (activeId) return
+
+        currentStage.value = 'ready'
+        fragmentReady.value = true
+        hasSettledOnce.value = true
+        forceReveal.value = false
+        revealScheduled.value = false
+        revealPhase.value = 'visible'
+        revealLocked.value = false
+        revealUnlockDelayMs.value = null
+        lockedHeight.value = null
+        liveMinHeight.value = null
+      },
+      { strategy: 'document-ready' }
+    )
+
+    useVisibleTask$(
+      (ctx) => {
         const loaded = ctx.track(() => Boolean(props.fragmentLoaded))
         const hasCss = ctx.track(() => props.fragmentHasCss !== false)
         const activeId = ctx.track(() => props.fragmentId)
@@ -679,7 +704,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
               viewport,
               cardWidth
             }) ?? ''
-          if (widthBucket === lastBucket && resolvedHeightHint.value !== null) {
+          if (widthBucket === lastBucket && reservedHeightHint.value !== null) {
             return
           }
           lastBucket = widthBucket
@@ -715,10 +740,11 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
           })
 
           if (nextReservedHeight <= 0) return
-          if ((resolvedHeightHint.value ?? reservedHeight ?? 0) >= nextReservedHeight) return
-          resolvedHeightHint.value = nextReservedHeight
+          if ((reservedHeightHint.value ?? reservedHeight ?? 0) >= nextReservedHeight) return
+          reservedHeightHint.value = nextReservedHeight
           if (finalMeasuredHeight.value === null) {
             lockedHeight.value = Math.max(lockedHeight.value ?? 0, nextReservedHeight)
+            liveMinHeight.value = Math.max(liveMinHeight.value ?? 0, nextReservedHeight)
           }
         }
 
@@ -849,8 +875,10 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
 
         revealLocked.value = props.revealLocked !== false
         if (finalMeasuredHeight.value === null) {
-          lockedHeight.value = reservedHeight
-          resolvedHeightHint.value = reservedHeight
+          const nextReservedHeight = Math.max(reservedHeight ?? 0, reservedHeightHint.value ?? 0)
+          reservedHeightHint.value = nextReservedHeight > 0 ? nextReservedHeight : null
+          lockedHeight.value = nextReservedHeight > 0 ? nextReservedHeight : null
+          liveMinHeight.value = nextReservedHeight > 0 ? nextReservedHeight : null
         }
         revealPhase.value = revealDecision.revealPhase
 
@@ -872,7 +900,12 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
           : images.filter((image) => !(image.complete && image.naturalWidth >= 0))
         const finalizeReveal = () => {
           if (cancelled) return
-          const previousReservedHeight = resolvedHeightHint.value ?? reservedHeight ?? 0
+          const previousReservedHeight = reservedHeightHint.value ?? reservedHeight ?? 0
+          const previousRenderedHeight = Math.max(
+            Math.ceil(card.getBoundingClientRect().height),
+            lockedHeight.value ?? 0,
+            liveMinHeight.value ?? 0
+          )
           const measured = Math.max(
             Math.ceil(card.scrollHeight),
             Math.ceil(card.getBoundingClientRect().height),
@@ -880,7 +913,8 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
           )
           finalMeasuredHeight.value = measured > 0 ? measured : reservedHeight
           lockedHeight.value = finalMeasuredHeight.value
-          resolvedHeightHint.value = finalMeasuredHeight.value
+          liveMinHeight.value = finalMeasuredHeight.value
+          reservedHeightHint.value = finalMeasuredHeight.value
           if (revealScheduled.value) return
           revealScheduled.value = true
           revealFrame = requestAnimationFrame(() => {
@@ -889,6 +923,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
               if (cancelled) return
               currentStage.value = 'ready'
               fragmentReady.value = true
+              const firstSettle = !hasSettledOnce.value
               hasSettledOnce.value = true
               forceReveal.value = false
               revealScheduled.value = false
@@ -926,12 +961,14 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
                   })
                 )
               }
-              card.dispatchEvent(
-                new CustomEvent(STABLE_HEIGHT_EVENT, {
-                  bubbles: true,
-                  detail: { fragmentId: props.fragmentId, height: settledHeight }
-                })
-              )
+              if (firstSettle || Math.abs(settledHeight - previousRenderedHeight) > 1) {
+                card.dispatchEvent(
+                  new CustomEvent(STABLE_HEIGHT_EVENT, {
+                    bubbles: true,
+                    detail: { fragmentId: props.fragmentId, height: settledHeight }
+                  })
+                )
+              }
             })
           })
         }
@@ -1003,8 +1040,10 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
         const phase = ctx.track(() => revealPhase.value)
         const unlockDelayMs = ctx.track(() => revealUnlockDelayMs.value)
         const locked = ctx.track(() => revealLocked.value)
+        const dragInfo = dragState ? ctx.track(() => dragState.value) : null
+        const dragActive = Boolean(dragInfo?.active)
 
-        if (!activeId || phase !== 'visible' || unlockDelayMs === null || !locked) {
+        if (!activeId || phase !== 'visible' || unlockDelayMs === null || !locked || dragActive) {
           return
         }
 
@@ -1013,6 +1052,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
         const unlock = () => {
           revealLocked.value = false
           lockedHeight.value = null
+          liveMinHeight.value = null
           revealUnlockDelayMs.value = null
         }
 
@@ -1048,7 +1088,8 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
       '--motion-delay': `${motionDelay}ms`,
       '--ready-stagger-delay': readyStaggerDelay.value,
       '--layout-version': `${layoutVersion}`,
-      ...(resolvedHeightHint.value ? { '--fragment-min-height': `${resolvedHeightHint.value}px` } : {}),
+      ...(reservedHeightHint.value ? { [FRAGMENT_RESERVED_HEIGHT_VAR]: `${reservedHeightHint.value}px` } : {}),
+      ...(liveMinHeight.value ? { [FRAGMENT_LIVE_MIN_HEIGHT_VAR]: `${liveMinHeight.value}px` } : {}),
       ...(lockedHeight.value ? { height: `${lockedHeight.value}px` } : {})
     } as Record<string, string>
 
@@ -1085,7 +1126,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
           data-wave-in={waveIn ? '' : undefined}
           data-critical={critical ? 'true' : undefined}
           data-fragment-id={fragmentId}
-          data-fragment-height-hint={resolvedHeightHint.value ? `${resolvedHeightHint.value}` : undefined}
+          data-fragment-height-hint={reservedHeightHint.value ? `${reservedHeightHint.value}` : undefined}
           data-fragment-height-layout={serializeFragmentHeightLayout(props.fragmentHeightLayout ?? null) ?? undefined}
           data-fragment-loaded={props.fragmentLoaded ? 'true' : undefined}
           data-fragment-ready={fragmentReady.value ? 'true' : undefined}

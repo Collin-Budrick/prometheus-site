@@ -22,6 +22,10 @@ class MockStyle {
   getPropertyValue(name: string) {
     return this.props.get(name) ?? ''
   }
+
+  removeProperty(name: string) {
+    this.props.delete(name)
+  }
 }
 
 class MockBodyElement {

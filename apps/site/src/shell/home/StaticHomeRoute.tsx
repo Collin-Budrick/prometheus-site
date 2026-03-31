@@ -34,6 +34,7 @@ import {
 import { getHomeStaticFragmentKind } from './home-render'
 import { buildHomeFragmentBootstrapHref } from './home-fragment-bootstrap'
 import {
+  FRAGMENT_RESERVED_HEIGHT_VAR,
   buildFragmentHeightPlanSignature,
   buildFragmentHeightVersionSignature,
   readFragmentStableHeight,
@@ -504,7 +505,7 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
   })
   const renderHomeCard = (card: StaticHomeRenderedCard) => {
     const style = {
-      '--fragment-min-height': `${card.reservedHeight}px`,
+      [FRAGMENT_RESERVED_HEIGHT_VAR]: `${card.reservedHeight}px`,
       order: card.order
     }
 
