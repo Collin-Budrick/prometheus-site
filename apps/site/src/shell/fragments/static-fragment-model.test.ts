@@ -148,6 +148,44 @@ describe('static-fragment-model', () => {
     ])
   })
 
+  it('keeps a single desktop card full width in the static model and runtime plan', () => {
+    const plan = {
+      path: '/chat',
+      createdAt: 1,
+      fragments: [
+        {
+          id: 'fragment://page/chat/contacts@v1',
+          critical: true,
+          layout: { column: 'span 6', size: 'small' }
+        }
+      ]
+    } as const
+
+    const model = buildStaticFragmentRouteModel({
+      plan: plan as never,
+      fragments: {
+        'fragment://page/chat/contacts@v1': {
+          id: 'fragment://page/chat/contacts@v1',
+          tree: h('section', null, [h('p', null, [t('contacts')])]),
+          head: [],
+          css: '',
+          meta: {
+            cacheKey: 'contacts:1',
+            ttl: 30,
+            staleTtl: 60,
+            tags: [],
+            runtime: 'edge'
+          },
+          cacheUpdatedAt: 1
+        }
+      },
+      lang: 'en'
+    })
+
+    expect(model.entries.map((entry) => entry.layout.column)).toEqual(['span 12'])
+    expect(model.routeData.runtimePlanEntries.map((entry) => entry.layout.column)).toEqual(['span 12'])
+  })
+
   it('renders static fragment replacements from the provided fragment copy', () => {
     const plan = {
       path: '/store',

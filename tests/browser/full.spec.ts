@@ -191,11 +191,21 @@ test.describe('full preset live route audit', () => {
 
   test('login route supports tab changes without credentials', async ({ page }) => {
     await runWithRuntimeTracking(page, 'login route', async () => {
+      await page.setViewportSize({ width: 1440, height: 1200 })
       await page.goto('/login/', { waitUntil: 'domcontentloaded' })
 
       await expect(page).toHaveTitle('Welcome back | Prometheus')
       await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible()
       await expect(page.locator('[data-static-login-runtime-banner]')).toContainText(/Dev session|Hosted auth/)
+
+      const mainGrid = page.locator('[data-fragment-grid="main"]').first()
+      const loginCard = page.locator('article').filter({ has: page.locator('[data-static-login-root]') }).first()
+      const mainGridBox = await expectBoundingBox(mainGrid)
+      const loginCardBox = await expectBoundingBox(loginCard)
+
+      expect(loginCardBox.width).toBeGreaterThan(mainGridBox.width * 0.9)
+      expect(Math.abs(loginCardBox.x - mainGridBox.x)).toBeLessThan(24)
+
       await expectDockShortcuts(page)
       await openAndCloseSettings(page)
 

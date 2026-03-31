@@ -16,6 +16,9 @@ const createEntry = (id: string, column = 'span 6'): FragmentPlanEntry => ({
 })
 
 const createSlots = (count: number): BentoSlot[] => {
+  if (count === 1) {
+    return [{ id: 'slot-left-1', size: 'small', column: '1 / span 6', row: '1' }]
+  }
   if (count === 2) {
     return [
       { id: 'slot-left-1', size: 'small', column: '1 / span 6', row: '1' },
@@ -30,6 +33,21 @@ const createSlots = (count: number): BentoSlot[] => {
 }
 
 describe('fragment-shell-layout', () => {
+  it('promotes a single desktop card to full width', () => {
+    const entries = [createEntry('one')]
+    const slots = createSlots(entries.length)
+
+    const resolvedEntries = resolveEffectiveMainGridEntries(entries, 'desktop-two-column')
+    const resolvedSlots = resolveEffectiveMainGridSlots({
+      entries,
+      slots,
+      mode: 'desktop-two-column'
+    })
+
+    expect(resolvedEntries.map((entry) => entry.layout.column)).toEqual([FULL_WIDTH_LAYOUT_COLUMN])
+    expect(resolvedSlots.map((slot) => slot.column)).toEqual([FULL_WIDTH_SLOT_COLUMN])
+  })
+
   it('promotes the first main-grid card to full width on desktop when the card count is odd', () => {
     const entries = [createEntry('one'), createEntry('two'), createEntry('three')]
     const slots = createSlots(entries.length)

@@ -689,6 +689,55 @@ body {
   gap: 1.5rem;
 }
 
+.fragment-grid > .fragment-slot,
+.fragment-grid > .fragment-card {
+  min-width: 0;
+}
+
+.fragment-grid > .fragment-card {
+  width: 100%;
+}
+
+@media (min-width: 640px) {
+  .fragment-grid {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .fragment-grid > .fragment-slot,
+  .fragment-grid > .fragment-card {
+    flex-basis: 240px;
+  }
+}
+
+@media (min-width: 900px) {
+  .fragment-grid {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1024px) {
+  .fragment-grid {
+    display: flex;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+  }
+
+  .fragment-grid > .fragment-slot,
+  .fragment-grid > .fragment-card {
+    flex-basis: auto;
+    width: 100%;
+  }
+}
+
+@media (min-width: 1025px) {
+  .fragment-grid {
+    align-items: start;
+  }
+}
+
 .fragment-slot {
   position: relative;
   display: flex;
