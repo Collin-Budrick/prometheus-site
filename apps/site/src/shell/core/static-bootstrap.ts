@@ -78,6 +78,7 @@ import {
   readStaticShellTheme,
 } from "./settings-overlay-dom";
 import { mountStaticSettingsController } from "./controllers/settings-static-controller";
+import { acquirePretextDomController } from "../pretext/pretext-dom";
 
 type Theme = "light" | "dark";
 
@@ -1298,6 +1299,13 @@ export const bootstrapStaticFragmentShell = async () => {
     didStartDirectStreamStartup: false,
   };
   activeController = controller;
+  const pretextController = acquirePretextDomController({
+    initialLang: controller.lang,
+    root: document.body,
+  });
+  if (pretextController) {
+    controller.cleanupFns.push(() => pretextController.release());
+  }
   controller.commitQueue = createStaticFragmentCommitQueue(controller);
   controller.cleanupFns.push(() => controller.commitQueue?.destroy());
 

@@ -1075,6 +1075,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
           ref={cardRef}
           class={{ 'fragment-card': true, 'is-expanded': isExpanded, 'is-inline': isInline }}
           style={cardStyle}
+          data-pretext-card-root="true"
           data-motion={disableMotion || fragmentId ? undefined : ''}
           data-motion-skip-visible={disableMotion || fragmentId ? undefined : ''}
           data-variant={resolvedVariant === 'card' ? undefined : resolvedVariant}

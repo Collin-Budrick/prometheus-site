@@ -35,6 +35,7 @@ export type HomeStaticRenderOptions = {
 type DemoKind = 'planner' | 'wasm-renderer' | 'react-binary' | 'preact-island'
 type DemoWidgetKind = 'planner-demo' | 'wasm-renderer-demo' | 'react-binary-demo' | 'preact-island'
 type DemoRenderVariant = 'preview' | 'active'
+type PretextRole = 'body' | 'meta' | 'pill' | 'title'
 type DemoWidgetNodeOptions = {
   fragmentId?: string
   widgetId?: string
@@ -97,6 +98,89 @@ const joinFragmentSentences = (copy: HomeStaticCopyBundle, values: string[]) =>
     .map((value) => resolveFragmentText(copy, value).trim())
     .filter(Boolean)
     .join(' ')
+
+const PRETEXT_META_CLASSES = new Set([
+  'meta-line',
+  'home-demo-compact-kicker',
+  'home-demo-compact-meta',
+  'home-fragment-shell-meta'
+])
+
+const PRETEXT_PILL_CLASSES = new Set([
+  'home-demo-compact-action',
+  'home-intro-pill',
+  'home-manifest-pill'
+])
+
+const PRETEXT_BODY_CLASSES = new Set([
+  'home-demo-compact-copy',
+  'home-fragment-copy',
+  'home-fragment-shell-copy',
+  'home-fragment-stub-copy',
+  'home-manifest-copy'
+])
+
+const getClassList = (attrs?: Record<string, string>) =>
+  (attrs?.class ?? '')
+    .split(/\s+/)
+    .map((value) => value.trim())
+    .filter(Boolean)
+
+const resolvePretextRole = (node: RenderNode): PretextRole | null => {
+  if (node.type !== 'element') {
+    return null
+  }
+
+  const explicit = node.attrs?.['data-pretext-role']
+  if (explicit === 'body' || explicit === 'meta' || explicit === 'pill' || explicit === 'title') {
+    return explicit
+  }
+
+  const classes = getClassList(node.attrs)
+  if (classes.some((className) => PRETEXT_META_CLASSES.has(className))) {
+    return 'meta'
+  }
+  if (classes.some((className) => PRETEXT_PILL_CLASSES.has(className))) {
+    return 'pill'
+  }
+  if (classes.some((className) => PRETEXT_BODY_CLASSES.has(className))) {
+    return 'body'
+  }
+
+  switch (node.tag) {
+    case 'h1':
+    case 'h2':
+    case 'h3':
+      return 'title'
+    case 'p':
+      return 'body'
+    default:
+      return null
+  }
+}
+
+const applyPretextContract = (node: RenderNode): RenderNode => {
+  if (node.type !== 'element') {
+    return node
+  }
+
+  const role = resolvePretextRole(node)
+  const nextAttrs =
+    role && node.attrs?.['data-pretext-role'] !== role
+      ? {
+          ...(node.attrs ?? {}),
+          'data-pretext-role': role
+        }
+      : node.attrs
+
+  return {
+    ...node,
+    ...(nextAttrs ? { attrs: nextAttrs } : {}),
+    children: node.children?.map((child) => applyPretextContract(child))
+  }
+}
+
+const renderHomeStaticNode = (node: RenderNode) => renderToHtml(applyPretextContract(node))
 
 const demoRootAttrs = (kind: DemoKind, props?: Record<string, string>) => ({
   class: `home-demo-compact home-demo-compact--${kind}`,
@@ -749,12 +833,14 @@ const buildDemoShellNode = (
     kind,
     h('div', demoShellAttrs(kind), [
       ...(normalizeHeaderMeta(header.metaLine)
-        ? [h('div', { class: 'meta-line' }, [t(normalizeHeaderMeta(header.metaLine))])]
+        ? [h('div', { class: 'meta-line', 'data-pretext-role': 'meta' }, [t(normalizeHeaderMeta(header.metaLine))])]
         : []),
-      h(header.heading ?? 'h2', null, [t(header.title)]),
-      ...(shellSummary ? [h('div', { class: 'home-fragment-shell-copy' }, [t(shellSummary)])] : []),
+      h(header.heading ?? 'h2', { 'data-pretext-role': 'title' }, [t(header.title)]),
+      ...(shellSummary
+        ? [h('div', { class: 'home-fragment-shell-copy', 'data-pretext-role': 'body' }, [t(shellSummary)])]
+        : []),
       h('div', { class: 'home-fragment-shell-footer' }, [
-        h('div', { class: 'home-fragment-shell-meta' }, [t(joinMeta(summaryMeta))])
+        h('div', { class: 'home-fragment-shell-meta', 'data-pretext-role': 'meta' }, [t(joinMeta(summaryMeta))])
       ])
     ]),
     { fragmentId }
@@ -781,10 +867,10 @@ const buildDockShellNode = (
     priority: 'critical',
     shell: h('section', { class: 'home-fragment-shell home-fragment-shell--dock' }, [
       ...(normalizeHeaderMeta(header.metaLine)
-        ? [h('div', { class: 'meta-line' }, [t(normalizeHeaderMeta(header.metaLine))])]
+        ? [h('div', { class: 'meta-line', 'data-pretext-role': 'meta' }, [t(normalizeHeaderMeta(header.metaLine))])]
         : []),
-      h(header.heading ?? 'h2', null, [t(header.title)]),
-      ...(summary ? [h('p', { class: 'home-fragment-shell-copy' }, [t(summary)])] : []),
+      h(header.heading ?? 'h2', { 'data-pretext-role': 'title' }, [t(header.title)]),
+      ...(summary ? [h('p', { class: 'home-fragment-shell-copy', 'data-pretext-role': 'body' }, [t(summary)])] : []),
       h(
         'div',
         {
@@ -824,7 +910,7 @@ const buildDockShellNode = (
           ])
         ]
       ),
-      h('div', { class: 'home-fragment-shell-meta' }, [
+      h('div', { class: 'home-fragment-shell-meta', 'data-pretext-role': 'meta' }, [
         t(joinMeta(['Loro', 'Garnet', resolveFragmentText(copy, noteRealtime)]))
       ])
     ])
@@ -841,15 +927,15 @@ const buildDockPreviewNode = (
   const summary = header.description || getDockShellSummary(copy)
   return h('section', { class: 'home-fragment-shell home-fragment-shell--dock' }, [
     ...(normalizeHeaderMeta(header.metaLine)
-      ? [h('div', { class: 'meta-line' }, [t(normalizeHeaderMeta(header.metaLine))])]
+      ? [h('div', { class: 'meta-line', 'data-pretext-role': 'meta' }, [t(normalizeHeaderMeta(header.metaLine))])]
       : []),
-    h(header.heading ?? 'h2', null, [t(header.title)]),
-    ...(summary ? [h('p', { class: 'home-fragment-shell-copy' }, [t(summary)])] : []),
+    h(header.heading ?? 'h2', { 'data-pretext-role': 'title' }, [t(header.title)]),
+    ...(summary ? [h('p', { class: 'home-fragment-shell-copy', 'data-pretext-role': 'body' }, [t(summary)])] : []),
     h('div', { class: 'home-fragment-shell-footer' }, [
-      h('div', { class: 'home-fragment-shell-meta' }, [
+      h('div', { class: 'home-fragment-shell-meta', 'data-pretext-role': 'meta' }, [
         t(joinMeta(['Loro', 'Garnet', resolveFragmentText(copy, 'Realtime')]))
       ]),
-      h('span', { class: 'home-demo-compact-action' }, [t(resolveFragmentText(copy, statusIdle))])
+      h('span', { class: 'home-demo-compact-action', 'data-pretext-role': 'pill' }, [t(resolveFragmentText(copy, statusIdle))])
     ])
   ])
 }
@@ -857,10 +943,10 @@ const buildDockPreviewNode = (
 const buildHomeStaticStubNode = (kind: string, header: FragmentHeaderCopy, description: string) =>
   h('section', { class: `home-fragment-stub home-fragment-stub--${kind}` }, [
     ...(normalizeHeaderMeta(header.metaLine)
-      ? [h('div', { class: 'meta-line' }, [t(normalizeHeaderMeta(header.metaLine))])]
+      ? [h('div', { class: 'meta-line', 'data-pretext-role': 'meta' }, [t(normalizeHeaderMeta(header.metaLine))])]
       : []),
-    h(header.heading ?? 'h2', null, [t(header.title)]),
-    ...(description ? [h('p', { class: 'home-fragment-stub-copy' }, [t(description)])] : [])
+    h(header.heading ?? 'h2', { 'data-pretext-role': 'title' }, [t(header.title)]),
+    ...(description ? [h('p', { class: 'home-fragment-stub-copy', 'data-pretext-role': 'body' }, [t(description)])] : [])
   ])
 
 export const getHomeStaticFragmentKind = (fragmentId?: string): HomeStaticFragmentKind =>
@@ -1083,9 +1169,11 @@ export const renderHomeStaticFragmentHtml = (
           case 'ledger':
           case 'island':
           case 'react':
-            return renderToHtml(buildHomeStaticPreviewNode(node, copy, options.fragmentId))
+            return renderHomeStaticNode(buildHomeStaticPreviewNode(node, copy, options.fragmentId))
           case 'dock':
-            return renderToHtml(buildDockPreviewNode(options.fragmentId, copy, options.fragmentHeaders))
+            return renderHomeStaticNode(
+              buildDockPreviewNode(options.fragmentId, copy, options.fragmentHeaders)
+            )
         }
       }
 
@@ -1095,24 +1183,24 @@ export const renderHomeStaticFragmentHtml = (
         case 'ledger':
         case 'island':
         case 'react':
-          return renderToHtml(buildHomeStaticActiveShellNode(node, copy, options.fragmentId))
+          return renderHomeStaticNode(buildHomeStaticActiveShellNode(node, copy, options.fragmentId))
       }
     }
 
     if (options.mode === 'shell') {
       const shellNode = buildHomeStaticShellNode(options.fragmentId, copy, options.fragmentHeaders)
       if (shellNode) {
-        return renderToHtml(shellNode)
+        return renderHomeStaticNode(shellNode)
       }
     }
 
     if (options.mode === 'stub') {
       const stubNode = buildHomeStaticStubForFragment(options.fragmentId, copy, options.fragmentHeaders)
       if (stubNode) {
-        return renderToHtml(stubNode)
+        return renderHomeStaticNode(stubNode)
       }
     }
   }
 
-  return renderToHtml(replaceDemoNodes(node, copy, options.fragmentId))
+  return renderHomeStaticNode(replaceDemoNodes(node, copy, options.fragmentId))
 }

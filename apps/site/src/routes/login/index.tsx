@@ -46,7 +46,10 @@ const resolveLoginCopy = (seed?: Partial<UiCopy>) => ({
   authSocialSectionLabel: seed?.authSocialSectionLabel ?? emptyUiCopy.authSocialSectionLabel,
   authMethodsLabel: seed?.authMethodsLabel ?? emptyUiCopy.authMethodsLabel,
   authHostedStatus: seed?.authHostedStatus ?? emptyUiCopy.authHostedStatus,
-  authNotConfigured: seed?.authNotConfigured ?? emptyUiCopy.authNotConfigured
+  authNotConfigured: seed?.authNotConfigured ?? emptyUiCopy.authNotConfigured,
+  loginRuntimePendingLabel:
+    seed?.loginRuntimePendingLabel ?? emptyUiCopy.loginRuntimePendingLabel,
+  loginNextLabel: seed?.loginNextLabel ?? emptyUiCopy.loginNextLabel
 })
 
 export const useLoginResource = routeLoader$<LoginResource>(async ({ request }) => {

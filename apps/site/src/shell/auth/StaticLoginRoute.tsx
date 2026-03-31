@@ -19,9 +19,11 @@ type StaticLoginRouteProps = {
     | 'authPasswordLabel'
     | 'authRememberLabel'
     | 'authSocialSectionLabel'
+    | 'loginNextLabel'
     | 'loginAction'
     | 'loginDescription'
     | 'loginMetaLine'
+    | 'loginRuntimePendingLabel'
     | 'loginTab'
     | 'loginTitle'
     | 'signupAction'
@@ -74,7 +76,7 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang,
     >
       <section class={['fragment-shell', authClass.shell].join(' ')}>
         <div class={['fragment-grid', authClass.grid].join(' ')} data-fragment-grid="main">
-          <article class="fragment-card" style={{ gridColumn: 'span 12' }}>
+          <article class="fragment-card" style={{ gridColumn: 'span 12' }} data-pretext-card-root="true">
             <div
               class={authClass.card}
               data-static-login-root
@@ -84,20 +86,26 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang,
               data-state="idle"
             >
               <div class={authClass.header}>
-                <div class="meta-line">{copy.loginMetaLine}</div>
+                <div class="meta-line" data-pretext-role="meta">
+                  {copy.loginMetaLine}
+                </div>
                 <div class={authClass.title}>
-                  <h1>{copy.loginTitle}</h1>
-                  <p>{copy.loginDescription}</p>
+                  <h1 data-pretext-role="title">{copy.loginTitle}</h1>
+                  <p data-pretext-role="body">{copy.loginDescription}</p>
                 </div>
               </div>
 
               <div class={authClass.status} data-tone="neutral" data-static-login-runtime-banner>
-                <div class="meta-line" data-static-login-runtime-label>
-                  Checking sign-in mode
+                <div class="meta-line" data-static-login-runtime-label data-pretext-role="meta">
+                  {copy.loginRuntimePendingLabel}
                 </div>
-                <p data-static-login-runtime-hint>{copy.loginDescription}</p>
+                <p data-static-login-runtime-hint data-pretext-role="body">
+                  {copy.loginDescription}
+                </p>
                 <p hidden={!nextPath} data-static-login-next>
-                  <strong>After sign in:</strong>{' '}
+                  <strong data-static-login-next-label data-pretext-role="meta">
+                    {copy.loginNextLabel}
+                  </strong>{' '}
                   <code data-static-login-next-code>{nextPath ?? ''}</code>
                 </p>
               </div>
@@ -181,6 +189,7 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang,
                     aria-live="polite"
                     data-tone="neutral"
                     data-static-login-login-hint
+                    data-pretext-role="body"
                   >
                     {copy.authHostedStatus}
                   </div>
@@ -231,7 +240,13 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang,
                     />
                     <span>{copy.authRememberLabel}</span>
                   </label>
-                  <div class={authClass.status} role="status" aria-live="polite" data-tone="neutral">
+                  <div
+                    class={authClass.status}
+                    role="status"
+                    aria-live="polite"
+                    data-tone="neutral"
+                    data-pretext-role="body"
+                  >
                     {copy.signupDescription}
                   </div>
                   <div class={authClass.actions}>

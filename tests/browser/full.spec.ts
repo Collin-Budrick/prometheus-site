@@ -2,10 +2,13 @@ import { expect, test, type Page } from '@playwright/test'
 import {
   createRuntimeIssueTracker,
   expectDockShortcuts,
+  expectHeightDriftWithin,
+  expectMeasuredCard,
   expectPathname,
   openAndCloseSettings,
   readAuditCredentials,
-  signInWithAuditCredentials
+  signInWithAuditCredentials,
+  toggleLanguageUntil
 } from './audit-helpers'
 
 const guardedRoutes = ['/chat/', '/dashboard/', '/profile/', '/settings/'] as const
@@ -94,6 +97,31 @@ test.describe('full preset live route audit', () => {
     })
   })
 
+  test('home route reserves measured card heights before and after reveal', async ({ page }) => {
+    test.slow()
+
+    await runWithRuntimeTracking(page, 'home route pretext stability', async () => {
+      await page.goto('/', { waitUntil: 'domcontentloaded' })
+
+      const introCard = page.locator('[data-fragment-id="shell-intro"]').first()
+      const manifestoCard = page.locator('[data-fragment-id="fragment://page/home/manifest@v1"]').first()
+      const dockCard = page.locator('[data-fragment-id="fragment://page/home/dock@v2"]').first()
+
+      await expectHeightDriftWithin(page, introCard, {
+        label: 'home intro card',
+        tolerance: 10
+      })
+      await expectHeightDriftWithin(page, manifestoCard, {
+        label: 'home manifesto card',
+        tolerance: 10
+      })
+      await expectHeightDriftWithin(page, dockCard, {
+        label: 'home dock card',
+        tolerance: 10
+      })
+    })
+  })
+
   test('store route streams inventory and exposes semantic issues', async ({ page }) => {
     test.slow()
 
@@ -126,6 +154,44 @@ test.describe('full preset live route audit', () => {
       const itemNameInput = page.getByRole('textbox', { name: 'ITEM NAME' })
       await expect.soft(itemNameInput).toHaveAttribute('name', /\S+/)
       await expect.soft(itemNameInput).toHaveAttribute('autocomplete', /\S+/)
+    })
+  })
+
+  test('store search and cart updates keep card heights stable after the update settles', async ({ page }) => {
+    test.slow()
+
+    await runWithRuntimeTracking(page, 'store route pretext stability', async () => {
+      await page.goto('/store/', { waitUntil: 'domcontentloaded' })
+
+      const streamCard = page.locator('article').filter({ has: page.getByText('LIVE CATALOG') }).first()
+      const cartCard = page.locator('article').filter({ has: page.getByText(/^Cart$/) }).first()
+      const search = page.getByRole('searchbox', { name: 'Search the store...' })
+
+      await search.fill('Item 15')
+      await expect(page.locator('.store-stream-meta')).toContainText('1 results')
+
+      await expectHeightDriftWithin(page, streamCard, {
+        label: 'store stream card after search',
+        tolerance: 12
+      })
+
+      const filteredRow = page.locator('.store-stream-row').filter({ has: page.getByText('Item 15') }).first()
+      await expect(filteredRow).toBeVisible()
+      const rowBefore = await filteredRow.boundingBox()
+      expect(rowBefore).not.toBeNull()
+
+      await filteredRow.getByRole('button', { name: 'Add to cart' }).click()
+      await expect(cartCard).toContainText('Item 15')
+
+      await expectHeightDriftWithin(page, cartCard, {
+        label: 'store cart card after add',
+        tolerance: 12
+      })
+
+      const rowAfter = await filteredRow.boundingBox()
+      expect(rowAfter).not.toBeNull()
+      const rowDrift = Math.abs((rowAfter?.height ?? 0) - (rowBefore?.height ?? 0))
+      expect(rowDrift, 'store row height drift exceeded 6px').toBeLessThanOrEqual(6)
     })
   })
 
@@ -200,6 +266,7 @@ test.describe('full preset live route audit', () => {
 
       const mainGrid = page.locator('[data-fragment-grid="main"]').first()
       const loginCard = page.locator('article').filter({ has: page.locator('[data-static-login-root]') }).first()
+      await expectMeasuredCard(loginCard)
       const mainGridBox = await expectBoundingBox(mainGrid)
       const loginCardBox = await expectBoundingBox(loginCard)
 
@@ -226,6 +293,10 @@ test.describe('full preset live route audit', () => {
       await expect(page.getByRole('textbox', { name: 'EMAIL' })).toBeVisible()
       await expect(page.getByRole('textbox', { name: 'PASSWORD' })).toBeVisible()
       await expect(page.getByRole('button', { name: 'SIGN IN' })).toBeVisible()
+      await expectHeightDriftWithin(page, loginCard, {
+        label: 'login card after tab toggles',
+        tolerance: 12
+      })
 
       const runtimeModeAfterSignIn = await page.locator('[data-static-login-root]').getAttribute('data-runtime-mode')
       const passkeysSupported = await page.evaluate(() => {
@@ -276,6 +347,12 @@ test.describe('full preset live route audit', () => {
           }
         }
       }
+
+      await toggleLanguageUntil(page, 'ko')
+      await expectHeightDriftWithin(page, loginCard, {
+        label: 'login card after language toggle',
+        tolerance: 12
+      })
     })
   })
 

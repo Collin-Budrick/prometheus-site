@@ -28,7 +28,7 @@ const makeText = (translate: (value: string, params?: Record<string, string | nu
 }
 
 const renderHomeCopyBlock = (text: ReturnType<typeof makeText>, lead: string, detail?: string) =>
-  h('p', { class: 'home-fragment-copy' }, [
+  h('p', { class: 'home-fragment-copy', 'data-pretext-role': 'body' }, [
     h('span', { class: 'home-fragment-copy-lead-inline' }, [text(lead)]),
     ...(detail ? [text(detail)] : [])
   ])
@@ -38,7 +38,7 @@ const renderManifestoCopyBlock = (
   lead: string,
   detail: string
 ) =>
-  h('p', { class: 'home-manifest-copy' }, [
+  h('p', { class: 'home-manifest-copy', 'data-pretext-role': 'body' }, [
     h('span', { class: 'home-manifest-copy-lead-inline' }, [text(lead)]),
     text(detail)
   ])
@@ -50,7 +50,7 @@ const renderHomeMetricChips = (
   h(
     'ul',
     { class: 'home-fragment-metrics' },
-    values.map((value) => h('li', { class: 'home-fragment-metric' }, [text(value)]))
+    values.map((value) => h('li', { class: 'home-fragment-metric', 'data-pretext-role': 'pill' }, [text(value)]))
   )
 
 type FragmentTextNode = RenderNode
@@ -72,9 +72,9 @@ const renderHomeDemoCompactShell = (
       ...(props && Object.keys(props).length ? { 'data-demo-props': JSON.stringify(props) } : {})
     },
     [
-      h('div', { class: 'home-demo-compact-kicker' }, [title]),
-      h('p', { class: 'home-demo-compact-copy' }, [summary]),
-      h('p', { class: 'home-demo-compact-meta' }, [meta])
+      h('div', { class: 'home-demo-compact-kicker', 'data-pretext-role': 'meta' }, [title]),
+      h('p', { class: 'home-demo-compact-copy', 'data-pretext-role': 'body' }, [summary]),
+      h('p', { class: 'home-demo-compact-meta', 'data-pretext-role': 'meta' }, [meta])
     ]
   )
 
@@ -102,8 +102,8 @@ const planner: FragmentDefinition = {
   render: ({ t }) => {
     const text = makeText(t)
     return h('section', null, [
-      h('div', { class: 'meta-line' }, [text(plannerDemo.metaLine)]),
-      h('h2', null, text(plannerDemo.headline)),
+      h('div', { class: 'meta-line', 'data-pretext-role': 'meta' }, [text(plannerDemo.metaLine)]),
+      h('h2', { 'data-pretext-role': 'title' }, text(plannerDemo.headline)),
       renderHomeCopyBlock(
         text,
         plannerDemo.lead,
@@ -138,8 +138,8 @@ const ledger: FragmentDefinition = {
     const burst = add(42, 58)
 
     return h('section', null, [
-      h('div', { class: 'meta-line' }, [text(wasmDemo.metaLine)]),
-      h('h2', null, text(wasmDemo.headline)),
+      h('div', { class: 'meta-line', 'data-pretext-role': 'meta' }, [text(wasmDemo.metaLine)]),
+      h('h2', { 'data-pretext-role': 'title' }, text(wasmDemo.headline)),
       renderHomeCopyBlock(
         text,
         wasmDemo.lead,
@@ -174,8 +174,8 @@ const island: FragmentDefinition = {
   render: ({ t }) => {
     const text = makeText(t)
     return h('section', null, [
-      h('div', { class: 'meta-line' }, [text(preactDemo.metaLine)]),
-      h('h2', null, text(preactDemo.headline)),
+      h('div', { class: 'meta-line', 'data-pretext-role': 'meta' }, [text(preactDemo.metaLine)]),
+      h('h2', { 'data-pretext-role': 'title' }, text(preactDemo.headline)),
       renderHomeCopyBlock(
         text,
         preactDemo.lead,
@@ -207,8 +207,8 @@ const reactFragment: FragmentDefinition = {
   render: ({ t }) => {
     const text = makeText(t)
     return h('section', null, [
-      h('div', { class: 'meta-line' }, [text(reactDemo.metaLine)]),
-      h('h2', null, text(reactDemo.headline)),
+      h('div', { class: 'meta-line', 'data-pretext-role': 'meta' }, [text(reactDemo.metaLine)]),
+      h('h2', { 'data-pretext-role': 'title' }, text(reactDemo.headline)),
       renderHomeCopyBlock(
         text,
         reactDemo.lead,
@@ -224,7 +224,7 @@ const reactFragment: FragmentDefinition = {
           text(reactDemo.preview?.meta ?? reactDemo.title)
         )
       ),
-      h('div', { class: 'badge' }, [text(reactDemo.badge ?? 'RSC-ready')])
+      h('div', { class: 'badge', 'data-pretext-role': 'pill' }, [text(reactDemo.badge ?? 'RSC-ready')])
     ])
   }
 }
@@ -238,8 +238,8 @@ const dockFragment: FragmentDefinition = {
   render: ({ t }) => {
     const text = makeText(t)
     return h('section', null, [
-      h('div', { class: 'meta-line' }, [text(collabDemo.metaLine)]),
-      h('h2', null, text(collabDemo.headline)),
+      h('div', { class: 'meta-line', 'data-pretext-role': 'meta' }, [text(collabDemo.metaLine)]),
+      h('h2', { 'data-pretext-role': 'title' }, text(collabDemo.headline)),
       renderHomeCopyBlock(
         text,
         collabDemo.lead,
@@ -307,8 +307,8 @@ const manifesto: FragmentDefinition = {
   render: ({ t }) => {
     const text = makeText(t)
     return h('section', null, [
-      h('div', { class: 'meta-line' }, [text(manifestoDemo.metaLine)]),
-      h('h2', null, text(manifestoDemo.headline)),
+      h('div', { class: 'meta-line', 'data-pretext-role': 'meta' }, [text(manifestoDemo.metaLine)]),
+      h('h2', { 'data-pretext-role': 'title' }, text(manifestoDemo.headline)),
       renderManifestoCopyBlock(
         text,
         manifestoDemo.lead,
@@ -316,7 +316,7 @@ const manifesto: FragmentDefinition = {
       ),
       h('ul', { class: 'home-manifest-pills' }, [
         ...(manifestoDemo.pills ?? []).map((pill) =>
-          h('li', { class: 'home-manifest-pill' }, [text(pill)])
+          h('li', { class: 'home-manifest-pill', 'data-pretext-role': 'pill' }, [text(pill)])
         )
       ])
     ])

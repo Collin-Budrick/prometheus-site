@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { expectHeightDriftWithin, expectMeasuredCard, toggleLanguageUntil } from './audit-helpers'
 
 const expectLinkHidden = async (page: Page, name: string) => {
   await expect(page.getByRole('link', { name })).toHaveCount(0)
@@ -31,4 +32,26 @@ test('core preset hides optional bundles and returns 404 for disabled routes', a
   expect(labStatus).toBe(404)
   expect(chatStatus).toBe(404)
   expect(offlineStatus).toBe(404)
+})
+
+test('core preset login card keeps measured height stable across language changes', async ({ page }) => {
+  test.slow()
+
+  await page.goto('/login/', { waitUntil: 'domcontentloaded' })
+
+  const loginCard = page.locator('article').filter({ has: page.locator('[data-static-login-root]') }).first()
+
+  await expectMeasuredCard(loginCard)
+  await expectHeightDriftWithin(page, loginCard, {
+    label: 'core login card initial settle',
+    tolerance: 12
+  })
+
+  await toggleLanguageUntil(page, 'ko')
+
+  await expectMeasuredCard(loginCard)
+  await expectHeightDriftWithin(page, loginCard, {
+    label: 'core login card after language toggle',
+    tolerance: 12
+  })
 })

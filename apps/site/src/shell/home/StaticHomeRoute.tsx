@@ -9,6 +9,7 @@ import type { Lang } from '../../lang'
 import { asTrustedHtml } from '../../security/client'
 import { useCspNonce } from '../../security/qwik'
 import {
+  emptyUiCopy,
   type LanguageSeedPayload
 } from '../../lang/selection'
 import { renderHomeStaticFragmentHtml } from './home-render'
@@ -373,6 +374,10 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
   }
 
   const routeConfig = getStaticShellRouteConfig(plan.path)
+  const uiCopy = {
+    ...emptyUiCopy,
+    ...(languageSeed.ui ?? {})
+  }
   const deferredFragmentIds = routeState.fragmentOrder.filter(
     (fragmentId) => !routeState.runtimeFetchGroups[0]?.includes(fragmentId)
   )
@@ -412,18 +417,18 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
     '2': [...heroColumns['2'], ...mainColumns['2']]
   } as const
   const primaryAction = isSiteFeatureEnabled('store')
-    ? { href: '/store', label: 'Browse store' }
+    ? { href: '/store', label: uiCopy.homePrimaryStoreAction }
     : isSiteFeatureEnabled('lab')
-      ? { href: '/lab', label: 'Open lab' }
+      ? { href: '/lab', label: uiCopy.homePrimaryLabAction }
       : isSiteFeatureEnabled('auth')
-        ? { href: '/login', label: 'Inspect auth' }
-        : { href: '/', label: 'Review shell' }
+        ? { href: '/login', label: uiCopy.homePrimaryAuthAction }
+        : { href: '/', label: uiCopy.homePrimaryShellAction }
   const secondaryActions = [
     isSiteFeatureEnabled('auth') && primaryAction.href !== '/login'
-      ? { href: '/login', label: 'Review auth' }
+      ? { href: '/login', label: uiCopy.homeSecondaryAuthAction }
       : null,
     isSiteFeatureEnabled('pwa')
-      ? { href: '/offline', label: 'Offline state' }
+      ? { href: '/offline', label: uiCopy.homeSecondaryOfflineAction }
       : null
   ].filter((action): action is { href: string; label: string } => action !== null)
   const renderHomeCard = (card: StaticHomeRenderedCard) => {
@@ -439,6 +444,7 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
           'fragment-card': true,
           'fragment-card-static-home': true
         }}
+        data-pretext-card-root="true"
         data-critical={card.critical ? 'true' : undefined}
         data-fragment-id={card.id}
         data-fragment-loaded="true"
@@ -500,6 +506,7 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
             data-variant="text"
             data-draggable="false"
             data-critical="true"
+            data-pretext-card-root="true"
             {...{ [STATIC_HOME_LCP_STABLE_ATTR]: 'true' }}
             data-fragment-id="shell-intro"
             data-fragment-loaded="true"
@@ -510,12 +517,16 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
           >
             <div class="fragment-card-body">
               <div class="home-intro-copy-block">
-                <div class="meta-line">{`${siteTemplateConfig.preset} preset`}</div>
+                <div class="meta-line" data-pretext-role="meta">
+                  {`${siteTemplateConfig.preset} preset`}
+                </div>
                 <div class="home-intro-copy">
-                  <h1>{`${siteBrand.name} template surface`}</h1>
-                  <span class="home-intro-copy-line">{siteBrand.tagline}</span>
-                  <span class="home-intro-copy-line">
-                    Audit the shared fragment shell, route flows, and auth/settings behavior before you fork the preset.
+                  <h1 data-pretext-role="title">{`${siteBrand.name} template surface`}</h1>
+                  <span class="home-intro-copy-line" data-pretext-role="body">
+                    {siteBrand.tagline}
+                  </span>
+                  <span class="home-intro-copy-line" data-pretext-role="body">
+                    {uiCopy.homeIntroAuditLine}
                   </span>
                 </div>
                 <ul class="home-intro-pills">
@@ -523,6 +534,7 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
                     <a
                       class="home-intro-pill"
                       href={withStaticRouteLang(primaryAction.href, lang)}
+                      data-pretext-role="pill"
                       data-fragment-link
                     >
                       {primaryAction.label}
@@ -533,13 +545,16 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
                       <a
                         class="home-intro-pill"
                         href={withStaticRouteLang(action.href, lang)}
+                        data-pretext-role="pill"
                         data-fragment-link
                       >
                         {action.label}
                       </a>
                     </li>
                   ))}
-                  <li class="home-intro-pill">{siteBrand.product}</li>
+                  <li class="home-intro-pill" data-pretext-role="pill">
+                    {siteBrand.product}
+                  </li>
                 </ul>
               </div>
               <div

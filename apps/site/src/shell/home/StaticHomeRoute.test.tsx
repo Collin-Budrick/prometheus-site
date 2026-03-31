@@ -10,6 +10,25 @@ import {
 import type { LanguageSeedPayload } from '../../lang/selection'
 import { buildStaticHomeRouteState } from './StaticHomeRoute'
 
+const createFragmentPayload = (
+  id: string,
+  tree: ReturnType<typeof h>,
+  cacheUpdatedAt: number
+) => ({
+  id,
+  tree,
+  head: [],
+  css: '',
+  cacheUpdatedAt,
+  meta: {
+    cacheKey: `${id}:cache`,
+    ttl: 120,
+    staleTtl: 240,
+    tags: [id],
+    runtime: 'edge' as const
+  }
+})
+
 const plan = {
   path: '/',
   fragments: [
@@ -27,8 +46,9 @@ const plan = {
 } as const
 
 const fragments = {
-  'fragment://page/home/manifest@v1': {
-    tree: h('section', null, [
+  'fragment://page/home/manifest@v1': createFragmentPayload(
+    'fragment://page/home/manifest@v1',
+    h('section', null, [
       h('div', { class: 'meta-line' }, [t('fragment manifesto')]),
       h('h2', null, [t('The render tree is the artifact.')]),
       h('p', { class: 'home-manifest-copy' }, [
@@ -43,18 +63,19 @@ const fragments = {
         h('li', { class: 'home-manifest-pill' }, [t('Deterministic binary DOM replay')])
       ])
     ]),
-    cacheUpdatedAt: 1
-  },
-  'fragment://page/home/planner@v1': {
-    tree: h('section', null, [
+    1
+  ),
+  'fragment://page/home/planner@v1': createFragmentPayload(
+    'fragment://page/home/planner@v1',
+    h('section', null, [
       h('div', { class: 'meta-line' }, [t('fragment planner')]),
       h('h2', null, [t('Planner executes before rendering.')]),
       h('p', { class: 'home-fragment-copy' }, [t('Dependency resolution happens before any render work.')]),
       h('planner-demo', null),
       h('div', { class: 'matrix' }, [])
     ]),
-    cacheUpdatedAt: 2
-  }
+    2
+  )
 } as const
 
 const languageSeed: LanguageSeedPayload = {
@@ -110,6 +131,10 @@ describe('StaticHomeRoute', () => {
 
     expect(manifestoCard?.html).toContain('home-manifest-pills')
     expect(manifestoCard?.html).toContain('home-manifest-copy')
+    expect(manifestoCard?.html).toContain('data-pretext-role="meta"')
+    expect(manifestoCard?.html).toContain('data-pretext-role="title"')
+    expect(manifestoCard?.html).toContain('data-pretext-role="body"')
+    expect(manifestoCard?.html).toContain('data-pretext-role="pill"')
     expect(manifestoCard?.html).not.toContain('<p class="inline-list"')
     expect(state?.runtimePlanEntries).toEqual([
       {
@@ -130,6 +155,9 @@ describe('StaticHomeRoute', () => {
     expect(manifestoCard?.revealPhase).toBe('visible')
     expect(manifestoCard?.lcpStable).toBe(true)
     expect(plannerCard?.html).toContain('home-fragment-copy')
+    expect(plannerCard?.html).toContain('data-pretext-role="meta"')
+    expect(plannerCard?.html).toContain('data-pretext-role="title"')
+    expect(plannerCard?.html).toContain('data-pretext-role="body"')
     expect(plannerCard?.html).toContain('planner-demo')
     expect(plannerCard?.html).toContain('Resolve deps')
     expect(plannerCard?.html).not.toContain('home-fragment-shell')
@@ -181,22 +209,26 @@ describe('StaticHomeRoute', () => {
 
     const deferredFragments = {
       ...fragments,
-      'fragment://page/home/island@v1': {
-        tree: h('section', null, [h('preact-island', null)]),
-        cacheUpdatedAt: 3
-      },
-      'fragment://page/home/react@v1': {
-        tree: h('section', null, [h('react-binary-demo', null)]),
-        cacheUpdatedAt: 4
-      },
-      'fragment://page/home/ledger@v1': {
-        tree: h('section', null, [h('wasm-renderer-demo', null)]),
-        cacheUpdatedAt: 5
-      },
-      'fragment://page/home/dock@v2': {
-        tree: h('section', null, [h('div', null, [t('Dock shell')])]),
-        cacheUpdatedAt: 6
-      }
+      'fragment://page/home/island@v1': createFragmentPayload(
+        'fragment://page/home/island@v1',
+        h('section', null, [h('preact-island', null)]),
+        3
+      ),
+      'fragment://page/home/react@v1': createFragmentPayload(
+        'fragment://page/home/react@v1',
+        h('section', null, [h('react-binary-demo', null)]),
+        4
+      ),
+      'fragment://page/home/ledger@v1': createFragmentPayload(
+        'fragment://page/home/ledger@v1',
+        h('section', null, [h('wasm-renderer-demo', null)]),
+        5
+      ),
+      'fragment://page/home/dock@v2': createFragmentPayload(
+        'fragment://page/home/dock@v2',
+        h('section', null, [h('div', null, [t('Dock shell')])]),
+        6
+      )
     } as const
 
     const state = buildStaticHomeRouteState({
@@ -216,7 +248,8 @@ describe('StaticHomeRoute', () => {
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/dock@v2')?.previewVisible).toBe(true)
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/dock@v2')?.html).toContain('home-fragment-shell--dock')
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/dock@v2')?.html).toContain('home-fragment-shell-copy')
-    expect(state?.cards.find((card) => card.id === 'fragment://page/home/dock@v2')?.html).not.toContain('data-home-collab-input="true"')
+    expect(state?.cards.find((card) => card.id === 'fragment://page/home/dock@v2')?.html).toContain('data-home-collab-input="true"')
+    expect(state?.cards.find((card) => card.id === 'fragment://page/home/dock@v2')?.html).toContain('readonly="true"')
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/dock@v2')?.lcpStable).toBe(true)
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/dock@v2')?.reservedHeight).toBe(420)
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/react@v1')?.stage).toBe('deferred')
@@ -248,14 +281,15 @@ describe('StaticHomeRoute', () => {
     } as const
 
     const stubFragments = {
-      'fragment://page/home/unknown@v1': {
-        tree: h('section', null, [
+      'fragment://page/home/unknown@v1': createFragmentPayload(
+        'fragment://page/home/unknown@v1',
+        h('section', null, [
           h('div', { class: 'meta-line' }, [t('unknown fragment')]),
           h('h2', null, [t('Unknown fragment')]),
           h('p', null, [t('Stub-only fragment')])
         ]),
-        cacheUpdatedAt: 7
-      }
+        7
+      )
     } as const
 
     const state = buildStaticHomeRouteState({
@@ -297,10 +331,11 @@ describe('StaticHomeRoute', () => {
     } as const
 
     const profiledFragments = {
-      'fragment://page/home/profiled@v1': {
-        tree: h('section', null, [h('div', null, [t('Profiled card')])]),
-        cacheUpdatedAt: 9
-      }
+      'fragment://page/home/profiled@v1': createFragmentPayload(
+        'fragment://page/home/profiled@v1',
+        h('section', null, [h('div', null, [t('Profiled card')])]),
+        9
+      )
     } as const
 
     const state = buildStaticHomeRouteState({

@@ -153,7 +153,16 @@
     "settingsPasskeySuccess": "?????????????????????????????",
     "settingsPasskeyUnavailable": "?????????????????????",
     "settingsPasskeyFailed": "????????????????",
-    "settingsLogoutFailed": "サインアウトできませんでした。"
+    "settingsLogoutFailed": "サインアウトできませんでした。",
+    "homeIntroAuditLine": "Audit the shared fragment shell, route flows, and auth/settings behavior before you fork the preset.",
+    "homePrimaryStoreAction": "Browse store",
+    "homePrimaryLabAction": "Open lab",
+    "homePrimaryAuthAction": "Inspect auth",
+    "homePrimaryShellAction": "Review shell",
+    "homeSecondaryAuthAction": "Review auth",
+    "homeSecondaryOfflineAction": "Offline state",
+    "loginRuntimePendingLabel": "Checking sign-in mode",
+    "loginNextLabel": "After sign in:"
   },
   "fragmentHeaders": {
     "fragment://page/home/planner@v1": {

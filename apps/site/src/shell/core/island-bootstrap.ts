@@ -26,6 +26,7 @@ import {
   ensureStaticShellSettingsOverlay,
   readStaticShellTheme
 } from './settings-overlay-dom'
+import { acquirePretextDomController } from '../pretext/pretext-dom'
 
 type Theme = 'light' | 'dark'
 
@@ -435,6 +436,13 @@ export const bootstrapStaticIslandShell = async () => {
     routeData
   }
   activeController = controller
+  const pretextController = acquirePretextDomController({
+    initialLang: controller.lang,
+    root: document.body
+  })
+  if (pretextController) {
+    controller.cleanupFns.push(() => pretextController.release())
+  }
 
   await syncStaticIslandDockIfNeeded(controller)
   controller.cleanupFns.push(

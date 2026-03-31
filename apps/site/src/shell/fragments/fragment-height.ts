@@ -10,6 +10,7 @@ import {
   resolveReservedFragmentHeight
 } from '@prometheus/ui/fragment-height'
 import { startStaticShellPerformanceMeasure } from '../home/static-shell-performance'
+import { measurePretextLayout, PRETEXT_CARD_HEIGHT_ATTR } from '../pretext/pretext-dom'
 
 const FRAGMENT_HEIGHT_LOCK_ATTR = 'data-fragment-height-locked'
 const FRAGMENT_HEIGHT_LOCK_TOKEN_ATTR = 'data-fragment-height-lock-token'
@@ -47,11 +48,14 @@ const getFragmentHeightContext = (
 }
 
 const readCardHeightHint = (card: HTMLElement) =>
-  normalizeFragmentHeight(
+  Math.max(
+    normalizeFragmentHeight(
     card.getAttribute('data-fragment-height-hint') ??
       card.style.getPropertyValue('--fragment-min-height') ??
       null
-  ) ?? 0
+    ) ?? 0,
+    normalizeFragmentHeight(card.getAttribute(PRETEXT_CARD_HEIGHT_ATTR) ?? null) ?? 0
+  )
 
 const readCardHeightLayout = (card: HTMLElement) =>
   parseFragmentHeightLayout(card.getAttribute('data-fragment-height-layout'))
@@ -300,6 +304,10 @@ const primeFragmentCardReservedHeight = ({
   routeContext?: FragmentHeightRouteContext | null
   reservedHeight?: number | null
 }) => {
+  measurePretextLayout({
+    lang: routeContext?.lang,
+    root: card
+  })
   const floorHeight = Math.max(
     normalizeFragmentHeight(reservedHeight) ?? 0,
     readCardHeightHint(card)
@@ -397,6 +405,11 @@ export const persistInitialFragmentCardHeights = async ({
     finishPersistMeasure()
     return []
   }
+
+  measurePretextLayout({
+    lang: routeContext?.lang,
+    root
+  })
 
   const cards = Array.from(
     root.querySelectorAll<HTMLElement>('.fragment-card[data-fragment-id]')

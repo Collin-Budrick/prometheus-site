@@ -23,6 +23,13 @@ export type UiCopy = {
   demoActivate: string
   demoActivating: string
   homeIntroMarkdown: string
+  homeIntroAuditLine: string
+  homePrimaryStoreAction: string
+  homePrimaryLabAction: string
+  homePrimaryAuthAction: string
+  homePrimaryShellAction: string
+  homeSecondaryAuthAction: string
+  homeSecondaryOfflineAction: string
   storeMetaLine: string
   storeTitle: string
   storeDescription: string
@@ -51,6 +58,8 @@ export type UiCopy = {
   authMethodsLabel: string
   authHostedStatus: string
   authNotConfigured: string
+  loginRuntimePendingLabel: string
+  loginNextLabel: string
   authRedirectingMagicLink: string
   authRedirectingProvider: string
   authStartFailed: string

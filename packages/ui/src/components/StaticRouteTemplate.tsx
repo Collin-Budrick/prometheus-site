@@ -102,9 +102,11 @@ export const StaticRouteTemplate = component$<StaticRouteTemplateProps>(
             inlineSpan={inlineSpan}
             size={size}
           >
-            <div class="meta-line">{metaLine}</div>
-            <h1>{title}</h1>
-            <p>{description}</p>
+            <div class="meta-line" data-pretext-role="meta">
+              {metaLine}
+            </div>
+            <h1 data-pretext-role="title">{title}</h1>
+            <p data-pretext-role="body">{description}</p>
             <Slot />
             <button
               class="action-button"

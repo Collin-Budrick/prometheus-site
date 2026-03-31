@@ -1,4 +1,5 @@
 import { normalizeFragmentHeight } from '@prometheus/ui/fragment-height'
+import { PRETEXT_CARD_HEIGHT_ATTR } from '../pretext/pretext-dom'
 
 const FRAGMENT_HEIGHT_LOCK_ATTR = 'data-fragment-height-locked'
 const FRAGMENT_HEIGHT_LOCK_TOKEN_ATTR = 'data-fragment-height-lock-token'
@@ -6,11 +7,14 @@ const FRAGMENT_HEIGHT_LOCK_TOKEN_ATTR = 'data-fragment-height-lock-token'
 let nextFragmentHeightLockId = 1
 
 const readCardHeightHint = (card: HTMLElement) =>
-  normalizeFragmentHeight(
+  Math.max(
+    normalizeFragmentHeight(
     card.getAttribute('data-fragment-height-hint') ??
       card.style.getPropertyValue('--fragment-min-height') ??
       null
-  ) ?? 0
+    ) ?? 0,
+    normalizeFragmentHeight(card.getAttribute(PRETEXT_CARD_HEIGHT_ATTR) ?? null) ?? 0
+  )
 
 type FragmentCardMetrics = {
   rectHeight: number

@@ -1,10 +1,11 @@
-import { component$, useStyles$ } from '@builder.io/qwik'
+import { component$, useStyles$, useVisibleTask$ } from '@builder.io/qwik'
 import { QwikCityProvider, RouterOutlet } from '@builder.io/qwik-city'
 import globalCriticalStyles from '@prometheus/ui/global-critical.css?inline'
 import { RouterHead } from './routes/layout'
 import { FragmentStatusProvider } from '@core/fragments'
 import { useProvideLangSignal } from './shared/lang-bridge'
 import { useCspNonce } from './security/qwik'
+import { acquirePretextDomController } from './shell/pretext/pretext-dom'
 
 const viewportFadeHeadStyle = `
   .viewport-fade {
@@ -38,9 +39,27 @@ const viewportFadeHeadStyle = `
 `
 
 export default component$(() => {
-  useProvideLangSignal()
+  const langSignal = useProvideLangSignal()
   useStyles$(globalCriticalStyles)
   const nonce = useCspNonce()
+
+  useVisibleTask$(
+    ({ cleanup, track }) => {
+      const lang = track(() => langSignal.value)
+      const acquired = acquirePretextDomController({
+        initialLang: lang,
+        root: document.body
+      })
+      if (!acquired) {
+        return
+      }
+      acquired.controller.setLang(lang)
+      cleanup(() => {
+        acquired.release()
+      })
+    },
+    { strategy: 'document-ready' }
+  )
 
   return (
     <QwikCityProvider>

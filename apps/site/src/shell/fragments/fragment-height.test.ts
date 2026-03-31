@@ -129,6 +129,17 @@ describe('fragment height patch helpers', () => {
     expect(card.style.getPropertyValue('--fragment-min-height')).toBe('320px')
   })
 
+  it('uses pretext card height hints as the reserved floor before patching', () => {
+    const card = new MockCard(220, 220) as unknown as HTMLElement
+    card.setAttribute('data-pretext-card-height', '280')
+
+    const { lockHeight } = lockFragmentCardHeight(card)
+
+    expect(lockHeight).toBe(280)
+    expect(card.getAttribute('data-fragment-height-hint')).toBe('280')
+    expect(card.style.getPropertyValue('--fragment-min-height')).toBe('280px')
+  })
+
   it('measures static cards after paint and persists the settled height without a patch lock', async () => {
     const card = new MockCard(330, 330) as unknown as HTMLElement
     card.dataset.fragmentId = 'fragment://page/store/stream@v5'
