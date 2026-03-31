@@ -1,10 +1,9 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { withResolvedAuthEnv } from './auth-config'
 import { root, runSync, runSyncCapture } from './compose-utils'
 
 const cacheDir = path.join(root, '.cache')
-const adminKeyPath = path.join(cacheDir, 'convex-admin-key.txt')
 const envFilePath = path.join(cacheDir, 'convex-self-hosted.env')
 const convexFunctionEnvKeys = [
   'AUTH_BASE_PATH',
@@ -36,16 +35,6 @@ const normalizeOptionalString = (value: string | undefined) => {
   return trimmed ? trimmed : undefined
 }
 
-const readCachedAdminKey = () => {
-  if (!existsSync(adminKeyPath)) return undefined
-  return normalizeOptionalString(readFileSync(adminKeyPath, 'utf8'))
-}
-
-const writeCachedAdminKey = (value: string) => {
-  mkdirSync(cacheDir, { recursive: true })
-  writeFileSync(adminKeyPath, `${value}\n`, 'utf8')
-}
-
 const readLastNonEmptyLine = (value: string) =>
   value
     .split(/\r?\n/)
@@ -67,9 +56,6 @@ export const ensureConvexAdminKey = ({
   const explicit = normalizeOptionalString(env.CONVEX_SELF_HOSTED_ADMIN_KEY)
   if (explicit) return explicit
 
-  const cached = readCachedAdminKey()
-  if (cached) return cached
-
   const result = runSyncCapture(command, [...prefix, 'exec', '-T', service, './generate_admin_key.sh'], env)
   if (result.status !== 0) {
     const stderr = normalizeOptionalString(result.stderr ?? '') ?? '(no stderr)'
@@ -81,7 +67,6 @@ export const ensureConvexAdminKey = ({
     throw new Error('[convex] Convex backend did not return an admin key.')
   }
 
-  writeCachedAdminKey(generated)
   return generated
 }
 
