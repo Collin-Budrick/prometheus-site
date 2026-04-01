@@ -2,6 +2,8 @@ import { readStaticHomeBootstrapData } from './home-bootstrap-data'
 import { getActiveHomeController, resumeDeferredHomeHydration } from './home-active-controller'
 import { resolvePreferredStaticHomeLang } from './home-language-preference'
 import {
+  loadHomeBootstrapRuntime,
+  loadHomeControllerRuntime,
   loadHomePostAnchorLanguageRestoreRuntime,
   loadHomePostAnchorLifecycleRuntime
 } from './runtime-loaders'
@@ -11,6 +13,8 @@ type InstallHomeBootstrapDeferredRuntimeOptions = {
   win?: Window | null
   doc?: Document | null
   scheduleTask?: typeof scheduleStaticShellTask
+  loadBootstrapRuntime?: typeof loadHomeBootstrapRuntime
+  loadControllerRuntime?: typeof loadHomeControllerRuntime
   loadLifecycleRuntime?: typeof loadHomePostAnchorLifecycleRuntime
   loadLanguageRestoreRuntime?: typeof loadHomePostAnchorLanguageRestoreRuntime
   eagerLifecycleRuntime?: boolean
@@ -21,6 +25,8 @@ export const installHomeBootstrapDeferredRuntime = async ({
   win = typeof window !== 'undefined' ? window : null,
   doc = typeof document !== 'undefined' ? document : null,
   scheduleTask = scheduleStaticShellTask,
+  loadBootstrapRuntime = loadHomeBootstrapRuntime,
+  loadControllerRuntime = loadHomeControllerRuntime,
   loadLifecycleRuntime = loadHomePostAnchorLifecycleRuntime,
   loadLanguageRestoreRuntime = loadHomePostAnchorLanguageRestoreRuntime,
   eagerLifecycleRuntime = false,
@@ -51,12 +57,12 @@ export const installHomeBootstrapDeferredRuntime = async ({
     resolvePreferredStaticHomeLang(data.lang) !== data.lang
 
   const bootstrapStaticHome = async () => {
-    const { bootstrapStaticHome } = await import('./home-bootstrap-orchestrator')
+    const { bootstrapStaticHome } = await loadBootstrapRuntime()
     await bootstrapStaticHome()
   }
 
   const destroyActiveController = async () => {
-    const { destroyHomeController } = await import('./home-bootstrap-controller-utils')
+    const { destroyHomeController } = await loadControllerRuntime()
     await destroyHomeController(getActiveHomeController())
   }
 

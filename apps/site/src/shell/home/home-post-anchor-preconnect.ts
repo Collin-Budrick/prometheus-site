@@ -1,7 +1,11 @@
-import { appConfig } from '../../site-config'
+export const HOME_POST_ANCHOR_PRECONNECT_META_NAME = 'prom-home-post-anchor-preconnects'
 
 type HomePostAnchorPreconnectWindow = Pick<Window, 'location'>
 type HomePostAnchorPreconnectDocument = Pick<Document, 'createElement' | 'head' | 'querySelector'>
+
+type MetaElementLike = {
+  getAttribute: (name: string) => string | null
+}
 
 const toPreconnectOrigin = (href: string | undefined, fallbackOrigin: string | null) => {
   if (!href) return null
@@ -16,38 +20,30 @@ const toPreconnectOrigin = (href: string | undefined, fallbackOrigin: string | n
   return fallbackOrigin
 }
 
-const shouldPreferSameOriginDbProxy = (href: string | undefined, currentOrigin: string | null) => {
-  if (!href || !currentOrigin) return false
-  try {
-    const candidateUrl = new URL(href)
-    const originUrl = new URL(currentOrigin)
-    if (candidateUrl.origin === originUrl.origin) return false
-    return candidateUrl.hostname === `db.${originUrl.hostname}`
-  } catch {
-    return false
+const readPreconnectMetaOrigins = (
+  doc: Pick<Document, 'querySelector'> | null | undefined
+) => {
+  const meta = doc?.querySelector?.(
+    `meta[name="${HOME_POST_ANCHOR_PRECONNECT_META_NAME}"]`
+  ) as MetaElementLike | null
+  const content = meta?.getAttribute('content')?.trim()
+  if (!content) {
+    return []
   }
-}
 
-const resolvePreconnectSpacetimeDbUri = (currentOrigin: string | null, fallbackHref: string | undefined) => {
-  if (!currentOrigin) return fallbackHref
   try {
-    const url = new URL(currentOrigin)
-    const hostname = url.hostname
-    const isIpAddress = /^[\d.:]+$/.test(hostname)
-    const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1'
-    if (!isIpAddress && !isLocalHost) {
-      if (!hostname.startsWith('db.')) {
-        url.hostname = `db.${hostname}`
-      }
-      url.pathname = '/'
-      url.search = ''
-      url.hash = ''
-      return url.toString()
+    const parsed = JSON.parse(content) as unknown
+    if (Array.isArray(parsed)) {
+      return parsed.filter((value): value is string => typeof value === 'string' && value.trim() !== '')
     }
   } catch {
-    // Fall back to the configured runtime URL below.
+    // Fall back to comma-separated values.
   }
-  return fallbackHref
+
+  return content
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
 }
 
 const appendPreconnectLink = (
@@ -84,7 +80,7 @@ export const ensureHomePostAnchorPreconnects = ({
 
   const currentOrigin = win.location?.origin ?? null
   const origins = new Set<string>()
-  const addOrigin = (href: string | undefined) => {
+  const addOrigin = (href: string) => {
     const origin = toPreconnectOrigin(href, currentOrigin)
     if (!origin || origin === currentOrigin) {
       return
@@ -92,16 +88,7 @@ export const ensureHomePostAnchorPreconnects = ({
     origins.add(origin)
   }
 
-  const shouldPreconnectWebTransport =
-    appConfig.enableFragmentStreaming &&
-    (appConfig.preferWebTransport || appConfig.preferWebTransportDatagrams)
-  const spacetimeDbUri = resolvePreconnectSpacetimeDbUri(currentOrigin, appConfig.spacetimeDbUri)
-  if (shouldPreconnectWebTransport) {
-    addOrigin(appConfig.webTransportBase)
-  }
-  if (!shouldPreferSameOriginDbProxy(spacetimeDbUri, currentOrigin)) {
-    addOrigin(spacetimeDbUri)
-  }
+  readPreconnectMetaOrigins(doc).forEach(addOrigin)
 
   const nextOrigins = Array.from(origins)
   nextOrigins.forEach((origin) => {

@@ -2,7 +2,7 @@ import type { Lang } from '../../lang/types'
 import {
   STATIC_DOCK_ROOT_ATTR,
   STATIC_SHELL_SEED_SCRIPT_ID
-} from './constants'
+} from './static-shell-dom-constants'
 import type { StaticShellSeed } from './seed'
 
 const STATIC_SHELL_SEED_CACHE_KEY = '__PROMETHEUS_STATIC_SHELL_SEED__'

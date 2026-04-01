@@ -11,10 +11,10 @@ import {
   updateFragmentStatus,
 } from "./home-bootstrap-ui";
 import {
-  applyShellLanguageSeed,
   cleanupLegacyHomePersistence,
   destroyHomeController,
 } from "./home-bootstrap-controller-utils";
+import { applyShellLanguageSeed } from "./home-language-seed";
 import {
   getActiveHomeController,
   setActiveHomeController,

@@ -1,0 +1,7 @@
+export const STATIC_DOCK_ROOT_ATTR = 'data-static-dock-root'
+
+export const STATIC_SHELL_SEED_SCRIPT_ID = 'prom-static-shell-seed'
+export const STATIC_HOME_DATA_SCRIPT_ID = 'prom-static-home-data'
+export const STATIC_HOME_WORKER_DATA_SCRIPT_ID = 'prom-static-home-worker-data'
+export const STATIC_FRAGMENT_DATA_SCRIPT_ID = 'prom-static-fragment-data'
+export const STATIC_ISLAND_DATA_SCRIPT_ID = 'prom-static-island-data'

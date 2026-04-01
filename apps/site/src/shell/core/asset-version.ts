@@ -1,4 +1,4 @@
-import { STATIC_SHELL_SEED_SCRIPT_ID } from './constants'
+import { STATIC_SHELL_SEED_SCRIPT_ID } from './static-shell-dom-constants'
 
 export const STATIC_SHELL_ASSET_VERSION_QUERY_PARAM = 'v'
 const STATIC_SHELL_BUNDLE_MARKER = 'build/static-shell/'

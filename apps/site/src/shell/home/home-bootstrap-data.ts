@@ -6,11 +6,11 @@ import {
   STATIC_HOME_DATA_SCRIPT_ID,
   STATIC_HOME_WORKER_DATA_SCRIPT_ID,
   STATIC_SHELL_SEED_SCRIPT_ID
-} from '../core/constants'
-import { buildHomeFragmentBootstrapHref } from './home-fragment-bootstrap'
+} from '../core/static-shell-dom-constants'
 import type { HomeDemoAssetMap } from './home-demo-runtime-types'
 import type { StaticShellSeed } from '../core/seed'
 import { readStaticShellSeed } from '../core/seed-client'
+import { HOME_FRAGMENT_BOOTSTRAP_IDS } from './home-fragment-bootstrap-ids'
 
 type SerializedHomeRuntimeProfileBucket = [maxWidth: number, height: number]
 type SerializedHomeRuntimeLayoutLegacy = [
@@ -89,6 +89,17 @@ const readFiniteNumber = (value: unknown) => {
         ? Number.parseFloat(value)
         : Number.NaN
   return Number.isFinite(parsed) ? parsed : null
+}
+
+const buildFallbackHomeFragmentBootstrapHref = (lang?: string) => {
+  const params = new URLSearchParams({
+    protocol: '2',
+    ids: HOME_FRAGMENT_BOOTSTRAP_IDS.join(',')
+  })
+  if (lang) {
+    params.set('lang', lang)
+  }
+  return `/api/fragments/bootstrap?${params.toString()}`
 }
 
 const serializeHomeRuntimeProfileBuckets = (
@@ -339,7 +350,7 @@ export const readStaticHomeBootstrapData = ({
     homeDemoAssets: route?.homeDemoAssets ?? null,
     fragmentBootstrapHref:
       route?.fragmentBootstrapHref ??
-      buildHomeFragmentBootstrapHref({ lang: route?.lang || shell?.lang }),
+      buildFallbackHomeFragmentBootstrapHref(route?.lang || shell?.lang),
     runtimeAnchorBootstrapHref: worker?.runtimeAnchorBootstrapHref ?? null,
     fragmentOrder,
     planSignature: route?.planSignature ?? null,

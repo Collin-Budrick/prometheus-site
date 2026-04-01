@@ -58,7 +58,8 @@ const buildGroups = [
     cssChunking: false,
     entrypoints: [
       'apps/site/src/shell/home/home-post-anchor-lifecycle-runtime.ts',
-      'apps/site/src/shell/home/home-post-anchor-language-restore-runtime.ts'
+      'apps/site/src/shell/home/home-post-anchor-language-restore-runtime.ts',
+      'apps/site/src/shell/home/home-controller-runtime.ts'
     ]
   },
   {

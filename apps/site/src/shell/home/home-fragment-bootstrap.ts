@@ -1,11 +1,5 @@
 import { getPublicFragmentApiBase } from '../../shared/public-fragment-config'
-
-export const HOME_FRAGMENT_BOOTSTRAP_IDS = [
-  'fragment://page/home/planner@v1',
-  'fragment://page/home/ledger@v1',
-  'fragment://page/home/island@v1',
-  'fragment://page/home/react@v1'
-] as const
+import { HOME_FRAGMENT_BOOTSTRAP_IDS } from './home-fragment-bootstrap-ids'
 
 export const HOME_FRAGMENT_BOOTSTRAP_STATE_KEY = '__PROM_STATIC_HOME_FRAGMENT_BOOTSTRAP__'
 const HOME_FRAGMENT_BOOTSTRAP_ID_SET = new Set<string>(HOME_FRAGMENT_BOOTSTRAP_IDS)

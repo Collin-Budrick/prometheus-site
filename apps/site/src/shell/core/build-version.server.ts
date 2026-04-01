@@ -16,6 +16,7 @@ import {
 import { HOME_STATIC_ENTRY_DEMO_WARMUP_ASSET_PATH } from '../home/runtime-loaders'
 import { HOME_BOOTSTRAP_ANCHOR_RUNTIME_ASSET_PATH } from '../home/runtime-loaders'
 import { HOME_BOOTSTRAP_DEFERRED_RUNTIME_ASSET_PATH } from '../home/runtime-loaders'
+import { HOME_CONTROLLER_RUNTIME_ASSET_PATH } from '../home/runtime-loaders'
 import { getStaticShellBuildAssetPaths } from './build-manifest.server'
 import { HOME_ANCHOR_CORE_ASSET_PATH } from '../home/runtime-loaders'
 import { HOME_POST_ANCHOR_CORE_ASSET_PATH } from '../home/runtime-loaders'
@@ -38,6 +39,7 @@ const STATIC_SHELL_RUNTIME_ASSET_PATHS_FALLBACK = [
   HOME_COLLAB_WORKER_ASSET_PATH,
   HOME_BOOTSTRAP_ANCHOR_RUNTIME_ASSET_PATH,
   HOME_BOOTSTRAP_DEFERRED_RUNTIME_ASSET_PATH,
+  HOME_CONTROLLER_RUNTIME_ASSET_PATH,
   'build/static-shell/apps/site/src/shell/home/home-bootstrap-post-lcp-runtime.js',
   'build/static-shell/apps/site/src/shell/home/home-ui-controls-runtime.js',
   'build/static-shell/apps/site/src/shell/home/home-language-runtime.js',

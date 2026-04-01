@@ -8,6 +8,8 @@ export const HOME_BOOTSTRAP_ANCHOR_RUNTIME_ASSET_PATH =
   'build/static-shell/apps/site/src/shell/home/home-bootstrap-anchor-runtime.js'
 export const HOME_BOOTSTRAP_DEFERRED_RUNTIME_ASSET_PATH =
   'build/static-shell/apps/site/src/shell/home/home-bootstrap-deferred-runtime.js'
+export const HOME_CONTROLLER_RUNTIME_ASSET_PATH =
+  'build/static-shell/apps/site/src/shell/home/home-controller-runtime.js'
 const HOME_COLLAB_EDITOR_ENTRY_ASSET_PATH =
   'build/static-shell/apps/site/src/shell/home/home-collab-editor-entry.js'
 const HOME_COLLAB_ENTRY_ASSET_PATH =
@@ -54,6 +56,10 @@ export type HomeBootstrapRuntimeModule = {
 
 export type HomeBootstrapDeferredRuntimeModule = {
   installHomeBootstrapDeferredRuntime: typeof import('./home-bootstrap-deferred-runtime').installHomeBootstrapDeferredRuntime
+}
+
+export type HomeControllerRuntimeModule = {
+  destroyHomeController: typeof import('./home-bootstrap-controller-runtime').destroyHomeController
 }
 
 export type HomeBootstrapPostLcpRuntimeModule = {
@@ -137,6 +143,11 @@ type LoadHomeBootstrapDeferredRuntimeOptions = {
   importer?: (url: string) => Promise<HomeBootstrapDeferredRuntimeModule>
 }
 
+type LoadHomeControllerRuntimeOptions = {
+  assetUrl?: string
+  importer?: (url: string) => Promise<HomeControllerRuntimeModule>
+}
+
 type LoadHomeBootstrapPostLcpRuntimeOptions = {
   assetUrl?: string
   importer?: (url: string) => Promise<HomeBootstrapPostLcpRuntimeModule>
@@ -205,6 +216,7 @@ type LoadHomeUiControlsRuntimeOptions = {
 let homeAnchorCorePromise: Promise<HomeAnchorCoreModule> | null = null
 let homeBootstrapRuntimePromise: Promise<HomeBootstrapRuntimeModule> | null = null
 let homeBootstrapDeferredRuntimePromise: Promise<HomeBootstrapDeferredRuntimeModule> | null = null
+let homeControllerRuntimePromise: Promise<HomeControllerRuntimeModule> | null = null
 let homeBootstrapPostLcpRuntimePromise: Promise<HomeBootstrapPostLcpRuntimeModule> | null = null
 let homeCollabEntryRuntimePromise: Promise<HomeCollabEntryModule> | null = null
 let homeCollabEditorRuntimePromise: Promise<HomeCollabEditorEntryModule> | null = null
@@ -228,6 +240,9 @@ const importHomeBootstrapRuntime = async (url: string) =>
 
 const importHomeBootstrapDeferredRuntime = async (url: string) =>
   (await import(/* @vite-ignore */ url)) as HomeBootstrapDeferredRuntimeModule
+
+const importHomeControllerRuntime = async (url: string) =>
+  (await import(/* @vite-ignore */ url)) as HomeControllerRuntimeModule
 
 const importHomeBootstrapPostLcpRuntime = async (url: string) =>
   (await import(/* @vite-ignore */ url)) as HomeBootstrapPostLcpRuntimeModule
@@ -279,6 +294,10 @@ export const resolveHomeBootstrapRuntimeUrl = (
 export const resolveHomeBootstrapDeferredRuntimeUrl = (
   options?: Parameters<typeof resolveStaticAssetUrl>[1]
 ) => resolveStaticAssetUrl(HOME_BOOTSTRAP_DEFERRED_RUNTIME_ASSET_PATH, options)
+
+export const resolveHomeControllerRuntimeUrl = (
+  options?: Parameters<typeof resolveStaticAssetUrl>[1]
+) => resolveStaticAssetUrl(HOME_CONTROLLER_RUNTIME_ASSET_PATH, options)
 
 export const resolveHomeBootstrapPostLcpRuntimeUrl = (
   options?: Parameters<typeof resolveStaticAssetUrl>[1]
@@ -364,6 +383,16 @@ export const loadHomeBootstrapDeferredRuntime = ({
     homeBootstrapDeferredRuntimePromise = importer(assetUrl)
   }
   return homeBootstrapDeferredRuntimePromise
+}
+
+export const loadHomeControllerRuntime = ({
+  assetUrl = resolveHomeControllerRuntimeUrl(),
+  importer = importHomeControllerRuntime
+}: LoadHomeControllerRuntimeOptions = {}) => {
+  if (!homeControllerRuntimePromise) {
+    homeControllerRuntimePromise = importer(assetUrl)
+  }
+  return homeControllerRuntimePromise
 }
 
 export const loadHomeBootstrapPostLcpRuntime = ({
@@ -517,6 +546,7 @@ export const resetHomeRuntimeLoadersForTests = () => {
   homeAnchorCorePromise = null
   homeBootstrapRuntimePromise = null
   homeBootstrapDeferredRuntimePromise = null
+  homeControllerRuntimePromise = null
   homeBootstrapPostLcpRuntimePromise = null
   homeCollabEntryRuntimePromise = null
   homeCollabEditorRuntimePromise = null
@@ -535,6 +565,7 @@ export const resetHomeRuntimeLoadersForTests = () => {
 export const resetHomeAnchorCoreLoaderForTests = resetHomeRuntimeLoadersForTests
 export const resetHomeBootstrapRuntimeLoaderForTests = resetHomeRuntimeLoadersForTests
 export const resetHomeBootstrapDeferredRuntimeLoaderForTests = resetHomeRuntimeLoadersForTests
+export const resetHomeControllerRuntimeLoaderForTests = resetHomeRuntimeLoadersForTests
 export const resetHomeBootstrapPostLcpRuntimeLoaderForTests = resetHomeRuntimeLoadersForTests
 export const resetHomeCollabEntryRuntimeLoaderForTests = resetHomeRuntimeLoadersForTests
 export const resetHomeCollabEditorRuntimeLoaderForTests = resetHomeRuntimeLoadersForTests

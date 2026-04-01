@@ -1,6 +1,4 @@
-import type { LanguageSeedPayload } from "../../lang/selection";
 import type { Lang } from "../../lang/types";
-import { seedStaticHomeCopy } from "./home-copy-store";
 import { loadHomeBootstrapPostLcpRuntime } from './runtime-loaders'
 import { resolvePreferredStaticHomeLang } from "./home-language-preference";
 import { collectStaticHomeKnownVersions } from "./home-fragment-version-state";
@@ -23,10 +21,6 @@ const HOME_CRITICAL_COOKIE_KEYS = [
   "prom-frag-critical-d",
 ] as const;
 const HOME_POST_LCP_RUNTIME_INTENT_EVENTS = ["pointerdown", "keydown", "click"] as const;
-
-const setDocumentLang = (value: Lang) => {
-  document.documentElement.lang = value;
-};
 
 const readCookieValue = (key: string) => {
   const parts = document.cookie.split(";");
@@ -96,15 +90,6 @@ export const cleanupLegacyHomePersistence = () => {
   } catch {
     // Ignore sessionStorage failures.
   }
-};
-
-export const applyShellLanguageSeed = (
-  lang: Lang,
-  shellSeed: LanguageSeedPayload,
-  routeSeed: LanguageSeedPayload,
-) => {
-  seedStaticHomeCopy(lang, shellSeed, routeSeed);
-  setDocumentLang(lang);
 };
 
 export const stopHomeHydrationFetches = (
