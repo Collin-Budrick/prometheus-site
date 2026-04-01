@@ -14,7 +14,12 @@ import { resolveStaticAssetUrl } from '../core/static-asset-url'
 export type { HomeDemoRuntimeModule } from './home-demo-runtime-types'
 export type { HomeDemoStartupAttachRuntimeModule } from './home-demo-runtime-types'
 
-type HomeDemoStylesheetDocument = Pick<Document, 'createElement' | 'head' | 'querySelector'>
+type HomeDemoStylesheetDocument = Pick<Document, 'createElement' | 'head' | 'querySelector' | 'scripts'>
+
+type HomeDemoStylesheetSearchDocument = Pick<
+  Document,
+  'baseURI' | 'querySelectorAll' | 'scripts'
+>
 
 type LoadHomeDemoKindOptions = {
   asset?: HomeDemoAssetDescriptor | null
@@ -36,29 +41,129 @@ type EnsureHomeDemoKindStyleOptions = {
 }
 
 const modulePromises = new Map<HomeDemoKind, Promise<HomeDemoRuntimeModule>>()
-const stylePromises = new Map<HomeDemoKind, Promise<void>>()
 const warmPromises = new Map<HomeDemoKind, Promise<void>>()
 const preloadPromises = new Map<HomeDemoKind, Promise<void>>()
 let startupAttachRuntimePromise: Promise<HomeDemoStartupAttachRuntimeModule> | null = null
 let startupAttachPreloadPromise: Promise<void> | null = null
+const HOME_DEMO_STYLE_PROMISES_KEY = '__PROM_HOME_DEMO_STYLE_PROMISES__'
 
 const importRuntimeModule = async <T>(url: string) =>
   (await import(/* @vite-ignore */ url)) as T
 
 const isAbsoluteUrl = (value: string) => /^https?:\/\//.test(value)
+const isRootRelativeUrl = (value: string) => value.startsWith('/')
 
 const resolveModuleUrl = (kind: HomeDemoKind, asset?: HomeDemoAssetDescriptor | null) => {
   const href = asset?.moduleHref || HOME_DEMO_RUNTIME_ASSET_PATHS[kind]
-  if (isAbsoluteUrl(href) || href.startsWith('/')) {
+  if (isAbsoluteUrl(href) || isRootRelativeUrl(href)) {
     return href
   }
   return resolveStaticAssetUrl(href)
 }
 
-const getKindStyleSelector = (kind: HomeDemoKind) => `link[data-home-demo-style-kind="${kind}"]`
+const resolveStyleUrl = (
+  href: string,
+  doc: Pick<Document, 'scripts'> | null = typeof document !== 'undefined' ? document : null
+) => {
+  if (isAbsoluteUrl(href) || isRootRelativeUrl(href)) {
+    return href
+  }
+  return resolveStaticAssetUrl(href, {
+    scripts: doc?.scripts
+  })
+}
+
+const escapeCssAttributeValue = (value: string) =>
+  value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+
+const getKindStyleHrefSelector = (href: string) => {
+  const escapedHref = escapeCssAttributeValue(href)
+  return `link[data-home-demo-style-href="${escapedHref}"],link[rel="stylesheet"][href="${escapedHref}"],link[rel="preload"][as="style"][href="${escapedHref}"]`
+}
+
 const getKindModulePreloadSelector = (kind: HomeDemoKind) =>
   `link[data-home-demo-module-kind="${kind}"]`
 const STARTUP_ATTACH_RUNTIME_PRELOAD_SELECTOR = 'link[data-home-demo-startup-attach]'
+
+const getGlobalHomeDemoStylePromises = () => {
+  const globalState = globalThis as typeof globalThis & {
+    __PROM_HOME_DEMO_STYLE_PROMISES__?: Map<string, Promise<void>>
+  }
+  if (!globalState[HOME_DEMO_STYLE_PROMISES_KEY]) {
+    globalState[HOME_DEMO_STYLE_PROMISES_KEY] = new Map<string, Promise<void>>()
+  }
+  return globalState[HOME_DEMO_STYLE_PROMISES_KEY]
+}
+
+const getDocumentBaseHref = (
+  doc: HomeDemoStylesheetSearchDocument | null = typeof document !== 'undefined' ? document : null
+) => {
+  if (doc && typeof doc.baseURI === 'string' && doc.baseURI.length > 0) {
+    return doc.baseURI
+  }
+  if (typeof window !== 'undefined' && typeof window.location?.href === 'string') {
+    return window.location.href
+  }
+  return 'http://localhost/'
+}
+
+const canonicalizeDocumentHref = (
+  href: string,
+  doc: HomeDemoStylesheetSearchDocument | null = typeof document !== 'undefined' ? document : null
+) => {
+  try {
+    return new URL(href, getDocumentBaseHref(doc)).toString()
+  } catch {
+    return href
+  }
+}
+
+const isStylesheetLinkCandidate = (link: Element) => {
+  const rel = link.getAttribute('rel')?.toLowerCase() ?? ''
+  const as = link.getAttribute('as')?.toLowerCase() ?? ''
+  return (
+    rel === 'stylesheet' ||
+    (rel === 'preload' && as === 'style') ||
+    typeof link.getAttribute('data-home-demo-style-href') === 'string'
+  )
+}
+
+const findExistingKindStyleLink = (
+  href: string,
+  doc: (HomeDemoStylesheetDocument & Partial<HomeDemoStylesheetSearchDocument>) | null
+) => {
+  if (!doc) {
+    return null
+  }
+
+  const searchDoc = doc as HomeDemoStylesheetSearchDocument
+  if (typeof searchDoc.querySelectorAll === 'function') {
+    const canonicalHref = canonicalizeDocumentHref(href, searchDoc)
+    const links = Array.from(
+      searchDoc.querySelectorAll('link[href],link[data-home-demo-style-href]')
+    ) as HTMLLinkElement[]
+
+    return (
+      links.find((link) => {
+        if (!isStylesheetLinkCandidate(link)) {
+          return false
+        }
+
+        const candidates = [
+          link.getAttribute('data-home-demo-style-href'),
+          link.getAttribute('href'),
+          typeof link.href === 'string' && link.href.length > 0 ? link.href : null
+        ].filter((value): value is string => typeof value === 'string' && value.length > 0)
+
+        return candidates.some(
+          (candidate) => canonicalizeDocumentHref(candidate, searchDoc) === canonicalHref
+        )
+      }) ?? null
+    )
+  }
+
+  return doc.querySelector(getKindStyleHrefSelector(href)) as HTMLLinkElement | null
+}
 
 const whenStylesheetReady = (link: HTMLLinkElement) =>
   new Promise<void>((resolve) => {
@@ -146,22 +251,30 @@ export const ensureHomeDemoKindStyle = ({
   asset,
   doc = typeof document !== 'undefined' ? document : null
 }: EnsureHomeDemoKindStyleOptions) => {
-  const existingPromise = stylePromises.get(kind)
+  const styleHref = asset?.styleHref ?? null
+  if (!styleHref) {
+    return Promise.resolve()
+  }
+
+  const href = resolveStyleUrl(styleHref, doc)
+  const styleKey = canonicalizeDocumentHref(href, doc)
+  const stylePromises = getGlobalHomeDemoStylePromises()
+
+  const existingPromise = stylePromises.get(styleKey)
   if (existingPromise) {
     return existingPromise
   }
 
-  const href = asset?.styleHref ?? null
-  if (!doc || !href) {
+  if (!doc) {
     const resolvedPromise = Promise.resolve()
-    stylePromises.set(kind, resolvedPromise)
+    stylePromises.set(styleKey, resolvedPromise)
     return resolvedPromise
   }
 
-  const existingLink = doc.querySelector(getKindStyleSelector(kind)) as HTMLLinkElement | null
+  const existingLink = findExistingKindStyleLink(href, doc)
   if (existingLink) {
     const promise = whenStylesheetReady(existingLink)
-    stylePromises.set(kind, promise)
+    stylePromises.set(styleKey, promise)
     return promise
   }
 
@@ -170,12 +283,13 @@ export const ensureHomeDemoKindStyle = ({
   link.setAttribute('as', 'style')
   link.setAttribute('href', href)
   link.setAttribute('data-home-demo-style-kind', kind)
+  link.setAttribute('data-home-demo-style-href', styleKey)
   doc.head.appendChild(link)
 
   const promise = whenStylesheetReady(link).catch((error) => {
     console.warn(`Home demo stylesheet failed to load for ${kind}:`, error)
   })
-  stylePromises.set(kind, promise)
+  stylePromises.set(styleKey, promise)
   return promise
 }
 
@@ -310,7 +424,7 @@ export const warmHomeDemoStartupAttachRuntime = ({
 
 export const resetHomeDemoRuntimeLoaderForTests = () => {
   modulePromises.clear()
-  stylePromises.clear()
+  getGlobalHomeDemoStylePromises().clear()
   warmPromises.clear()
   preloadPromises.clear()
   startupAttachRuntimePromise = null

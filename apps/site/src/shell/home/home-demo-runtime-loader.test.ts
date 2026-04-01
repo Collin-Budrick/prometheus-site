@@ -207,8 +207,8 @@ describe('home-demo-runtime-loader', () => {
       createElement: () => new MockLink(),
       querySelector: (selector: string) =>
         (links.find((link) =>
-          selector.includes('data-home-demo-style-kind')
-            ? link.getAttribute('data-home-demo-style-kind') === 'planner'
+          selector.includes('data-home-demo-style-href')
+            ? link.getAttribute('data-home-demo-style-href') === asset.styleHref
             : selector.includes('data-home-demo-module-kind')
               ? link.getAttribute('data-home-demo-module-kind') === 'planner'
               : false
@@ -242,6 +242,7 @@ describe('home-demo-runtime-loader', () => {
     const styleLink = links.find((link) => link.getAttribute('data-home-demo-style-kind') === 'planner')
     const moduleLink = links.find((link) => link.getAttribute('data-home-demo-module-kind') === 'planner')
     expect(styleLink?.getAttribute('rel')).toBe('stylesheet')
+    expect(styleLink?.getAttribute('data-home-demo-style-href')).toBe(asset.styleHref)
     expect(moduleLink?.getAttribute('rel')).toBe('modulepreload')
     styleLink?.emit('load')
     moduleLink?.emit('load')
@@ -252,6 +253,153 @@ describe('home-demo-runtime-loader', () => {
     const runtimeModule = await loadHomeDemoKind('planner', { asset, importer })
     expect(runtimeModule).toBeTruthy()
     expect(calls).toEqual([asset.moduleHref])
+  })
+
+  it('dedupes a shared demo stylesheet by href across different kinds', async () => {
+    class MockLink {
+      rel = 'preload'
+      sheet: unknown = null
+      private attrs = new Map<string, string>()
+      private listeners = new Map<string, Array<() => void>>()
+
+      getAttribute(name: string) {
+        return this.attrs.get(name) ?? null
+      }
+
+      setAttribute(name: string, value: string) {
+        this.attrs.set(name, value)
+        if (name === 'rel') {
+          this.rel = value
+        }
+      }
+
+      removeAttribute(name: string) {
+        this.attrs.delete(name)
+      }
+
+      addEventListener(type: string, listener: () => void) {
+        const listeners = this.listeners.get(type) ?? []
+        listeners.push(listener)
+        this.listeners.set(type, listeners)
+      }
+
+      removeEventListener(type: string, listener: () => void) {
+        const listeners = this.listeners.get(type) ?? []
+        this.listeners.set(
+          type,
+          listeners.filter((value) => value !== listener)
+        )
+      }
+
+      emit(type: string) {
+        ;(this.listeners.get(type) ?? []).slice().forEach((listener) => listener())
+      }
+    }
+
+    const links: MockLink[] = []
+    const sharedStyleHref = 'https://prometheus.prod/assets/home-demo-shared.css'
+    const doc = {
+      head: {
+        appendChild: (link: MockLink) => {
+          links.push(link)
+          return link
+        }
+      },
+      createElement: () => new MockLink(),
+      querySelector: (selector: string) =>
+        (links.find((link) =>
+          selector.includes('data-home-demo-style-href')
+            ? link.getAttribute('data-home-demo-style-href') === sharedStyleHref
+            : false
+        ) ?? null) as MockLink | null
+    }
+
+    const firstLoad = ensureHomeDemoKindStyle({
+      kind: 'planner',
+      doc: doc as never,
+      asset: {
+        moduleHref: 'https://prometheus.prod/build/static-shell/apps/site/src/shell/home/home-demo-planner-runtime.js',
+        styleHref: sharedStyleHref
+      }
+    })
+    const secondLoad = ensureHomeDemoKindStyle({
+      kind: 'react-binary',
+      doc: doc as never,
+      asset: {
+        moduleHref: 'https://prometheus.prod/build/static-shell/apps/site/src/shell/home/home-demo-react-binary-runtime.js',
+        styleHref: sharedStyleHref
+      }
+    })
+
+    expect(firstLoad).toBe(secondLoad)
+    expect(links).toHaveLength(1)
+    expect(links[0]?.getAttribute('data-home-demo-style-kind')).toBe('planner')
+    expect(links[0]?.getAttribute('data-home-demo-style-href')).toBe(sharedStyleHref)
+
+    links[0]?.emit('load')
+    await firstLoad
+    await secondLoad
+  })
+
+  it('reuses an existing shared stylesheet when another bundle resolves the same asset to a different URL form', async () => {
+    class MockLink {
+      rel = 'stylesheet'
+      sheet: unknown = {}
+      href = 'https://prometheus.prod/assets/home-demo-shared.css'
+      private attrs = new Map<string, string>([
+        ['rel', 'stylesheet'],
+        ['href', '/assets/home-demo-shared.css']
+      ])
+
+      getAttribute(name: string) {
+        return this.attrs.get(name) ?? null
+      }
+
+      setAttribute(name: string, value: string) {
+        this.attrs.set(name, value)
+        if (name === 'rel') {
+          this.rel = value
+        }
+        if (name === 'href') {
+          this.href = value
+        }
+      }
+
+      removeAttribute(name: string) {
+        this.attrs.delete(name)
+      }
+
+      addEventListener() {}
+
+      removeEventListener() {}
+    }
+
+    const existingLink = new MockLink()
+    const appendedLinks: MockLink[] = []
+    const doc = {
+      baseURI: 'https://prometheus.prod/?lang=en',
+      head: {
+        appendChild: (link: MockLink) => {
+          appendedLinks.push(link)
+          return link
+        }
+      },
+      createElement: () => new MockLink(),
+      querySelector: () => null,
+      querySelectorAll: () => [existingLink]
+    }
+
+    await ensureHomeDemoKindStyle({
+      kind: 'react-binary',
+      doc: doc as never,
+      asset: {
+        moduleHref:
+          'https://prometheus.prod/build/static-shell/apps/site/src/shell/home/home-demo-react-binary-runtime.js',
+        styleHref: 'https://prometheus.prod/assets/home-demo-shared.css'
+      }
+    })
+
+    expect(appendedLinks).toHaveLength(0)
   })
 
   it('creates a kind stylesheet link when one does not exist yet', async () => {
@@ -320,9 +468,99 @@ describe('home-demo-runtime-loader', () => {
     expect(link.getAttribute('rel')).toBe('stylesheet')
     expect(link.getAttribute('href')).toBeTruthy()
     expect(link.getAttribute('data-home-demo-style-kind')).toBe('wasm-renderer')
+    expect(link.getAttribute('data-home-demo-style-href')).toBe(
+      'https://prometheus.prod/assets/home-demo-shared.css'
+    )
     expect(appendCount).toBe(1)
 
     link.emit('load')
+    await loadPromise
+  })
+
+  it('resolves a relative shared stylesheet asset path against the static-shell script base', async () => {
+    class MockLink {
+      rel = 'preload'
+      sheet: unknown = null
+      private attrs = new Map<string, string>()
+      private listeners = new Map<string, Array<() => void>>()
+
+      getAttribute(name: string) {
+        return this.attrs.get(name) ?? null
+      }
+
+      setAttribute(name: string, value: string) {
+        this.attrs.set(name, value)
+        if (name === 'rel') {
+          this.rel = value
+        }
+      }
+
+      removeAttribute(name: string) {
+        this.attrs.delete(name)
+      }
+
+      addEventListener(type: string, listener: () => void) {
+        const listeners = this.listeners.get(type) ?? []
+        listeners.push(listener)
+        this.listeners.set(type, listeners)
+      }
+
+      removeEventListener(type: string, listener: () => void) {
+        const listeners = this.listeners.get(type) ?? []
+        this.listeners.set(
+          type,
+          listeners.filter((value) => value !== listener)
+        )
+      }
+
+      emit(type: string) {
+        ;(this.listeners.get(type) ?? []).slice().forEach((listener) => listener())
+      }
+    }
+
+    const scripts = [
+      {
+        getAttribute: (name: string) =>
+          name === 'src'
+            ? 'https://prometheus.prod/build/static-shell/apps/site/src/shell/home/home-static-entry.js?v=build123'
+            : null
+      }
+    ]
+    const links: MockLink[] = []
+    const doc = {
+      scripts,
+      head: {
+        appendChild: (link: MockLink) => {
+          links.push(link)
+          return link
+        }
+      },
+      createElement: () => new MockLink(),
+      querySelector: (selector: string) =>
+        (links.find((link) =>
+          link.getAttribute('data-home-demo-style-href') ===
+          'https://prometheus.prod/build/static-shell/apps/site/src/shell/home/home-demo-shared.css?v=build123'
+        ) ?? null) as MockLink | null
+    }
+
+    const loadPromise = ensureHomeDemoKindStyle({
+      kind: 'planner',
+      doc: doc as never,
+      asset: {
+        moduleHref: 'https://prometheus.prod/build/static-shell/apps/site/src/shell/home/home-demo-planner-runtime.js?v=build123',
+        styleHref: 'build/static-shell/apps/site/src/shell/home/home-demo-shared.css'
+      }
+    })
+
+    expect(links).toHaveLength(1)
+    expect(links[0]?.getAttribute('href')).toBe(
+      'https://prometheus.prod/build/static-shell/apps/site/src/shell/home/home-demo-shared.css?v=build123'
+    )
+    expect(links[0]?.getAttribute('data-home-demo-style-href')).toBe(
+      'https://prometheus.prod/build/static-shell/apps/site/src/shell/home/home-demo-shared.css?v=build123'
+    )
+
+    links[0]?.emit('load')
     await loadPromise
   })
 

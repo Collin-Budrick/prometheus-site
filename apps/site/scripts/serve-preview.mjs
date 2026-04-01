@@ -1,6 +1,7 @@
 import http from 'node:http'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { preparePreviewResponseBody } from './serve-preview-response.mjs'
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const siteRoot = path.resolve(scriptDir, '..')
@@ -228,17 +229,19 @@ const server = http.createServer((req, res) => {
       chunks.push(buffer)
     }
 
-    const contentType = String(res.getHeader('content-type') || '')
     const body = Buffer.concat(chunks)
-    const shouldInject = contentType.includes('text/html') || body.toString('utf8', 0, Math.min(body.length, 64)).includes('<!DOCTYPE html')
+    const response = preparePreviewResponseBody({
+      body,
+      contentType: res.getHeader('content-type'),
+      headersSent: res.headersSent,
+      injectHtml: injectRouteTransitionMarkup
+    })
 
-    if (!shouldInject) {
-      return originalEnd(body, resolvedEncoding, resolvedCallback)
+    if (response.contentLength !== null && !res.headersSent) {
+      res.setHeader('content-length', response.contentLength)
     }
 
-    const html = injectRouteTransitionMarkup(body.toString('utf8'))
-    res.setHeader('content-length', Buffer.byteLength(html))
-    return originalEnd(html, 'utf8', resolvedCallback)
+    return originalEnd(response.body, response.encoding ?? resolvedEncoding, resolvedCallback)
   }
 
   let index = 0

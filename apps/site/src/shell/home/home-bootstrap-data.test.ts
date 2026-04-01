@@ -77,6 +77,12 @@ describe('home-bootstrap-data', () => {
               }
             },
             fragmentOrder: ['fragment://page/home/react@v1'],
+            homeDemoAssets: {
+              planner: {
+                moduleHref: '/build/static-shell/apps/site/src/shell/home/home-demo-planner-runtime.js',
+                styleHref: '/assets/home-demo-shared.css'
+              }
+            },
             fragmentVersions: serializeHomeFragmentVersions(
               {
                 'fragment://page/home/react@v1': 1
@@ -132,6 +138,7 @@ describe('home-bootstrap-data', () => {
         id: 'fragment://page/home/react@v1',
         critical: false,
         layout: {
+          column: 'main',
           minHeight: 489,
           heightHint: {
             desktop: 648,
@@ -148,6 +155,10 @@ describe('home-bootstrap-data', () => {
     expect(data?.runtimeFetchGroups).toEqual([['fragment://page/home/react@v1']])
     expect(data?.fragmentVersions).toEqual({
       'fragment://page/home/react@v1': 1
+    })
+    expect(data?.homeDemoAssets?.planner).toEqual({
+      moduleHref: '/build/static-shell/apps/site/src/shell/home/home-demo-planner-runtime.js',
+      styleHref: '/assets/home-demo-shared.css'
     })
     expect(data?.runtimeAnchorBootstrapHref).toBe(
       '/api/fragments/bootstrap?protocol=2&lang=en&ids=fragment%3A%2F%2Fpage%2Fhome%2Fmanifest%40v1%2Cfragment%3A%2F%2Fpage%2Fhome%2Fdock%40v1'

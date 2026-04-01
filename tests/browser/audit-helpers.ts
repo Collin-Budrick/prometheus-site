@@ -30,7 +30,7 @@ const ignoredConsolePatterns = [/^\[vite\]\s/i]
 const ignoredPageErrorPatterns = [/^Transition was skipped$/i]
 const ignoredNetworkUrlPatterns = [/\/favicon\.ico(?:\?.*)?$/i]
 const ignoredRequestFailurePatterns = [
-  /\/build\/static-shell\/.*\/fragment\/runtime\/worker\.js\?v=.*\(net::ERR_BLOCKED_BY_RESPONSE\)/i
+  /\/build\/static-shell\/.*\/fragment\/runtime\/worker\.js(?:\?v=.*)?\s+\(net::ERR_BLOCKED_BY_RESPONSE\)/i
 ]
 
 const normalizePathname = (value: string) =>

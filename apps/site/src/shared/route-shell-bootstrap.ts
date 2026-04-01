@@ -1,11 +1,22 @@
 import { TRUSTED_TYPES_RUNTIME_SCRIPT_POLICY_NAME } from '../security/shared'
-import type { RouteSafetyMode } from './route-navigation'
+import type { RouteSafetyMode, RouteWarmupAudience } from './route-navigation'
 
-export type RouteShellBootstrapDescriptor = {
+export type RouteShellBootstrapNavigationDescriptor = {
   href: string
   rootHref: string
   index: number
+}
+
+export type RouteShellBootstrapWarmupDescriptor = {
+  href: string
   safety: RouteSafetyMode
+  warmupAudience: RouteWarmupAudience
+}
+
+type RouteShellBootstrapConfig = {
+  navigationDescriptors: ReadonlyArray<RouteShellBootstrapNavigationDescriptor>
+  warmupDescriptors: ReadonlyArray<RouteShellBootstrapWarmupDescriptor>
+  isAuthenticated: boolean
 }
 
 const ROUTE_TRANSITION_STATE_KEY = '__PROMETHEUS_ROUTE_TRANSITION__'
@@ -105,10 +116,17 @@ export const routeDirectionRestoreScript = `(function () {
   var stateKey = ${serializeJson(ROUTE_TRANSITION_STATE_KEY)};
   var fallbackAttr = 'data-nav-fallback';
   var fallbackDurationMs = ${String(ROUTE_FALLBACK_ANIMATION_DURATION_MS)};
+  var skippedTransitionThresholdMs = 80;
   var normalizePath = function (value) {
     var trimmed = String(value || '').trim();
     if (!trimmed || trimmed === '/') return '/';
     return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
+  };
+  var now = function () {
+    if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+      return performance.now();
+    }
+    return Date.now();
   };
   var isSkippedTransitionError = function (error) {
     if (!error || typeof error !== 'object') return false;
@@ -167,19 +185,35 @@ export const routeDirectionRestoreScript = `(function () {
   }
   if (!restoredDirection || restoredDirection === 'none') return;
   var wireFallback = function (transition) {
-    if (!transition) {
+    var startedAt = now();
+    var handled = false;
+    var scheduleOnce = function () {
+      if (handled) return;
+      handled = true;
       scheduleFallback(restoredDirection);
+    };
+    if (!transition) {
+      scheduleOnce();
       return;
     }
     var handleSkippedTransition = function (error) {
       if (!isSkippedTransitionError(error)) return;
-      scheduleFallback(restoredDirection);
+      scheduleOnce();
+    };
+    var handleFinished = function () {
+      if (handled) return;
+      if (now() - startedAt <= skippedTransitionThresholdMs) {
+        scheduleOnce();
+      }
     };
     if (transition.ready && typeof transition.ready.catch === 'function') {
       transition.ready.catch(handleSkippedTransition);
     }
     if (transition.finished && typeof transition.finished.catch === 'function') {
       transition.finished.catch(handleSkippedTransition);
+    }
+    if (transition.finished && typeof transition.finished.then === 'function') {
+      transition.finished.then(handleFinished, handleSkippedTransition);
     }
   };
   if ('onpagereveal' in window) {
@@ -199,10 +233,14 @@ export const routeDirectionRestoreScript = `(function () {
   scheduleFallback(restoredDirection);
 })();`
 
-export const buildRouteShellBootstrapScript = (
-  descriptors: ReadonlyArray<RouteShellBootstrapDescriptor>
-) => `(function () {
-  var descriptors = ${serializeJson(descriptors)};
+export const buildRouteShellBootstrapScript = ({
+  navigationDescriptors,
+  warmupDescriptors,
+  isAuthenticated
+}: RouteShellBootstrapConfig) => `(function () {
+  var navigationDescriptors = ${serializeJson(navigationDescriptors)};
+  var warmupDescriptors = ${serializeJson(warmupDescriptors)};
+  var isAuthenticated = ${serializeJson(isAuthenticated)};
   var stateKey = ${serializeJson(ROUTE_TRANSITION_STATE_KEY)};
   var nonceAttr = ${serializeJson(CSP_NONCE_ATTR)};
   var runtimeScriptPolicyName = ${serializeJson(TRUSTED_TYPES_RUNTIME_SCRIPT_POLICY_NAME)};
@@ -211,12 +249,9 @@ export const buildRouteShellBootstrapScript = (
   var supportsSpeculation = typeof HTMLScriptElement !== 'undefined' &&
     typeof HTMLScriptElement.supports === 'function' &&
     HTMLScriptElement.supports('speculationrules');
-  var intentSeen = false;
   var idleScheduled = false;
   var idlePrefetchUrls = [];
-  var intentTargetUrl = null;
-  var intentPrerenderEnabled = false;
-  var lastWarmupKey = '';
+  var idlePrerenderUrls = [];
   var previousRenderState = '';
 
   var normalizePath = function (value) {
@@ -240,8 +275,8 @@ export const buildRouteShellBootstrapScript = (
   var resolveDockOwner = function (pathname) {
     var normalizedPath = normalizePath(pathname);
     var match = null;
-    for (var index = 0; index < descriptors.length; index += 1) {
-      var descriptor = descriptors[index];
+    for (var index = 0; index < navigationDescriptors.length; index += 1) {
+      var descriptor = navigationDescriptors[index];
       var candidate = normalizePath(descriptor.rootHref);
       var matches = candidate === '/'
         ? normalizedPath === '/'
@@ -266,36 +301,6 @@ export const buildRouteShellBootstrapScript = (
     }
 
     return targetOwner.index > currentOwner.index ? 'forward' : 'back';
-  };
-
-  var resolveSafety = function (pathname) {
-    var normalizedPath = normalizePath(pathname);
-    if (
-      normalizedPath === '/offline' ||
-      normalizedPath === '/login/callback' ||
-      normalizedPath.indexOf('/login/callback/') === 0 ||
-      normalizedPath === '/store/items' ||
-      normalizedPath.indexOf('/store/items/') === 0
-    ) {
-      return 'no-warmup';
-    }
-
-    if (normalizedPath === '/' || normalizedPath === '/store' || normalizedPath === '/lab') {
-      return 'prerender-ok';
-    }
-
-    if (
-      normalizedPath === '/login' ||
-      normalizedPath === '/profile' ||
-      normalizedPath === '/settings' ||
-      normalizedPath === '/dashboard' ||
-      normalizedPath === '/chat' ||
-      normalizedPath === '/privacy'
-    ) {
-      return 'prefetch-only';
-    }
-
-    return 'no-warmup';
   };
 
   var isWarmupConstrained = function () {
@@ -377,13 +382,8 @@ export const buildRouteShellBootstrapScript = (
   };
 
   var renderWarmupMarkup = function () {
-    var prefetchUrls = normalizeWarmupUrls(
-      idlePrefetchUrls.concat(intentTargetUrl && !intentPrerenderEnabled ? [intentTargetUrl] : [])
-    );
-    var prerenderUrls =
-      supportsSpeculation && intentPrerenderEnabled && intentTargetUrl
-        ? normalizeWarmupUrls([intentTargetUrl])
-        : [];
+    var prefetchUrls = normalizeWarmupUrls(idlePrefetchUrls);
+    var prerenderUrls = supportsSpeculation ? normalizeWarmupUrls(idlePrerenderUrls) : [];
     var nextState = JSON.stringify({ prefetchUrls: prefetchUrls, prerenderUrls: prerenderUrls });
 
     if (nextState === previousRenderState) return;
@@ -420,31 +420,28 @@ export const buildRouteShellBootstrapScript = (
     });
   };
 
-  var warmTarget = function (targetUrl) {
-    if (isWarmupConstrained()) return;
-    var safety = resolveSafety(targetUrl.pathname);
-    if (safety === 'no-warmup') return;
-    intentTargetUrl = targetUrl.href;
-    intentPrerenderEnabled = safety === 'prerender-ok';
-    renderWarmupMarkup();
-  };
-
   var scheduleIdleWarmup = function () {
     if (idleScheduled || isWarmupConstrained()) return;
     idleScheduled = true;
     var run = function () {
-      var currentOwner = resolveDockOwner(location.pathname);
-      if (!currentOwner) return;
-      idlePrefetchUrls = descriptors
-        .filter(function (descriptor) {
-          return (
-            Math.abs(descriptor.index - currentOwner.index) === 1 &&
-            descriptor.safety !== 'no-warmup'
-          );
-        })
-        .map(function (descriptor) {
-          return new URL(descriptor.href, location.origin).href;
-        });
+      var currentKey = comparableKey(new URL(location.href));
+      idlePrefetchUrls = [];
+      idlePrerenderUrls = [];
+
+      warmupDescriptors.forEach(function (descriptor) {
+        if (descriptor.safety === 'no-warmup') return;
+        if (!isAuthenticated && descriptor.warmupAudience === 'auth') return;
+
+        var url = new URL(descriptor.href, location.origin);
+        if (comparableKey(url) === currentKey) return;
+
+        if (descriptor.safety === 'prerender-ok' && supportsSpeculation) {
+          idlePrerenderUrls.push(url.href);
+          return;
+        }
+
+        idlePrefetchUrls.push(url.href);
+      });
       renderWarmupMarkup();
     };
 
@@ -455,35 +452,7 @@ export const buildRouteShellBootstrapScript = (
 
     window.setTimeout(run, 220);
   };
-
-  var noteIntent = function () {
-    if (intentSeen) return;
-    intentSeen = true;
-    scheduleIdleWarmup();
-  };
-
-  var handleWarmupIntent = function (event) {
-    noteIntent();
-    var anchor = resolveAnchor(event.target);
-    if (!anchor) return;
-    var targetUrl = resolveRouteUrl(anchor);
-    if (!targetUrl) return;
-
-    var nextKey = comparableKey(targetUrl);
-    if (nextKey === comparableKey(new URL(location.href)) || nextKey === lastWarmupKey) {
-      return;
-    }
-
-    lastWarmupKey = nextKey;
-    warmTarget(targetUrl);
-  };
-
-  document.addEventListener('pointerdown', noteIntent, true);
-  document.addEventListener('focusin', noteIntent, true);
-  document.addEventListener('keydown', noteIntent, true);
-  document.addEventListener('pointerover', handleWarmupIntent, true);
-  document.addEventListener('focusin', handleWarmupIntent, true);
-  document.addEventListener('pointerdown', handleWarmupIntent, true);
+  scheduleIdleWarmup();
 
   document.addEventListener('click', function (event) {
     if (
@@ -515,8 +484,6 @@ export const buildRouteShellBootstrapScript = (
       return;
     }
 
-    noteIntent();
-    warmTarget(targetUrl);
     var direction = resolveDirection(currentUrl.pathname, targetUrl.pathname).replace('none', 'neutral');
     document.documentElement.dataset.navDirection = direction;
 

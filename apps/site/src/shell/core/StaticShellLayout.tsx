@@ -6,10 +6,11 @@ import type { Lang } from '../../lang'
 import { supportedLanguages } from '../../lang/manifest'
 import { appConfig, siteTemplateConfig } from '../../site-config'
 import { AUTH_NAV_ITEMS, TOPBAR_NAV_ITEMS } from '../../shared/nav-order'
-import { createDockRouteDescriptors } from '../../shared/route-navigation'
+import { createDockRouteDescriptors, createRouteWarmupDescriptors } from '../../shared/route-navigation'
 import {
   buildRouteShellBootstrapScript,
-  type RouteShellBootstrapDescriptor
+  type RouteShellBootstrapNavigationDescriptor,
+  type RouteShellBootstrapWarmupDescriptor
 } from '../../shared/route-shell-bootstrap'
 import { useCspNonce } from '../../security/qwik'
 import {
@@ -169,11 +170,18 @@ export const StaticShellLayout = component$<StaticShellLayoutProps>(({
     ...omitUndefined(languageSeed.ui ?? {})
   }
   const navItems = isAuthenticated ? AUTH_NAV_ITEMS : TOPBAR_NAV_ITEMS
-  const routeBootstrapDescriptors: RouteShellBootstrapDescriptor[] = createDockRouteDescriptors(navItems).map((descriptor) => ({
+  const routeBootstrapNavigationDescriptors: RouteShellBootstrapNavigationDescriptor[] = createDockRouteDescriptors(navItems).map((descriptor) => ({
     href: withLangParam(descriptor.href, lang),
     rootHref: descriptor.href,
-    index: descriptor.index,
-    safety: descriptor.safety
+    index: descriptor.index
+  }))
+  const routeBootstrapWarmupDescriptors: RouteShellBootstrapWarmupDescriptor[] = createRouteWarmupDescriptors(
+    TOPBAR_NAV_ITEMS,
+    AUTH_NAV_ITEMS
+  ).map((descriptor) => ({
+    href: withLangParam(descriptor.href, lang),
+    safety: descriptor.safety,
+    warmupAudience: descriptor.warmupAudience
   }))
 
   return (
@@ -259,7 +267,11 @@ export const StaticShellLayout = component$<StaticShellLayoutProps>(({
       </div>
       <script
         nonce={nonce || undefined}
-        dangerouslySetInnerHTML={buildRouteShellBootstrapScript(routeBootstrapDescriptors)}
+        dangerouslySetInnerHTML={buildRouteShellBootstrapScript({
+          navigationDescriptors: routeBootstrapNavigationDescriptors,
+          warmupDescriptors: routeBootstrapWarmupDescriptors,
+          isAuthenticated
+        })}
       />
     </div>
   )

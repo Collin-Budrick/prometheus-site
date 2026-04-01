@@ -343,7 +343,7 @@ describe("static shell performance invariants", () => {
     expect(homeRouteSource).toContain("STATIC_FRAGMENT_WIDTH_BUCKET_ATTR");
     expect(homeRouteSource).toContain("STATIC_FRAGMENT_WIDTH_BUCKET_MOBILE_ATTR");
     expect(homeRouteSource).toContain("resolveFragmentHeightWidthBucket({");
-    expect(homeRouteSource).toContain("homeDemoAssets: normalizeHomeDemoAssetMap()");
+    expect(homeRouteSource).toContain("homeDemoAssets: createHomeDemoAssetMap()");
     expect(homeRouteSource).toContain("createSeededHomeStaticCopyBundle");
     expect(homeRouteSource).toContain("createSeededHomeStaticFragmentHeaders");
     expect(homeRouteSource).toContain("buildFragmentHeightPlanSignature");
@@ -665,7 +665,16 @@ describe("static shell performance invariants", () => {
     expect(layoutSource).not.toContain("root.style.colorScheme = theme;");
     expect(
       await readSource("../../../../packages/ui/src/global-deferred.css"),
-    ).toContain("home-demo-active.css");
+    ).not.toContain("home-demo-active.css");
+    expect(await readSource("./home-static-eager.css")).toContain(
+      '@import "../../components/home-demo-first-frame-critical.css";',
+    );
+    expect(await readSource("./home-static-eager.css")).not.toContain(
+      '@import "../../components/home-demo-active.css";',
+    );
+    expect(await readSource("./home-demo-shared.css")).toContain(
+      '@import "../../components/home-demo-active-react-binary.css";',
+    );
     const globalCriticalHomeSource = await readSource(
       "../../../../packages/ui/src/global-critical-home.css",
     );
@@ -770,7 +779,7 @@ describe("static shell performance invariants", () => {
     const homeStaticAnchorEntrySource = await readSource("./home-static-anchor-entry.ts");
     const staticHomeRouteSource = await readSource("./StaticHomeRoute.tsx");
     expect(staticHomeRouteSource).toContain("STATIC_HOME_WORKER_DATA_SCRIPT_ID");
-    expect(staticHomeRouteSource).not.toContain("createHomeDemoAssetMap");
+    expect(staticHomeRouteSource).toContain("createHomeDemoAssetMap");
     expect(staticHomeRouteSource).not.toContain(
       "buildPrimeHomeFragmentBootstrapScript",
     );
@@ -931,6 +940,12 @@ describe("static shell performance invariants", () => {
     expect(
       await readSource("../../components/home-demo-active-react-binary.css"),
     ).not.toContain("box-shadow 160ms ease");
+    expect(
+      await readSource("../../components/home-demo-active-react-binary.css"),
+    ).not.toContain("box-shadow: 0 22px 44px rgba(15, 23, 42, 0.16);");
+    expect(
+      await readSource("../../components/home-demo-active-react-binary.css"),
+    ).toContain("will-change: opacity, transform;");
     expect(
       await readSource("../../components/home-demo-active-wasm-renderer.css"),
     ).not.toContain("box-shadow 160ms ease");

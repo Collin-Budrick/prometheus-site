@@ -46,12 +46,12 @@ import {
   createSeededHomeStaticCopyBundle,
   createSeededHomeStaticFragmentHeaders
 } from './home-copy-bundle'
+import { createHomeDemoAssetMap } from './home-demo-assets'
 import {
   serializeHomeFragmentVersions,
   serializeHomeRuntimeFetchGroups,
   serializeHomeRuntimePlanEntries
 } from './home-bootstrap-data'
-import { normalizeHomeDemoAssetMap } from './home-demo-runtime-types'
 import { isSiteFeatureEnabled, siteBrand, siteTemplateConfig } from '../../site-config'
 import {
   buildPretextCardAttrs,
@@ -674,7 +674,7 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
           lang,
           path: plan.path,
           snapshotKey: routeConfig?.snapshotKey ?? plan.path,
-          homeDemoAssets: normalizeHomeDemoAssetMap(),
+          homeDemoAssets: createHomeDemoAssetMap(),
           languageSeed,
           fragmentBootstrapHref,
           fragmentOrder: routeState.fragmentOrder,

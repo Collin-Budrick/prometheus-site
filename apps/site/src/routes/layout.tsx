@@ -69,6 +69,7 @@ import {
 } from '../shell/core/build-manifest.server'
 import {
   createDockRouteDescriptors,
+  createRouteWarmupDescriptors,
   resolveDockOwner,
 } from '../shared/route-navigation'
 import {
@@ -1258,15 +1259,20 @@ const InteractiveShellLayout = component$(() => {
   )
   const navItems = isAuthenticated ? AUTH_NAV_ITEMS : TOPBAR_NAV_ITEMS
   const dockDescriptors = createDockRouteDescriptors(navItems)
+  const warmupDescriptors = createRouteWarmupDescriptors(TOPBAR_NAV_ITEMS, AUTH_NAV_ITEMS)
   const dockItems = navItems.map((item) => {
     const Icon = DOCK_ICONS[item.labelKey] ?? InHomeSimple
     return { href: item.href, label: copy.value[item.labelKey], icon: Icon }
   })
-  const routeBootstrapDescriptors = dockDescriptors.map((descriptor) => ({
+  const routeBootstrapNavigationDescriptors = dockDescriptors.map((descriptor) => ({
     href: withLangParam(descriptor.href, langSignal.value),
     rootHref: descriptor.href,
-    index: descriptor.index,
-    safety: descriptor.safety
+    index: descriptor.index
+  }))
+  const routeBootstrapWarmupDescriptors = warmupDescriptors.map((descriptor) => ({
+    href: withLangParam(descriptor.href, langSignal.value),
+    safety: descriptor.safety,
+    warmupAudience: descriptor.warmupAudience
   }))
   const statusLabel =
     fragmentStatus.value === 'streaming'
@@ -1503,7 +1509,11 @@ const InteractiveShellLayout = component$(() => {
       </DockBar>
       <script
         nonce={nonce || undefined}
-        dangerouslySetInnerHTML={buildRouteShellBootstrapScript(routeBootstrapDescriptors)}
+        dangerouslySetInnerHTML={buildRouteShellBootstrapScript({
+          navigationDescriptors: routeBootstrapNavigationDescriptors,
+          warmupDescriptors: routeBootstrapWarmupDescriptors,
+          isAuthenticated
+        })}
       />
     </div>
   )

@@ -3,11 +3,18 @@ import { getCspNonce } from '../security/client'
 
 export type RouteMotionDirection = 'forward' | 'back' | 'neutral' | 'none'
 export type RouteSafetyMode = 'prerender-ok' | 'prefetch-only' | 'no-warmup'
+export type RouteWarmupAudience = 'public' | 'auth'
 
 export type DockRouteDescriptor = {
   href: string
   index: number
   safety: RouteSafetyMode
+}
+
+export type RouteWarmupDescriptor = {
+  href: string
+  safety: RouteSafetyMode
+  warmupAudience: RouteWarmupAudience
 }
 
 type RouteWarmupControllerOptions = {
@@ -19,8 +26,10 @@ type RouteWarmupControllerOptions = {
 const ROUTE_SPECULATION_SELECTOR = 'script[type="speculationrules"][data-route-speculation="shell"]'
 const ROUTE_PREFETCH_SELECTOR = 'link[rel="prefetch"][data-route-prefetch="shell"]'
 
-const PRERENDER_SAFE_ROUTES = new Set(['/', '/store', '/lab'])
 const PREFETCH_ONLY_ROUTES = new Set([
+  '/',
+  '/store',
+  '/lab',
   '/login',
   '/profile',
   '/settings',
@@ -65,15 +74,29 @@ export const resolveRouteSafetyMode = (pathname: string): RouteSafetyMode => {
     }
   }
 
-  if (PRERENDER_SAFE_ROUTES.has(normalizedPath)) {
-    return 'prerender-ok'
-  }
-
   if (PREFETCH_ONLY_ROUTES.has(normalizedPath)) {
     return 'prefetch-only'
   }
 
   return 'no-warmup'
+}
+
+export const resolveRouteWarmupAudience = (pathname: string): RouteWarmupAudience => {
+  const normalizedPath = normalizeRoutePath(pathname)
+
+  if (
+    normalizedPath === '/login' ||
+    normalizedPath === '/profile' ||
+    normalizedPath === '/settings' ||
+    normalizedPath === '/dashboard' ||
+    normalizedPath === '/chat' ||
+    normalizedPath === '/login/callback' ||
+    normalizedPath.startsWith('/login/callback/')
+  ) {
+    return 'auth'
+  }
+
+  return 'public'
 }
 
 export const createDockRouteDescriptors = (navItems: ReadonlyArray<NavItem>): DockRouteDescriptor[] =>
@@ -84,6 +107,26 @@ export const createDockRouteDescriptors = (navItems: ReadonlyArray<NavItem>): Do
       safety: resolveRouteSafetyMode(item.href)
     }))
     .sort(routeDescriptorComparator)
+
+export const createRouteWarmupDescriptors = (
+  ...navGroups: ReadonlyArray<NavItem>[]
+): RouteWarmupDescriptor[] => {
+  const descriptors = new Map<string, RouteWarmupDescriptor>()
+
+  navGroups.forEach((navItems) => {
+    navItems.forEach((item) => {
+      const href = normalizeRoutePath(item.href)
+      if (descriptors.has(href)) return
+      descriptors.set(href, {
+        href,
+        safety: resolveRouteSafetyMode(href),
+        warmupAudience: resolveRouteWarmupAudience(href)
+      })
+    })
+  })
+
+  return Array.from(descriptors.values())
+}
 
 export const resolveDockOwner = (
   pathname: string,
@@ -130,15 +173,17 @@ export const resolveRouteMotionDirection = (
 
 export const getIdleWarmupDescriptors = (
   currentPathname: string,
-  descriptors: ReadonlyArray<DockRouteDescriptor>
-): DockRouteDescriptor[] => {
-  const owner = resolveDockOwner(currentPathname, descriptors)
-  if (!owner) return []
+  descriptors: ReadonlyArray<RouteWarmupDescriptor>,
+  isAuthenticated: boolean
+): RouteWarmupDescriptor[] => {
+  const currentPath = normalizeRoutePath(currentPathname)
 
-  return [owner.index - 1, owner.index + 1]
-    .map((index) => descriptors.find((descriptor) => descriptor.index === index) ?? null)
-    .filter((descriptor): descriptor is DockRouteDescriptor => Boolean(descriptor))
-    .filter((descriptor) => descriptor.safety !== 'no-warmup')
+  return descriptors.filter((descriptor) => {
+    if (descriptor.safety === 'no-warmup') return false
+    if (descriptor.href === currentPath) return false
+    if (!isAuthenticated && descriptor.warmupAudience === 'auth') return false
+    return true
+  })
 }
 
 export const isRouteWarmupConstrained = (

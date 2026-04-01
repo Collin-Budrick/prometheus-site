@@ -672,6 +672,41 @@ const staticShellHtmlTrimPlugin = (): Plugin => {
   }
 }
 
+const HOME_DEMO_SHARED_STYLE_ENTRY_ID = 'virtual:prometheus-home-demo-shared-style-entry'
+const HOME_DEMO_SHARED_STYLE_ENTRY_RESOLVED_ID = '\0virtual:prometheus-home-demo-shared-style-entry'
+const HOME_DEMO_SHARED_STYLE_SOURCE_PATH = path.resolve(
+  configRoot,
+  'src',
+  'shell',
+  'home',
+  'home-demo-shared.css'
+)
+
+const emitHomeDemoSharedStylePlugin = (enabled: boolean): Plugin => ({
+  name: 'emit-home-demo-shared-style',
+  apply: 'build',
+  buildStart() {
+    if (!enabled) return
+    this.emitFile({
+      type: 'chunk',
+      id: HOME_DEMO_SHARED_STYLE_ENTRY_ID,
+      name: 'home-demo-shared-style-entry'
+    })
+  },
+  resolveId(id) {
+    if (id === HOME_DEMO_SHARED_STYLE_ENTRY_ID) {
+      return HOME_DEMO_SHARED_STYLE_ENTRY_RESOLVED_ID
+    }
+    return null
+  },
+  load(id) {
+    if (id !== HOME_DEMO_SHARED_STYLE_ENTRY_RESOLVED_ID) {
+      return null
+    }
+    return `import ${JSON.stringify(HOME_DEMO_SHARED_STYLE_SOURCE_PATH)};\nexport default undefined;\n`
+  }
+})
+
 const sanitizeOutputOptionsPlugin = (): Plugin => ({
   name: 'sanitize-output-options',
   enforce: 'post',
@@ -876,6 +911,7 @@ export default defineConfig(async (configEnv): Promise<UserConfig> => {
       publicDir: ssrBuild ? false : 'public',
       plugins: [
         sanitizeOutputOptionsPlugin(),
+        emitHomeDemoSharedStylePlugin(staticBuildEnabled),
         chunkImportMapRuntimePlugin(enableChunkImportMap, 'importmap.json'),
         earlyHintsPlugin(),
         fragmentHmrPlugin(),

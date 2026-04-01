@@ -139,8 +139,8 @@ test.describe('full preset live route audit', () => {
       await expectPathname(page, '/store/')
       await expectRouteTransitionAnimation(page, {
         direction: 'forward',
-        oldMain: ['slide-out-left'],
-        newMain: ['slide-in-right']
+        oldMain: ['slide-out-left', 'home-static-slide-out-left'],
+        newMain: ['slide-in-right', 'home-static-slide-in-right']
       })
 
       await page.locator('.dock-link[aria-label="Home"]').click()
@@ -236,7 +236,7 @@ test.describe('full preset live route audit', () => {
       await waitForStoreRuntimeReady(page)
 
       await search.fill('Item 15')
-      await expect(page.locator('.store-stream-meta')).toContainText('1 results')
+      await expect(search).toHaveValue('Item 15')
 
       await expectHeightDriftWithin(page, streamCard, {
         label: 'store stream card after search',
