@@ -1,5 +1,11 @@
 import { component$ } from '@builder.io/qwik'
-import { type DocumentHead, type DocumentHeadProps, type DocumentLink, routeLoader$ } from '@builder.io/qwik-city'
+import {
+  type DocumentHead,
+  type DocumentHeadProps,
+  type DocumentLink,
+  type DocumentStyle,
+  routeLoader$
+} from '@builder.io/qwik-city'
 import { siteBrand } from '../site-config'
 import { loadStaticFragmentResource, resolveRequestLang, resolveViewportHint } from './fragment-resource'
 import { defaultLang, type Lang } from '../shared/lang-store'
@@ -7,7 +13,10 @@ import type { FragmentPayloadValue, FragmentPlan, FragmentPlanValue } from '../f
 import { buildFragmentCssLinks } from '../fragment/fragment-css'
 import { homeLanguageSelection, withFragmentHeaderSelection, type LanguageSeedPayload } from '../lang/selection'
 import { StaticHomeRoute } from '../shell/home/StaticHomeRoute'
-import { homeStaticEagerStylesheetHref } from '../shell/home/home-style-assets'
+import {
+  homeStaticEagerStylesheetHref,
+  resolveInlineHomeStaticEagerStylesheet
+} from '../shell/home/home-style-assets'
 import { buildOfflineShellFragment, offlineShellFragmentId } from './offline-shell-fragment'
 import {
   buildFragmentHeightPlanSignature,
@@ -37,17 +46,37 @@ const normalizeHomePlan = (plan: FragmentPlanValue): FragmentPlanValue => {
 }
 
 type HomeHeadLink = DocumentLink
+type HomeHeadStyle = DocumentStyle
+
+type HomeHeadAssets = {
+  links: HomeHeadLink[]
+  styles: HomeHeadStyle[]
+}
 
 export const buildHomeHeadLinks = (
   plan?: FragmentPlanValue | null,
-  _lang?: Lang
-): HomeHeadLink[] => [
-  {
-    rel: 'stylesheet',
-    href: homeStaticEagerStylesheetHref
-  },
-  ...buildFragmentCssLinks(plan)
-]
+  eagerStylesheetText: string | null = resolveInlineHomeStaticEagerStylesheet()
+): HomeHeadAssets => {
+  const links = [...buildFragmentCssLinks(plan)]
+  const styles: HomeHeadStyle[] = []
+
+  if (eagerStylesheetText) {
+    styles.push({
+      key: 'home-static-eager-inline',
+      style: eagerStylesheetText,
+      props: {
+        'data-home-eager-style': 'true'
+      }
+    })
+  } else {
+    links.unshift({
+      rel: 'stylesheet',
+      href: homeStaticEagerStylesheetHref
+    })
+  }
+
+  return { links, styles }
+}
 
 export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, request }) => {
   const { createServerLanguageSeed } = await import('../lang/server')
@@ -132,6 +161,7 @@ export default component$(() => {
 export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
   const data = resolveValue(useFragmentResource)
   const lang = data?.lang ?? defaultLang
+  const { links, styles } = buildHomeHeadLinks(data?.plan)
   return {
     title: `${siteBrand.name} | ${siteBrand.product}`,
     meta: [
@@ -140,7 +170,8 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
         content: siteBrand.metaDescription
       }
     ],
-    links: buildHomeHeadLinks(data?.plan, lang),
+    links,
+    styles,
     htmlAttributes: {
       lang
     }
