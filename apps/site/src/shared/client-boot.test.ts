@@ -38,19 +38,36 @@ class FakeWindow extends EventTarget {
   }
 }
 
+class FakeDocument extends EventTarget {
+  visibilityState: DocumentVisibilityState | 'prerender' = 'visible'
+  prerendering = false
+
+  setPrerendering(value: boolean) {
+    this.prerendering = value
+    this.visibilityState = value ? 'prerender' : 'visible'
+    this.dispatchEvent(new Event('prerenderingchange'))
+    this.dispatchEvent(new Event('visibilitychange'))
+  }
+}
+
 describe('client boot gate', () => {
   const originalWindow = globalThis.window
+  const originalDocument = globalThis.document
   let fakeWindow: FakeWindow
+  let fakeDocument: FakeDocument
 
   beforeEach(() => {
     __resetClientBootForTests()
     fakeWindow = new FakeWindow()
+    fakeDocument = new FakeDocument()
     globalThis.window = fakeWindow as never
+    globalThis.document = fakeDocument as never
   })
 
   afterEach(() => {
     __resetClientBootForTests()
     globalThis.window = originalWindow
+    globalThis.document = originalDocument
   })
 
   it('queues post-intent work until the first interaction', async () => {
@@ -153,5 +170,24 @@ describe('client boot gate', () => {
     expect(getClientBootDebugState().ready).toBe(true)
     expect(getClientBootDebugState().source).toBe('timeout')
     expect(typeof getClientBootDebugState().unlockedAt).toBe('number')
+  })
+
+  it('waits for prerender activation before running queued work', async () => {
+    const calls: string[] = []
+    fakeDocument.setPrerendering(true)
+
+    runAfterClientIntent(() => {
+      calls.push('activated')
+    }, 50)
+
+    fakeWindow.dispatchEvent(new Event('pointerdown'))
+    await Promise.resolve()
+
+    expect(calls).toEqual([])
+
+    fakeDocument.setPrerendering(false)
+    await Promise.resolve()
+
+    expect(calls).toEqual(['activated'])
   })
 })

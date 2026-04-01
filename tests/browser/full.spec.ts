@@ -59,6 +59,31 @@ const expectBoundingBox = async (locator: ReturnType<Page['locator']>) => {
   return box!
 }
 
+const readRouteTransitionAnimation = async (page: Page) =>
+  page.evaluate(() => ({
+    direction: document.documentElement.dataset.navDirection ?? null,
+    oldMain: getComputedStyle(document.documentElement, '::view-transition-old(shell-main)').animationName,
+    newMain: getComputedStyle(document.documentElement, '::view-transition-new(shell-main)').animationName
+  }))
+
+const expectRouteTransitionAnimation = async (
+  page: Page,
+  expected: {
+    direction: string
+    oldMain: string[]
+    newMain: string[]
+  }
+) => {
+  await expect
+    .poll(() => readRouteTransitionAnimation(page))
+    .toMatchObject({
+      direction: expected.direction
+    })
+  const animation = await readRouteTransitionAnimation(page)
+  expect(expected.oldMain).toContain(animation.oldMain)
+  expect(expected.newMain).toContain(animation.newMain)
+}
+
 const waitForStoreRuntimeReady = async (page: Page) => {
   await expect(page.getByRole('button', { name: 'Add to cart' }).first()).toBeEnabled({
     timeout: 15000
@@ -103,6 +128,35 @@ test.describe('full preset live route audit', () => {
 
       await page.getByRole('button', { name: 'RESET TIMER' }).click()
       await expect(page.getByText('1:00').first()).toBeVisible()
+    })
+  })
+
+  test('dock navigation updates direction and does not reload the current route', async ({ page }) => {
+    await runWithRuntimeTracking(page, 'dock route motion', async () => {
+      await page.goto('/', { waitUntil: 'domcontentloaded' })
+
+      await page.locator('.dock-link[aria-label="Store"]').click()
+      await expectPathname(page, '/store/')
+      await expectRouteTransitionAnimation(page, {
+        direction: 'forward',
+        oldMain: ['slide-out-left'],
+        newMain: ['slide-in-right']
+      })
+
+      await page.locator('.dock-link[aria-label="Home"]').click()
+      await expectPathname(page, '/')
+      await expectRouteTransitionAnimation(page, {
+        direction: 'back',
+        oldMain: ['slide-out-right', 'home-static-slide-out-right'],
+        newMain: ['slide-in-left', 'home-static-slide-in-left']
+      })
+
+      const currentUrl = page.url()
+      await page.locator('.dock-link[aria-label="Home"]').click()
+      await page.waitForTimeout(250)
+
+      expect(page.url()).toBe(currentUrl)
+      await expectPathname(page, '/')
     })
   })
 

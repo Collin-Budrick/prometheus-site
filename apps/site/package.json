@@ -5,12 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "bun run scripts/vite-run.ts -- --port 4173",
-    "build": "PROMETHEUS_STATIC_SHELL_BUILD=1 bun run scripts/vite-run.ts -- build && bun run build:static-shell:entries && PROMETHEUS_STATIC_SHELL_BUILD=1 bun run scripts/build-static-shell.ts",
+    "build": "bun -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true }); rmSync('server', { recursive: true, force: true }); rmSync('../node_modules/.vite', { recursive: true, force: true }); rmSync('node_modules/.vite', { recursive: true, force: true });\" && BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 PROMETHEUS_STATIC_SHELL_BUILD=1 bun run scripts/vite-run.ts -- build && bun run build:static-shell:entries && PROMETHEUS_STATIC_SHELL_BUILD=1 bun run scripts/build-static-shell.ts",
     "build:static-shell:entries": "node ./scripts/build-static-shell-entries.mjs",
     "build:browser-artifact": "bun build ./scripts/browser-artifact.html --compile --target=browser --outfile ./dist/browser-artifact.html",
     "build-storybook": "storybook build -c .storybook -o storybook-static",
     "analyze": "VISUALIZE_BUNDLE=1 bun run scripts/vite-run.ts -- build",
-    "preview": "PROMETHEUS_STATIC_SHELL_BUILD=1 bun run scripts/vite-run.ts -- build && bun run build:static-shell:entries && PROMETHEUS_STATIC_SHELL_BUILD=1 bun run scripts/build-static-shell.ts && bun run scripts/vite-run.ts -- preview --port 4173",
+    "preview": "bun -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true }); rmSync('server', { recursive: true, force: true }); rmSync('../node_modules/.vite', { recursive: true, force: true }); rmSync('node_modules/.vite', { recursive: true, force: true });\" && BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 PROMETHEUS_STATIC_SHELL_BUILD=1 bun run scripts/vite-run.ts -- build && bun run build:static-shell:entries && PROMETHEUS_STATIC_SHELL_BUILD=1 bun run scripts/build-static-shell.ts && bun run scripts/vite-run.ts -- preview --port 4173",
     "lint": "bun x oxlint .",
     "storybook": "storybook dev -p 6006 -c .storybook --no-open"
   },

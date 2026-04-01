@@ -3,7 +3,30 @@ export type DocumentWithViewTransition = Document & {
 }
 
 let activeLangTransitions = 0
+let activeRouteTransitions = 0
 const DEFAULT_MUTATION_TIMEOUT = 240
+
+const isSkippedTransitionError = (error: unknown) => {
+  if (!error || typeof error !== 'object') {
+    return false
+  }
+
+  const name = 'name' in error ? String(error.name ?? '') : ''
+  return name === 'AbortError'
+}
+
+const settleTransition = (
+  finished: Promise<void>,
+  finalize: () => void
+) =>
+  finished
+    .catch((error) => {
+      if (isSkippedTransitionError(error)) {
+        return
+      }
+      console.error('View transition failed:', error)
+    })
+    .finally(finalize)
 
 const nextFrame = () =>
   new Promise<void>((resolve) => {
@@ -63,7 +86,7 @@ const supportsViewTransitions = () => {
 }
 
 type MutationMode = 'any' | 'all'
-type ViewTransitionVariant = 'ui' | 'fragments'
+type ViewTransitionVariant = 'ui' | 'fragments' | 'route'
 
 type ViewTransitionOptions = {
   mutationRoot?: Element | null
@@ -77,6 +100,10 @@ const waitForMutations = (roots: Element[], timeoutMs: number, mode: MutationMod
   if (!roots.length) return waitForPaint()
   const waits = roots.map((root) => waitForMutation(root, timeoutMs))
   return mode === 'all' ? Promise.all(waits).then(() => {}) : Promise.race(waits)
+}
+
+type RouteViewTransitionOptions = ViewTransitionOptions & {
+  direction: 'forward' | 'back' | 'neutral'
 }
 
 export const runLangViewTransition = (update: () => void | Promise<void>, options: ViewTransitionOptions = {}) => {
@@ -108,13 +135,49 @@ export const runLangViewTransition = (update: () => void | Promise<void>, option
         delete root.dataset.langTransition
       }
     }
-    transition.finished.then(finalize).catch(finalize)
-    return transition.finished
+    return settleTransition(transition.finished, finalize)
   } catch {
     activeLangTransitions = Math.max(0, activeLangTransitions - 1)
     if (activeLangTransitions === 0) {
       delete root.dataset.langTransition
     }
+    return Promise.resolve(update())
+  }
+}
+
+export const runRouteViewTransition = (
+  update: () => void | Promise<void>,
+  options: RouteViewTransitionOptions
+) => {
+  if (!supportsViewTransitions() || activeRouteTransitions > 0) {
+    if (typeof document !== 'undefined') {
+      document.documentElement.dataset.navDirection = options.direction
+    }
+    return Promise.resolve(update())
+  }
+
+  const root = document.documentElement
+  const doc = document as DocumentWithViewTransition
+  root.dataset.navDirection = options.direction
+  activeRouteTransitions += 1
+
+  try {
+    const transition = doc.startViewTransition(async () => {
+      const timeoutMs = options.timeoutMs ?? DEFAULT_MUTATION_TIMEOUT
+      const mode = options.mode ?? 'any'
+      const roots = (options.mutationRoots ?? [options.mutationRoot ?? document.body]).filter(
+        (candidate): candidate is Element => Boolean(candidate)
+      )
+      const mutation = waitForMutations(roots, timeoutMs, mode)
+      await Promise.resolve(update())
+      await mutation
+    })
+    const finalize = () => {
+      activeRouteTransitions = Math.max(0, activeRouteTransitions - 1)
+    }
+    return settleTransition(transition.finished, finalize)
+  } catch {
+    activeRouteTransitions = Math.max(0, activeRouteTransitions - 1)
     return Promise.resolve(update())
   }
 }

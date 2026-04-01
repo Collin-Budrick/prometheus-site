@@ -14,6 +14,37 @@ const HOME_DEFERRED_REVALIDATION_INTENT_EVENTS = [
   'keydown',
   'touchstart'
 ] as const
+
+type TouchListenerTarget = {
+  addEventListener: (
+    type: string,
+    listener: EventListenerOrEventListenerObject,
+    options?: boolean | AddEventListenerOptions
+  ) => void
+  removeEventListener: (
+    type: string,
+    listener: EventListenerOrEventListenerObject,
+    options?: boolean | EventListenerOptions
+  ) => void
+}
+
+const addPassiveTouchListener = (
+  target: TouchListenerTarget,
+  listener: EventListenerOrEventListenerObject
+) => {
+  Reflect.apply(target.addEventListener, target, [
+    'touchstart',
+    listener,
+    { capture: true, passive: true }
+  ])
+}
+
+const removeCaptureTouchListener = (
+  target: TouchListenerTarget,
+  listener: EventListenerOrEventListenerObject
+) => {
+  Reflect.apply(target.removeEventListener, target, ['touchstart', listener, { capture: true }])
+}
 type HomeBootstrapPostLcpWindow = Pick<
   Window,
   'addEventListener' | 'removeEventListener' | 'setTimeout' | 'clearTimeout'
@@ -121,13 +152,14 @@ const scheduleHomeDeferredAction = ({
   let started = false
   let idleId: number | null = null
   let timeoutId: number | null = null
-  const eventOptions: AddEventListenerOptions = {
-    capture: true,
-    passive: true
-  }
+  const eventOptions: AddEventListenerOptions = { capture: true }
 
   const cleanupTriggers = () => {
     HOME_DEFERRED_REVALIDATION_INTENT_EVENTS.forEach((eventName) => {
+      if (eventName === 'touchstart') {
+        removeCaptureTouchListener(liveWin, runDeferredAction)
+        return
+      }
       liveWin.removeEventListener(eventName, runDeferredAction, eventOptions)
     })
     if (triggerOnVisibilityChange) {
@@ -168,6 +200,10 @@ const scheduleHomeDeferredAction = ({
   }
 
   HOME_DEFERRED_REVALIDATION_INTENT_EVENTS.forEach((eventName) => {
+    if (eventName === 'touchstart') {
+      addPassiveTouchListener(liveWin, runDeferredAction)
+      return
+    }
     liveWin.addEventListener(eventName, runDeferredAction, eventOptions)
   })
   if (triggerOnVisibilityChange) {
@@ -310,11 +346,6 @@ const installDeferredHomeUiControls = ({
       eventOptions
     )
     settingsRoot.removeEventListener(
-      'touchstart',
-      handleDeferredUiInteraction,
-      eventOptions
-    )
-    settingsRoot.removeEventListener(
       'keydown',
       handleDeferredUiInteraction,
       eventOptions
@@ -381,11 +412,6 @@ const installDeferredHomeUiControls = ({
 
   settingsRoot.addEventListener(
     'pointerdown',
-    handleDeferredUiInteraction,
-    eventOptions
-  )
-  settingsRoot.addEventListener(
-    'touchstart',
     handleDeferredUiInteraction,
     eventOptions
   )

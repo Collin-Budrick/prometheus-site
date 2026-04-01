@@ -1,6 +1,7 @@
 type BootTask = {
   canceled: boolean
   run: () => void
+  cancelDeferred?: () => void
 }
 
 const DEFAULT_INTENT_TIMEOUT_MS = 7000
@@ -29,8 +30,15 @@ let intentGateInstalled = false
 let intentQueue: BootTask[] = []
 let intentSource: ClientBootIntentSource = 'pending'
 let intentUnlockedAt: number | null = null
+let activationGateInstalled = false
+let activationQueue: BootTask[] = []
 
 const getWindowRef = () => (typeof window === 'undefined' ? null : window)
+const getDocumentRef = () => (typeof document === 'undefined' ? null : document)
+
+type PrerenderingDocument = Document & {
+  prerendering?: boolean
+}
 
 declare global {
   interface Window {
@@ -81,6 +89,61 @@ const scheduleIdle = (callback: () => void, timeoutMs = DEFAULT_IDLE_TIMEOUT_MS)
 
   const handle = windowRef.setTimeout(callback, Math.min(timeoutMs, 250))
   return () => windowRef.clearTimeout(handle)
+}
+
+const isPageActivationPending = () => {
+  const documentRef = getDocumentRef() as PrerenderingDocument | null
+  if (!documentRef) return false
+  if (documentRef.prerendering === true) return true
+  const visibilityState = documentRef.visibilityState as DocumentVisibilityState | 'prerender'
+  return visibilityState === 'prerender'
+}
+
+const flushActivationQueue = () => {
+  if (isPageActivationPending()) return
+  const pending = activationQueue
+  activationQueue = []
+  pending.forEach((task) => {
+    task.cancelDeferred = undefined
+    if (!task.canceled) {
+      task.run()
+    }
+  })
+}
+
+const installActivationGate = () => {
+  const documentRef = getDocumentRef()
+  if (!documentRef || activationGateInstalled) return
+  activationGateInstalled = true
+
+  const handleActivation = () => {
+    if (isPageActivationPending()) return
+    documentRef.removeEventListener('prerenderingchange', handleActivation)
+    documentRef.removeEventListener('visibilitychange', handleActivation)
+    activationGateInstalled = false
+    flushActivationQueue()
+  }
+
+  documentRef.addEventListener('prerenderingchange', handleActivation)
+  documentRef.addEventListener('visibilitychange', handleActivation)
+}
+
+const queueAfterPageActivation = (task: BootTask, callback: () => void) => {
+  if (!isPageActivationPending()) {
+    callback()
+    return
+  }
+
+  task.cancelDeferred?.()
+  const activationTask: BootTask = {
+    canceled: false,
+    run: callback
+  }
+  activationQueue.push(activationTask)
+  installActivationGate()
+  task.cancelDeferred = () => {
+    activationTask.canceled = true
+  }
 }
 
 const installIntentGate = (timeoutMs = DEFAULT_INTENT_TIMEOUT_MS) => {
@@ -138,19 +201,26 @@ export const runAfterClientIntent = (callback: () => void, timeoutMs = DEFAULT_I
   const windowRef = getWindowRef()
   if (!windowRef) return () => {}
   if (intentReady) {
-    callback()
+    const immediateTask: BootTask = {
+      canceled: false,
+      run: callback
+    }
+    queueAfterPageActivation(immediateTask, callback)
     return () => {}
   }
 
   const task: BootTask = {
     canceled: false,
-    run: callback
+    run: () => {
+      queueAfterPageActivation(task, callback)
+    }
   }
   intentQueue.push(task)
   installIntentGate(timeoutMs)
 
   return () => {
     task.canceled = true
+    task.cancelDeferred?.()
   }
 }
 
@@ -175,5 +245,7 @@ export const __resetClientBootForTests = () => {
   intentQueue = []
   intentSource = 'pending'
   intentUnlockedAt = null
+  activationGateInstalled = false
+  activationQueue = []
   syncClientBootDebugState()
 }

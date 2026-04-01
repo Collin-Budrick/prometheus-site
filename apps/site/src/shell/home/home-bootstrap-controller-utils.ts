@@ -22,12 +22,7 @@ const HOME_CRITICAL_COOKIE_KEYS = [
   "prom-frag-critical-m",
   "prom-frag-critical-d",
 ] as const;
-const HOME_POST_LCP_RUNTIME_INTENT_EVENTS = [
-  "pointerdown",
-  "touchstart",
-  "keydown",
-  "click",
-] as const;
+const HOME_POST_LCP_RUNTIME_INTENT_EVENTS = ["pointerdown", "keydown", "click"] as const;
 
 const setDocumentLang = (value: Lang) => {
   document.documentElement.lang = value;
@@ -166,21 +161,13 @@ export const installDeferredHomePostLcpRuntime = ({
     if (!settingsRoot) {
       return;
     }
-    settingsRoot.removeEventListener(
-      "pointerdown",
-      handleDeferredPostLcpIntent,
-      eventOptions,
-    );
-    settingsRoot.removeEventListener(
-      "touchstart",
-      handleDeferredPostLcpIntent,
-      eventOptions,
-    );
-    settingsRoot.removeEventListener(
-      "keydown",
-      handleDeferredPostLcpIntent,
-      eventOptions,
-    );
+    HOME_POST_LCP_RUNTIME_INTENT_EVENTS.forEach((eventName) => {
+      settingsRoot.removeEventListener(
+        eventName,
+        handleDeferredPostLcpIntent,
+        eventOptions,
+      );
+    });
   };
 
   const startPostLcpRuntime = (target: EventTarget | null = null) => {

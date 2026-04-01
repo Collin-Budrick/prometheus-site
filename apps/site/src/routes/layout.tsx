@@ -1,5 +1,12 @@
 import { $, component$, Slot, useSignal, useVisibleTask$, type QRL, type Signal } from '@builder.io/qwik'
-import { Link, routeLoader$, useDocumentHead, useLocation, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
+import {
+  routeLoader$,
+  useDocumentHead,
+  useLocation,
+  type DocumentHead,
+  type DocumentHeadProps,
+  type RequestHandler
+} from '@builder.io/qwik-city'
 import { DockBar, DockIcon, defaultTheme, readThemeFromCookie } from '@prometheus/ui'
 import { InChatLines, InDashboard, InFlask, InHomeSimple, InSettings, InShop, InUser, InUserCircle } from '@qwikest/icons/iconoir'
 import { siteBrand, type NavLabelKey } from '../site-config'
@@ -60,6 +67,15 @@ import {
   expandStaticShellPostAnchorHintPaths,
   expandStaticShellPreloadPaths
 } from '../shell/core/build-manifest.server'
+import {
+  createDockRouteDescriptors,
+  resolveDockOwner,
+} from '../shared/route-navigation'
+import {
+  buildRouteShellBootstrapScript,
+  routeDirectionRestoreScript,
+  routeShellTransitionStyle
+} from '../shared/route-shell-bootstrap'
 
 const initialFadeDurationMs = 920
 const initialFadeClearDelayMs = initialFadeDurationMs + 200
@@ -80,6 +96,9 @@ const initialFadeStyle = `:root[data-initial-fade='ready'] .layout-shell {
     animation: none;
   }
 }`
+
+const routeShellHeadStyle = routeShellTransitionStyle
+const routeShellHeadScript = routeDirectionRestoreScript
 
 const initialFadeScript = `(function () {
   var root = document.documentElement;
@@ -160,8 +179,10 @@ const STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS = {
   ]
 } as const
 const STATIC_BOOTSTRAP_ROUTE_STYLE_HINTS = {
-  [HOME_STATIC_ROUTE_PATH]: [homeStaticEagerStylesheetHref]
+  [HOME_STATIC_ROUTE_PATH]: []
 } as const
+
+const shouldPreloadHeadStylesheet = (href: string) => href !== homeStaticEagerStylesheetHref
 
 const buildDeferredManifestScript = (href: string) => {
   const escapedHref = JSON.stringify(href)
@@ -592,6 +613,12 @@ const withLangParam = (href: string, langValue: Lang) => {
     return href
   }
 }
+
+const isHashOnlyNavigation = (currentUrl: URL, targetUrl: URL) =>
+  currentUrl.origin === targetUrl.origin &&
+  currentUrl.pathname === targetUrl.pathname &&
+  currentUrl.search === targetUrl.search &&
+  currentUrl.hash !== targetUrl.hash
 
 const toPreconnectOrigin = (href: string | undefined, fallbackOrigin: string | null) => {
   if (!href) return null
@@ -1110,6 +1137,10 @@ export const RouterHead = component$(() => {
       {head.links.flatMap((link) => {
         if (link.rel === 'stylesheet' && typeof link.href === 'string') {
           const fragmentId = (link as Record<string, string>)['data-fragment-css']
+          const stylesheetLink = <link key={`${link.rel}-${link.href}`} {...link} />
+          if (!shouldPreloadHeadStylesheet(link.href)) {
+            return [stylesheetLink]
+          }
           return [
             <link
               key={`preload-style-${link.href}`}
@@ -1119,7 +1150,7 @@ export const RouterHead = component$(() => {
               crossOrigin={resolveLinkCrossOrigin(link.crossorigin)}
               {...(fragmentId ? { 'data-fragment-css': fragmentId } : {})}
             />,
-            <link key={`${link.rel}-${link.href}`} {...link} />
+            stylesheetLink
           ]
         }
 
@@ -1136,12 +1167,16 @@ export const RouterHead = component$(() => {
       {trackingOrigins.map((origin) => (
         <link key={`dns-prefetch-${origin}`} rel="dns-prefetch" href={origin} />
       ))}
+      <style data-route-shell-transition="true" nonce={nonce || undefined}>
+        {routeShellHeadStyle}
+      </style>
       {initialFade ? (
         <>
           <style nonce={nonce || undefined}>{initialFadeStyle}</style>
           <script nonce={nonce || undefined} dangerouslySetInnerHTML={initialFadeScript} />
         </>
       ) : null}
+      <script nonce={nonce || undefined} dangerouslySetInnerHTML={routeShellHeadScript} />
       <link rel="icon" href={withBase('favicon.svg')} type="image/svg+xml" />
       <link rel="icon" href={withBase('favicon.ico')} sizes="any" />
       {pwaEnabled ? (
@@ -1204,6 +1239,7 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
 const InteractiveShellLayout = component$(() => {
   const location = useLocation()
   const shellPreferences = useShellPreferences()
+  const nonce = useCspNonce()
   useLanguageSeed(shellPreferences.value.lang, shellPreferences.value.languageSeed)
   const langSignal = useProvideLangSignal(shellPreferences.value.lang)
   const copy = useLangCopy(langSignal)
@@ -1221,10 +1257,17 @@ const InteractiveShellLayout = component$(() => {
     resolveRouteLanguageSelection(location.url.pathname)
   )
   const navItems = isAuthenticated ? AUTH_NAV_ITEMS : TOPBAR_NAV_ITEMS
+  const dockDescriptors = createDockRouteDescriptors(navItems)
   const dockItems = navItems.map((item) => {
     const Icon = DOCK_ICONS[item.labelKey] ?? InHomeSimple
     return { href: item.href, label: copy.value[item.labelKey], icon: Icon }
   })
+  const routeBootstrapDescriptors = dockDescriptors.map((descriptor) => ({
+    href: withLangParam(descriptor.href, langSignal.value),
+    rootHref: descriptor.href,
+    index: descriptor.index,
+    safety: descriptor.safety
+  }))
   const statusLabel =
     fragmentStatus.value === 'streaming'
       ? copy.value.fragmentStatusStreaming
@@ -1232,6 +1275,7 @@ const InteractiveShellLayout = component$(() => {
         ? copy.value.fragmentStatusStalled
         : copy.value.fragmentStatusIdle
   const hasMultipleLangs = supportedLangs.length > 1
+
   useVisibleTask$(
     (ctx) => {
       if (typeof window === 'undefined') return
@@ -1438,28 +1482,29 @@ const InteractiveShellLayout = component$(() => {
       >
         {dockItems.map(({ href, label, icon: Icon }, index) => {
           const langHref = withLangParam(href, langSignal.value)
-          const isActive =
-            href === '/'
-              ? location.url.pathname === '/'
-              : location.url.pathname === href || location.url.pathname.startsWith(`${href}/`)
+          const isActive = resolveDockOwner(location.url.pathname, dockDescriptors)?.href === href
           return (
             <DockIcon key={href} label={label}>
-              <Link
+              <a
                 class="dock-link"
                 href={langHref}
-                prefetch={false}
                 data-fragment-link
+                data-route-link
                 aria-label={label}
                 aria-current={isActive ? 'page' : undefined}
                 title={label}
                 style={{ '--dock-index': `${index}` }}
               >
                 <Icon class="dock-icon-svg" aria-hidden="true" />
-              </Link>
+              </a>
             </DockIcon>
           )
         })}
       </DockBar>
+      <script
+        nonce={nonce || undefined}
+        dangerouslySetInnerHTML={buildRouteShellBootstrapScript(routeBootstrapDescriptors)}
+      />
     </div>
   )
 })

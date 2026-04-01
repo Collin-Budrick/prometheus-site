@@ -2,3 +2,150 @@
 @import "../../../../../packages/ui/src/global-critical-home.css";
 @import "../../components/home-demo-first-frame-critical.css";
 @import "../../components/home-demo-active.css";
+
+@view-transition {
+  navigation: auto;
+}
+
+@supports (view-transition-name: none) {
+  [data-view-transition="shell-header"] {
+    view-transition-name: shell-header;
+  }
+
+  [data-view-transition="shell-main"] {
+    view-transition-name: shell-main;
+  }
+
+  .dock-shell {
+    view-transition-name: dock-shell;
+  }
+
+  :root[data-theme-direction] [data-view-transition],
+  :root[data-theme-direction] .dock-shell,
+  :root[data-theme-direction] .viewport-fade {
+    view-transition-name: none !important;
+  }
+
+  ::view-transition-old(shell-header),
+  ::view-transition-new(shell-header) {
+    animation-duration: var(--view-transition-duration, 220ms);
+    animation-timing-function: var(--view-transition-ease, cubic-bezier(0.22, 1, 0.36, 1));
+  }
+
+  ::view-transition-old(shell-main),
+  ::view-transition-new(shell-main) {
+    animation-duration: var(--view-transition-duration-long, 360ms);
+    animation-timing-function: var(--view-transition-ease, cubic-bezier(0.22, 1, 0.36, 1));
+    animation-fill-mode: both;
+  }
+
+  ::view-transition-old(shell-main) {
+    animation-name: home-static-slide-out-left;
+  }
+
+  ::view-transition-new(shell-main) {
+    animation-name: home-static-slide-in-right;
+  }
+
+  :root[data-nav-direction="back"]::view-transition-old(shell-main) {
+    animation-name: home-static-slide-out-right;
+  }
+
+  :root[data-nav-direction="back"]::view-transition-new(shell-main) {
+    animation-name: home-static-slide-in-left;
+  }
+
+  :root[data-nav-direction="neutral"]::view-transition-old(shell-main) {
+    animation-name: home-static-fade-out;
+  }
+
+  :root[data-nav-direction="neutral"]::view-transition-new(shell-main) {
+    animation-name: home-static-fade-in;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @supports (view-transition-name: none) {
+    [data-view-transition],
+    .dock-shell,
+    .viewport-fade {
+      view-transition-name: none !important;
+    }
+
+    ::view-transition-old(shell-header),
+    ::view-transition-new(shell-header),
+    ::view-transition-old(shell-main),
+    ::view-transition-new(shell-main) {
+      animation-duration: 0.001ms !important;
+      animation-delay: 0s !important;
+    }
+  }
+}
+
+@keyframes home-static-fade-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes home-static-fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes home-static-slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(36px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes home-static-slide-out-left {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateX(-36px);
+  }
+}
+
+@keyframes home-static-slide-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-36px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes home-static-slide-out-right {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateX(36px);
+  }
+}

@@ -5,6 +5,12 @@ import { emptyUiCopy, type LanguageSeedPayload } from '../../lang/selection'
 import type { Lang } from '../../lang'
 import { supportedLanguages } from '../../lang/manifest'
 import { appConfig, siteTemplateConfig } from '../../site-config'
+import { AUTH_NAV_ITEMS, TOPBAR_NAV_ITEMS } from '../../shared/nav-order'
+import { createDockRouteDescriptors } from '../../shared/route-navigation'
+import {
+  buildRouteShellBootstrapScript,
+  type RouteShellBootstrapDescriptor
+} from '../../shared/route-shell-bootstrap'
 import { useCspNonce } from '../../security/qwik'
 import {
   FRAGMENT_STATIC_ROUTE_KIND,
@@ -19,7 +25,7 @@ import {
   STATIC_SHELL_SEED_SCRIPT_ID,
   getStaticShellRouteConfig
 } from './constants'
-import { getLangLabel, renderStaticBrand, StaticDockMarkup } from './dock'
+import { getLangLabel, renderStaticBrand, StaticDockMarkup, withLangParam } from './dock'
 import type { StaticShellSeed } from './seed'
 
 type StaticShellLayoutProps = {
@@ -162,6 +168,13 @@ export const StaticShellLayout = component$<StaticShellLayoutProps>(({
     ...emptyUiCopy,
     ...omitUndefined(languageSeed.ui ?? {})
   }
+  const navItems = isAuthenticated ? AUTH_NAV_ITEMS : TOPBAR_NAV_ITEMS
+  const routeBootstrapDescriptors: RouteShellBootstrapDescriptor[] = createDockRouteDescriptors(navItems).map((descriptor) => ({
+    href: withLangParam(descriptor.href, lang),
+    rootHref: descriptor.href,
+    index: descriptor.index,
+    safety: descriptor.safety
+  }))
 
   return (
     <div
@@ -244,6 +257,10 @@ export const StaticShellLayout = component$<StaticShellLayoutProps>(({
           isAuthenticated={isAuthenticated}
         />
       </div>
+      <script
+        nonce={nonce || undefined}
+        dangerouslySetInnerHTML={buildRouteShellBootstrapScript(routeBootstrapDescriptors)}
+      />
     </div>
   )
 })

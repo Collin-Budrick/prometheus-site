@@ -15,13 +15,7 @@ import { bootstrapStaticHomeAnchor } from './home-bootstrap-anchor'
 
 const HOME_FRAGMENT_CARD_SELECTOR = '[data-static-fragment-card]'
 const HOME_BOOTSTRAP_INTENT_EVENTS = ['pointerdown', 'touchstart'] as const
-const HOME_SETTINGS_ENTRY_EVENTS = [
-  'pointerdown',
-  'touchstart',
-  'keydown',
-  'click',
-  'focusin'
-] as const
+const HOME_SETTINGS_ENTRY_EVENTS = ['pointerdown', 'keydown', 'click', 'focusin'] as const
 
 type HomeStaticAnchorEntryWindow = Window & {
   __PROM_STATIC_HOME_ANCHOR_ENTRY__?: boolean
@@ -43,6 +37,37 @@ const resolveInteractionCard = (target: EventTarget | null) => {
         ? (target as { parentElement: Element }).parentElement
         : null
   return element?.closest<HTMLElement>(HOME_FRAGMENT_CARD_SELECTOR) ?? null
+}
+
+type TouchListenerTarget = {
+  addEventListener: (
+    type: string,
+    listener: EventListenerOrEventListenerObject,
+    options?: boolean | AddEventListenerOptions
+  ) => void
+  removeEventListener: (
+    type: string,
+    listener: EventListenerOrEventListenerObject,
+    options?: boolean | EventListenerOptions
+  ) => void
+}
+
+const addPassiveTouchListener = (
+  target: TouchListenerTarget,
+  listener: EventListenerOrEventListenerObject
+) => {
+  Reflect.apply(target.addEventListener, target, [
+    'touchstart',
+    listener,
+    { capture: true, passive: true }
+  ])
+}
+
+const removeCaptureTouchListener = (
+  target: TouchListenerTarget,
+  listener: EventListenerOrEventListenerObject
+) => {
+  Reflect.apply(target.removeEventListener, target, ['touchstart', listener, { capture: true }])
 }
 
 export const bootstrapStaticHome = () => bootstrapStaticHomeAnchor()
@@ -315,7 +340,7 @@ export const installHomeStaticAnchorEntry = ({
   const cleanup = () => {
     clearStartupHandlers()
     liveWin.removeEventListener('pointerdown', handlePointerDown, eventOptions)
-    liveWin.removeEventListener('touchstart', handlePointerDown, eventOptions)
+    removeCaptureTouchListener(liveWin, handlePointerDown)
     liveWin.removeEventListener('keydown', handleKeyDown, eventOptions)
     liveDoc.removeEventListener?.('focusin', handleFocusIn, eventOptions)
     liveDoc.removeEventListener?.(HOME_FIRST_ANCHOR_PATCH_EVENT, startDeferredEntry)
@@ -350,6 +375,10 @@ export const installHomeStaticAnchorEntry = ({
       })
     }
     HOME_BOOTSTRAP_INTENT_EVENTS.forEach((eventName) => {
+      if (eventName === 'touchstart') {
+        addPassiveTouchListener(liveWin, handlePointerDown)
+        return
+      }
       liveWin.addEventListener(eventName, handlePointerDown, eventOptions)
     })
     liveWin.addEventListener('keydown', handleKeyDown, eventOptions)

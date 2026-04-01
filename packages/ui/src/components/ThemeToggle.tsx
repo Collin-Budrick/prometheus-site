@@ -56,6 +56,11 @@ type DocumentWithViewTransition = Document & {
   startViewTransition?: (callback: () => void) => ViewTransitionHandle
 }
 
+const isSkippedTransitionError = (error: unknown) =>
+  error instanceof DOMException
+    ? error.name === 'AbortError'
+    : !!error && typeof error === 'object' && 'name' in error && String(error.name ?? '') === 'AbortError'
+
 const isLikelyNativeShellRuntime = () => {
   if (typeof window === 'undefined') return false
   const runtimeFlag = (window as { __prometheusNativeRuntime?: boolean }).__prometheusNativeRuntime
@@ -200,7 +205,14 @@ export const ThemeToggle = component$<ThemeToggleProps>(({ class: className, lab
           applyNextTheme()
         })
 
-        void transition.finished.finally(finalizeTransition)
+        void transition.finished
+          .catch((error) => {
+            if (isSkippedTransitionError(error)) {
+              return
+            }
+            console.error('Theme transition failed:', error)
+          })
+          .finally(finalizeTransition)
       } catch {
         applyNextTheme()
         finalizeTransition()

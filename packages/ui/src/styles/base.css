@@ -243,3 +243,117 @@
     @apply text-inherit no-underline;
   }
 }
+
+@supports (view-transition-name: none) {
+  :root {
+    view-transition-name: none;
+  }
+
+  :root[data-theme-direction] {
+    view-transition-name: root;
+  }
+
+  ::view-transition-group(root) {
+    animation-duration: var(--view-transition-duration-long);
+    animation-timing-function: var(--view-transition-ease);
+  }
+
+  :root[data-theme-direction]::view-transition-old(root),
+  :root[data-theme-direction]::view-transition-new(root) {
+    animation: none;
+  }
+
+  :root[data-theme-direction]::view-transition-new(root) {
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-size: 100% 300%;
+    mask-size: 100% 300%;
+    -webkit-mask-mode: alpha;
+    mask-mode: alpha;
+  }
+
+  :root[data-theme-direction="dark"]::view-transition-new(root) {
+    animation: wipe-down var(--theme-transition-duration)
+      var(--theme-transition-ease, var(--view-transition-ease)) both;
+    -webkit-mask-position: 0 100%;
+    mask-position: 0 100%;
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0) 0%,
+      rgba(0, 0, 0, 0) 35%,
+      rgba(0, 0, 0, 0.85) 55%,
+      rgba(0, 0, 0, 1) 65%,
+      rgba(0, 0, 0, 1) 100%
+    );
+    mask-image: linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0) 0%,
+      rgba(0, 0, 0, 0) 35%,
+      rgba(0, 0, 0, 0.85) 55%,
+      rgba(0, 0, 0, 1) 65%,
+      rgba(0, 0, 0, 1) 100%
+    );
+  }
+
+  :root[data-theme-direction="light"]::view-transition-new(root) {
+    animation: wipe-up var(--theme-transition-duration)
+      var(--theme-transition-ease, var(--view-transition-ease)) both;
+    -webkit-mask-position: 0 0%;
+    mask-position: 0 0%;
+    -webkit-mask-image: linear-gradient(
+      to top,
+      rgba(0, 0, 0, 0) 0%,
+      rgba(0, 0, 0, 0) 35%,
+      rgba(0, 0, 0, 0.85) 55%,
+      rgba(0, 0, 0, 1) 65%,
+      rgba(0, 0, 0, 1) 100%
+    );
+    mask-image: linear-gradient(
+      to top,
+      rgba(0, 0, 0, 0) 0%,
+      rgba(0, 0, 0, 0) 35%,
+      rgba(0, 0, 0, 0.85) 55%,
+      rgba(0, 0, 0, 1) 65%,
+      rgba(0, 0, 0, 1) 100%
+    );
+  }
+
+  :root[data-theme-direction] ::view-transition-old(shell-main),
+  :root[data-theme-direction] ::view-transition-new(shell-main) {
+    animation: none;
+  }
+
+  :root[data-lang-transition="ui"]::view-transition-old(lang-ui) {
+    animation: lang-fade-out
+      var(--lang-transition-duration, var(--view-transition-duration))
+      var(--view-transition-ease) both;
+  }
+
+  :root[data-lang-transition="ui"]::view-transition-new(lang-ui) {
+    animation: lang-fade-in
+      var(--lang-transition-duration, var(--view-transition-duration))
+      var(--view-transition-ease) both;
+  }
+
+  :root[data-lang-transition="fragments"]::view-transition-old(lang-fragments) {
+    animation: lang-fade-out
+      var(--lang-transition-duration, var(--view-transition-duration))
+      var(--view-transition-ease) both;
+  }
+
+  :root[data-lang-transition="fragments"]::view-transition-new(lang-fragments) {
+    animation: lang-fade-in
+      var(--lang-transition-duration, var(--view-transition-duration))
+      var(--view-transition-ease) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @supports (view-transition-name: none) {
+    :root[data-theme-direction]::view-transition-new(root) {
+      animation: none;
+      -webkit-mask-image: none;
+      mask-image: none;
+    }
+  }
+}

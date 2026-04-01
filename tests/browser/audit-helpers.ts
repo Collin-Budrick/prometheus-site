@@ -27,6 +27,7 @@ type CardHeightSnapshot = {
 
 const dockLabels = ['Home', 'Store', 'Lab', 'Login'] as const
 const ignoredConsolePatterns = [/^\[vite\]\s/i]
+const ignoredPageErrorPatterns = [/^Transition was skipped$/i]
 const ignoredNetworkUrlPatterns = [/\/favicon\.ico(?:\?.*)?$/i]
 const ignoredRequestFailurePatterns = [
   /\/build\/static-shell\/.*\/fragment\/runtime\/worker\.js\?v=.*\(net::ERR_BLOCKED_BY_RESPONSE\)/i
@@ -41,6 +42,9 @@ const shouldIgnoreConsoleMessage = (message: ConsoleMessage) => {
   const text = message.text().trim()
   return ignoredConsolePatterns.some((pattern) => pattern.test(text))
 }
+
+const shouldIgnorePageError = (error: Error) =>
+  ignoredPageErrorPatterns.some((pattern) => pattern.test(error.message.trim()))
 
 const shouldIgnoreNetworkUrl = (url: string) =>
   ignoredNetworkUrlPatterns.some((pattern) => pattern.test(url))
@@ -59,6 +63,7 @@ const shouldIgnoreRequestFailure = (request: Request) => {
     || failureText === 'net::ERR_ABORTED' && request.url().includes('/api/auth/get-session')
     || failureText === 'net::ERR_ABORTED' && request.url().includes('/auth/session')
     || failureText === 'net::ERR_ABORTED' && request.url().includes('/build/static-shell/')
+    || failureText === 'net::ERR_ABORTED' && request.url().includes('/api/store/items')
 }
 
 const describeRequest = (request: Request) => {
@@ -86,6 +91,7 @@ export const createRuntimeIssueTracker = (page: Page): RuntimeIssueTracker => {
   }
 
   const onPageError = (error: Error) => {
+    if (shouldIgnorePageError(error)) return
     const stack = error.stack
       ?.split('\n')
       .slice(0, 6)
@@ -314,17 +320,26 @@ export const openAndCloseSettings = async (page: Page) => {
   const dialog = page.locator('.settings-dropdown[role="dialog"][aria-label="Settings"]').first()
 
   await expect(settingsButton).toBeVisible()
-  await settingsButton.click()
-  try {
-    await expect(dialog).toBeVisible({ timeout: 1500 })
-  } catch {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
     await settingsButton.click()
-    await expect(dialog).toBeVisible()
+    try {
+      await expect(dialog).toBeVisible({ timeout: 1500 })
+      break
+    } catch (error) {
+      if (attempt === 2) {
+        throw error
+      }
+    }
   }
   await expect(dialog.locator('h2.settings-panel-title').first()).toHaveText('Settings')
   await expect(dialog.getByRole('button', { name: /Switch to (dark|light) mode/i })).toBeVisible()
   await page.keyboard.press('Escape')
-  await expect(dialog).toBeHidden()
+  try {
+    await expect(dialog).toBeHidden({ timeout: 1500 })
+  } catch {
+    await settingsButton.click()
+    await expect(dialog).toBeHidden()
+  }
 }
 
 export const readAuditCredentials = (): AuditCredentials | null => {

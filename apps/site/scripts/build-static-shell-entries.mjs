@@ -1,7 +1,7 @@
-import { spawnSync } from 'node:child_process'
 import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { build as esbuild } from 'esbuild'
 import {
   normalizeBundledAssetPaths,
   sanitizeBundledWasmSourceMaps,
@@ -135,45 +135,44 @@ rmSync(metaDir, { recursive: true, force: true })
 mkdirSync(outDir, { recursive: true })
 mkdirSync(metaDir, { recursive: true })
 
-const runBuildGroup = ({ name, entrypoints, splitting, cssChunking }) => {
+const runBuildGroup = async ({ name, entrypoints, splitting }) => {
   const metafilePath = path.resolve(metaDir, `${name}.json`)
-  const args = [
-    'build',
-    ...entrypoints,
-    '--outdir',
-    outDir,
-    '--target',
-    'browser',
-    '--format',
-    'esm',
-    '--minify',
-    '--public-path',
-    publicPath,
-    '--root',
-    '.',
-    `--metafile=${metafilePath}`
-  ]
+  const entryPointPaths = entrypoints.map((entrypoint) =>
+    path.resolve(repoRoot, entrypoint)
+  )
 
-  if (splitting) {
-    args.push('--splitting')
-  }
-  if (cssChunking) {
-    args.push('--css-chunking')
-  }
+  try {
+    const result = await esbuild({
+      absWorkingDir: repoRoot,
+      assetNames: '[name]-[hash]',
+      bundle: true,
+      chunkNames: '[name]-[hash]',
+      entryNames: '[dir]/[name]',
+      entryPoints: entryPointPaths,
+      format: 'esm',
+      legalComments: 'none',
+      logLevel: 'info',
+      metafile: true,
+      minify: true,
+      outbase: repoRoot,
+      outdir: outDir,
+      platform: 'browser',
+      publicPath,
+      sourcemap: false,
+      splitting,
+      target: ['es2022'],
+      write: true
+    })
 
-  const result = spawnSync('bun', args, {
-    cwd: repoRoot,
-    stdio: 'inherit',
-    env: process.env
-  })
-
-  if (result.status !== 0) {
-    process.exit(result.status ?? 1)
+    writeFileSync(metafilePath, JSON.stringify(result.metafile, null, 2))
+  } catch (error) {
+    console.error(`Static shell build group failed: ${name}`, error)
+    process.exit(1)
   }
 }
 
 for (const buildGroup of buildGroups) {
-  runBuildGroup(buildGroup)
+  await runBuildGroup(buildGroup)
 }
 
 const normalizeOutputKey = (value) => value.replace(/\\/g, '/').replace(/^\.\//, '')

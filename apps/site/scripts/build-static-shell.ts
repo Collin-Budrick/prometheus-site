@@ -31,17 +31,22 @@ const distRoot = path.resolve(siteRoot, 'dist')
 const staticShellOutDir = path.resolve(distRoot, 'build', 'static-shell')
 const snapshotOutDir = path.resolve(distRoot, path.dirname(STATIC_SHELL_SNAPSHOT_MANIFEST_PATH))
 const previewEntryPath = path.resolve(siteRoot, 'server', 'entry.preview.js')
+const buildEnv = {
+  ...process.env,
+  BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0'
+}
 
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 const runPreviewBuild = () => {
+  rmSync(path.resolve(siteRoot, 'server'), { recursive: true, force: true })
   const result = spawnSync(
     process.execPath,
     ['run', 'scripts/vite-run.ts', '--', 'build', '--ssr', 'src/entry.preview.tsx'],
     {
       cwd: siteRoot,
       stdio: 'inherit',
-      env: process.env
+      env: buildEnv
     }
   )
 

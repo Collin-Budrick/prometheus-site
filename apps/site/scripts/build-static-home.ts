@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const siteRoot = path.resolve(scriptDir, '..')
 const outDir = path.resolve(siteRoot, 'dist', 'build', 'static-home')
+process.env.BUN_RUNTIME_TRANSPILER_CACHE_PATH = '0'
 
 rmSync(outDir, { recursive: true, force: true })
 mkdirSync(outDir, { recursive: true })

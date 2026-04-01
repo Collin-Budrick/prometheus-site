@@ -13,7 +13,6 @@ export const HOME_BOOTSTRAP_INTENT_EVENTS = ['pointerdown', 'keydown', 'touchsta
 const HOME_SETTINGS_BRIDGE_EVENTS = [
   'pointerdown',
   'keydown',
-  'touchstart',
   'click',
   'focusin'
 ] as const
@@ -106,6 +105,37 @@ const resolveWidgetTarget = (target: EventTarget | null) => {
         ? (target as { parentElement: Element }).parentElement
         : null
   return element?.closest<HTMLElement>(HOME_WIDGET_SELECTOR) ?? null
+}
+
+type TouchListenerTarget = {
+  addEventListener: (
+    type: string,
+    listener: EventListenerOrEventListenerObject,
+    options?: boolean | AddEventListenerOptions
+  ) => void
+  removeEventListener: (
+    type: string,
+    listener: EventListenerOrEventListenerObject,
+    options?: boolean | EventListenerOptions
+  ) => void
+}
+
+const addPassiveTouchListener = (
+  target: TouchListenerTarget,
+  listener: EventListenerOrEventListenerObject
+) => {
+  Reflect.apply(target.addEventListener, target, [
+    'touchstart',
+    listener,
+    { capture: true, passive: true }
+  ])
+}
+
+const removeCaptureTouchListener = (
+  target: TouchListenerTarget,
+  listener: EventListenerOrEventListenerObject
+) => {
+  Reflect.apply(target.removeEventListener, target, ['touchstart', listener, { capture: true }])
 }
 
 const resolveReplaySelector = (target: HTMLElement) => {
@@ -442,6 +472,10 @@ export const installHomeStaticEntry = ({
 
   HOME_BOOTSTRAP_INTENT_EVENTS.forEach((eventName) => {
     const handler = eventName === 'keydown' ? handleKeyDown : handlePointerDown
+    if (eventName === 'touchstart') {
+      addPassiveTouchListener(liveWin, handler)
+      return
+    }
     liveWin.addEventListener(eventName, handler, eventOptions)
   })
   liveDoc.addEventListener?.('focusin', handleFocusIn, eventOptions)
@@ -466,6 +500,10 @@ export const installHomeStaticEntry = ({
   return () => {
     HOME_BOOTSTRAP_INTENT_EVENTS.forEach((eventName) => {
       const handler = eventName === 'keydown' ? handleKeyDown : handlePointerDown
+      if (eventName === 'touchstart') {
+        removeCaptureTouchListener(liveWin, handler)
+        return
+      }
       liveWin.removeEventListener(eventName, handler, eventOptions)
     })
     liveDoc.removeEventListener?.('focusin', handleFocusIn, eventOptions)

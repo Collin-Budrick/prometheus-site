@@ -104,8 +104,8 @@ ENV PROMETHEUS_TEMPLATE_HOME_MODE=$PROMETHEUS_TEMPLATE_HOME_MODE
 ENV PROMETHEUS_TEMPLATE_FEATURES=$PROMETHEUS_TEMPLATE_FEATURES
 ENV PROMETHEUS_TEMPLATE_DISABLE_FEATURES=$PROMETHEUS_TEMPLATE_DISABLE_FEATURES
 RUN --mount=type=cache,target=/root/.bun/install/cache \
-    --mount=type=cache,target=/root/.cache \
-    bun run --cwd apps/site build
+    rm -rf /app/apps/site/dist /app/apps/site/server /app/node_modules/.vite /app/apps/site/node_modules/.vite /root/.cache/* \
+    && bun run --cwd apps/site build
 
 FROM oven/bun:1.3.11-alpine AS runner
 WORKDIR /app/apps/site

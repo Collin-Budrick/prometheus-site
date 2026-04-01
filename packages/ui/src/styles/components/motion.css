@@ -35,6 +35,10 @@
   }
 
   @supports (view-transition-name: none) {
+    @view-transition {
+      navigation: auto;
+    }
+
     [data-view-transition="shell-header"] {
       view-transition-name: shell-header;
     }
@@ -85,6 +89,29 @@
       animation-name: slide-in-left;
     }
 
+    :root[data-nav-direction="neutral"]::view-transition-old(shell-main) {
+      animation-name: lang-fade-out;
+    }
+
+    :root[data-nav-direction="neutral"]::view-transition-new(shell-main) {
+      animation-name: lang-fade-in;
+    }
+
+    :root[data-nav-fallback="forward"] [data-view-transition="shell-main"] {
+      animation: slide-in-right var(--view-transition-duration-long)
+        var(--view-transition-ease) both;
+    }
+
+    :root[data-nav-fallback="back"] [data-view-transition="shell-main"] {
+      animation: slide-in-left var(--view-transition-duration-long)
+        var(--view-transition-ease) both;
+    }
+
+    :root[data-nav-fallback="neutral"] [data-view-transition="shell-main"] {
+      animation: lang-fade-in var(--view-transition-duration-long)
+        var(--view-transition-ease) both;
+    }
+
     :root[data-lang-transition="ui"] .layout-shell {
       view-transition-name: lang-ui;
     }
@@ -121,6 +148,131 @@
         animation-duration: 0.001ms !important;
         animation-delay: 0s !important;
       }
+
+      :root[data-nav-fallback] [data-view-transition="shell-main"] {
+        animation: none !important;
+      }
+    }
+  }
+}
+
+@view-transition {
+  navigation: auto;
+}
+
+@supports (view-transition-name: none) {
+  [data-view-transition="shell-header"] {
+    view-transition-name: shell-header;
+  }
+
+  [data-view-transition="shell-main"] {
+    view-transition-name: shell-main;
+  }
+
+  .dock-shell {
+    view-transition-name: dock-shell;
+  }
+
+  :root[data-theme-direction] [data-view-transition] {
+    view-transition-name: none !important;
+  }
+
+  :root[data-theme-direction] .dock-shell,
+  :root[data-theme-direction] .viewport-fade {
+    view-transition-name: none !important;
+  }
+
+  ::view-transition-old(shell-header),
+  ::view-transition-new(shell-header) {
+    animation-duration: var(--view-transition-duration);
+    animation-timing-function: var(--view-transition-ease);
+  }
+
+  ::view-transition-old(shell-main),
+  ::view-transition-new(shell-main) {
+    animation-duration: var(--view-transition-duration-long);
+    animation-timing-function: var(--view-transition-ease);
+    animation-fill-mode: both;
+  }
+
+  ::view-transition-old(shell-main) {
+    animation-name: slide-out-left;
+  }
+
+  ::view-transition-new(shell-main) {
+    animation-name: slide-in-right;
+  }
+
+  :root[data-nav-direction="back"]::view-transition-old(shell-main) {
+    animation-name: slide-out-right;
+  }
+
+  :root[data-nav-direction="back"]::view-transition-new(shell-main) {
+    animation-name: slide-in-left;
+  }
+
+  :root[data-nav-direction="neutral"]::view-transition-old(shell-main) {
+    animation-name: lang-fade-out;
+  }
+
+  :root[data-nav-direction="neutral"]::view-transition-new(shell-main) {
+    animation-name: lang-fade-in;
+  }
+
+  :root[data-nav-fallback="forward"] [data-view-transition="shell-main"] {
+    animation: slide-in-right var(--view-transition-duration-long)
+      var(--view-transition-ease) both;
+  }
+
+  :root[data-nav-fallback="back"] [data-view-transition="shell-main"] {
+    animation: slide-in-left var(--view-transition-duration-long)
+      var(--view-transition-ease) both;
+  }
+
+  :root[data-nav-fallback="neutral"] [data-view-transition="shell-main"] {
+    animation: lang-fade-in var(--view-transition-duration-long)
+      var(--view-transition-ease) both;
+  }
+
+  :root[data-lang-transition="ui"] .layout-shell {
+    view-transition-name: lang-ui;
+  }
+
+  :root[data-lang-transition="ui"] [data-view-transition],
+  :root[data-lang-transition="ui"] .fragment-grid {
+    view-transition-name: none !important;
+  }
+
+  :root[data-lang-transition="fragments"] .fragment-grid[data-fragment-grid="main"] {
+    view-transition-name: lang-fragments;
+  }
+
+  :root[data-lang-transition="fragments"] .fragment-grid:not([data-fragment-grid="main"]) {
+    view-transition-name: none !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @supports (view-transition-name: none) {
+    [data-view-transition] {
+      view-transition-name: none !important;
+    }
+
+    .dock-shell,
+    .viewport-fade {
+      view-transition-name: none !important;
+    }
+
+    ::view-transition-old(shell-header),
+    ::view-transition-new(shell-header),
+    ::view-transition-old(shell-main),
+    ::view-transition-new(shell-main) {
+      animation-duration: 0.001ms !important;
+      animation-delay: 0s !important;
+    }
+
+    :root[data-nav-fallback] [data-view-transition="shell-main"] {
+      animation: none !important;
     }
   }
 }
