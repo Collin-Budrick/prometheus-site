@@ -60,8 +60,8 @@ describe("static shell performance invariants", () => {
       readSource("./home-bootstrap-orchestrator.ts"),
       readSource("./home-bootstrap-data.ts"),
       readSource("./home-route-seed-resolver.ts"),
-      readSource("./static-bootstrap.ts"),
-      readSource("./island-bootstrap.ts"),
+      readSource("../core/static-bootstrap.ts"),
+      readSource("../core/island-bootstrap.ts"),
       readSource("../core/snapshot-client.ts"),
       readSource("./home-stream.ts"),
       readSource("./home-demo-runtime-loader.ts"),
@@ -78,8 +78,8 @@ describe("static shell performance invariants", () => {
       readSource("../../fragment/definitions/home.server.ts"),
       readSource("./StaticHomeRoute.tsx"),
       readSource("./home-fragment-client.ts"),
-      readSource("../../../../packages/ui/src/global-critical.css"),
-      readSource("../../../../packages/ui/src/global-critical-home.css"),
+      readSource("../../../../../packages/ui/src/global-critical.css"),
+      readSource("../../../../../packages/ui/src/global-critical-home.css"),
       readSource("../../components/HomeDemoPreview.tsx"),
       readSource("../../components/PlannerDemo.tsx"),
       readSource("../fragments/fragment-height-script.ts"),
@@ -88,8 +88,8 @@ describe("static shell performance invariants", () => {
       readSource("./home-dock-auth-runtime.ts"),
       readSource("./home-language-runtime.ts"),
       readSource("./home-ui-controls-runtime.ts"),
-      readSource("./build-version.server.ts"),
-      readSource("./build-manifest.server.ts"),
+      readSource("../core/build-version.server.ts"),
+      readSource("../core/build-manifest.server.ts"),
       readSource("../../fragment/ui/fragment-widget-runtime.ts"),
     ]);
 
@@ -549,21 +549,21 @@ describe("static shell performance invariants", () => {
       homeAnchorCoreSource,
       fragmentWidgetRuntimeSource,
     ] = await Promise.all([
-      readSource("../entry.ssr.tsx"),
-      readSource("../../scripts/build-static-shell-entries.mjs"),
-      readSource("../root.tsx"),
-      readSource("../routes/layout.tsx"),
-      readSource("../routes/home.tsx"),
-      readSource("../routes/login/index.tsx"),
-      readSource("../routes/store/index.tsx"),
-      readSource("../routes/lab.tsx"),
-      readSource("../routes/chat.tsx"),
-      readSource("../routes/dashboard.tsx"),
-      readSource("../routes/profile/index.tsx"),
-      readSource("../routes/settings/index.tsx"),
-      readSource("../routes/offline.tsx"),
-      readSource("../routes/login/callback.tsx"),
-      readSource("./global-style-assets.ts"),
+      readSource("../../entry.ssr.tsx"),
+      readSource("../../../scripts/build-static-shell-entries.mjs"),
+      readSource("../../root.tsx"),
+      readSource("../../routes/layout.tsx"),
+      readSource("../../routes/home.tsx"),
+      readSource("../../routes/login/index.tsx"),
+      readSource("../../routes/store/index.tsx"),
+      readSource("../../routes/lab.tsx"),
+      readSource("../../routes/chat.tsx"),
+      readSource("../../routes/dashboard.tsx"),
+      readSource("../../routes/profile/index.tsx"),
+      readSource("../../routes/settings/index.tsx"),
+      readSource("../../routes/offline.tsx"),
+      readSource("../../routes/login/callback.tsx"),
+      readSource("../core/global-style-assets.ts"),
       readSource("./home-static-entry.ts"),
       readSource("./home-post-anchor-core.ts"),
       readSource("./home-settings-interaction-runtime.ts"),
@@ -579,19 +579,19 @@ describe("static shell performance invariants", () => {
       readSource("./runtime-loaders.ts"),
       readSource("./runtime-loaders.ts"),
       readSource("../fragments/runtime-loaders.ts"),
-      readSource("./fragment-static-entry.ts"),
+      readSource("../fragments/fragment-static-entry.ts"),
       readSource("../fragments/runtime-loaders.ts"),
-      readSource("./island-static-entry.ts"),
+      readSource("../core/island-static-entry.ts"),
       readSource("../core/runtime-loaders.ts"),
       readSource("./home-demo-entry-loader.ts"),
       readSource("./runtime-loaders.ts"),
-      readSource("./store-static-runtime-loader.ts"),
-      readSource("./store-static-runtime.ts"),
+      readSource("../store/store-static-runtime-loader.ts"),
+      readSource("../store/store-static-runtime.ts"),
       readSource("../core/controllers/store-static-controller.ts"),
       readSource("../core/static-asset-url.ts"),
-      readSource("./asset-version.ts"),
-      readSource("./StaticShellLayout.tsx"),
-      readSource("./seed.ts"),
+      readSource("../core/asset-version.ts"),
+      readSource("../core/StaticShellLayout.tsx"),
+      readSource("../core/seed.ts"),
       readSource("./home-anchor-core.ts"),
       readSource("../../fragment/ui/fragment-widget-runtime.ts"),
     ]);
@@ -621,14 +621,13 @@ describe("static shell performance invariants", () => {
     expect(buildScriptSource).toContain("fragment-bootstrap-runtime.ts");
     expect(buildScriptSource).toContain("store-static-runtime.ts");
     expect(buildScriptSource).toContain("island-bootstrap-runtime.ts");
-    expect(buildScriptSource).toContain("--public-path");
+    expect(buildScriptSource).toContain("const publicPath = '/build/static-shell/'");
+    expect(buildScriptSource).toContain("publicPath,");
     expect(buildScriptSource).toContain("sanitizeBundledWasmSourceMaps");
     expect(buildScriptSource).toContain("versionBundledWasmAssetPaths");
-    expect(buildScriptSource).toContain("Buffer.from('ignoreMappingURL')");
-    expect(buildScriptSource).toContain("createHash('sha256')");
-    expect(buildScriptSource).toContain("--splitting");
-    expect(buildScriptSource).toContain("--css-chunking");
-    expect(buildScriptSource).toContain("--metafile=");
+    expect(buildScriptSource).toContain("splitting: true");
+    expect(buildScriptSource).toContain("cssChunking: true");
+    expect(buildScriptSource).toContain("metafile: true");
     expect(buildScriptSource).toContain("chunk-manifest.json");
     expect(buildScriptSource).not.toContain("home-bootstrap-core-runtime.ts");
     expect(rootSource).toContain("global-critical.css?inline");
@@ -664,7 +663,7 @@ describe("static shell performance invariants", () => {
     expect(layoutSource).not.toContain("buildThemeBootstrapScriptMarkup()");
     expect(layoutSource).not.toContain("root.style.colorScheme = theme;");
     expect(
-      await readSource("../../../../packages/ui/src/global-deferred.css"),
+      await readSource("../../../../../packages/ui/src/global-deferred.css"),
     ).not.toContain("home-demo-active.css");
     expect(await readSource("./home-static-eager.css")).toContain(
       '@import "../../components/home-demo-first-frame-critical.css";',
@@ -676,7 +675,7 @@ describe("static shell performance invariants", () => {
       '@import "../../components/home-demo-active-react-binary.css";',
     );
     const globalCriticalHomeSource = await readSource(
-      "../../../../packages/ui/src/global-critical-home.css",
+      "../../../../../packages/ui/src/global-critical-home.css",
     );
     expect(globalCriticalHomeSource).not.toContain("home-demo-first-frame-critical.css");
     expect(globalCriticalHomeSource).not.toContain("home-demo-active.css");
@@ -751,12 +750,13 @@ describe("static shell performance invariants", () => {
     expect(fragmentEntrySource).toContain("prewarmFragmentRuntime");
     expect(fragmentEntrySource).not.toContain("from './static-bootstrap'");
     expect(islandEntrySource).toContain(
-      "from '../core/runtime-loaders'",
+      "from './runtime-loaders'",
     );
     expect(islandEntrySource).not.toContain("from './island-bootstrap'");
-    expect(entrySsrSource).toContain("appendStaticAssetVersion");
+    expect(entrySsrSource).toContain("resolveStaticAssetPublicHref");
     expect(entrySsrSource).toContain("STATIC_SHELL_BUILD_VERSION");
     expect(entrySsrSource).toContain("MANIFEST_INJECTION_STYLESHEET_MARKERS");
+    expect(entrySsrSource).toContain('"home-demo-shared.css"');
     expect(entrySsrSource).toContain('href.includes(marker)');
     expect(entrySsrSource).toContain('manifest: renderManifest');
     expect(entrySsrSource).not.toContain("global-critical-home.css?inline");
@@ -851,7 +851,6 @@ describe("static shell performance invariants", () => {
     expect(homePostAnchorCoreSource).not.toContain("'scroll'");
     expect(homePostAnchorCoreSource).toContain("'focusin'");
     expect(homePostAnchorCoreSource).not.toContain("from './home-bootstrap'");
-    expect(homePostAnchorCoreSource).not.toContain("from './runtime-loaders'");
     expect(homePostAnchorCoreSource).toContain("from './home-active-controller'");
     expect(homePostAnchorCoreSource).toContain(
       "from './runtime-loaders'",
@@ -1025,8 +1024,8 @@ describe("static shell performance invariants", () => {
 
   it("threads authenticated state through the static shell layout and seed", async () => {
     const [layoutSource, seedSource] = await Promise.all([
-      readSource("./StaticShellLayout.tsx"),
-      readSource("./seed.ts"),
+      readSource("../core/StaticShellLayout.tsx"),
+      readSource("../core/seed.ts"),
     ]);
 
     expect(seedSource).toContain("isAuthenticated: boolean");

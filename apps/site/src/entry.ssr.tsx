@@ -75,6 +75,7 @@ const STATIC_BOOTSTRAP_PRELOAD_PATHS = {
 const STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS = {} as const;
 const MANIFEST_INJECTION_STYLESHEET_MARKERS = [
   "global-deferred.css",
+  "home-demo-shared.css",
   "home-static-eager.css",
 ] as const;
 
@@ -444,6 +445,17 @@ const stripNonCriticalStaticRouteStyles = (html: string, pathname: string) => {
   );
 };
 
+const stripHomeStaticDeferredDemoStylesheet = (html: string, pathname: string) => {
+  if (resolveStaticBootstrapMode(pathname) !== "home-static") {
+    return html;
+  }
+
+  return html.replace(
+    /<link\b[^>]*rel=["']stylesheet["'][^>]*href=["'][^"']*\/assets\/[^"']*home-demo-shared\.css[^"']*["'][^>]*>\s*/gi,
+    "",
+  );
+};
+
 const buildStaticBootstrapPreloadTag = (path: string, publicBase: string) => {
   const href = resolveStaticAssetPublicHref(path, {
     publicBase,
@@ -555,8 +567,8 @@ export default function (opts: RenderOptions & Partial<RenderToStreamOptions>) {
     : (opts.qwikLoader ?? "inline");
   const renderManifest = resolveRenderManifest();
   const renderOptions = {
-    manifest: renderManifest,
     ...opts,
+    manifest: renderManifest,
     preloader,
     qwikLoader,
     serverData: {
@@ -585,8 +597,11 @@ export default function (opts: RenderOptions & Partial<RenderToStreamOptions>) {
         return {
           ...result,
           html: injectStaticBootstrap(
-            stripNonCriticalStaticRouteStyles(
-              stripStaticQwikScripts(result.html),
+            stripHomeStaticDeferredDemoStylesheet(
+              stripNonCriticalStaticRouteStyles(
+                stripStaticQwikScripts(result.html),
+                pathname,
+              ),
               pathname,
             ),
             resolvePublicBase(renderOptions),

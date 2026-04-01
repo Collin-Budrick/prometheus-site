@@ -82,6 +82,15 @@ describe("entry.ssr static bootstrap injection", () => {
     expect(source).toContain("stripNonCriticalStaticRouteStyles(");
   });
 
+  it("strips the deferred home demo stylesheet from static home SSR output only", async () => {
+    const source = await readSource();
+
+    expect(source).toContain("const stripHomeStaticDeferredDemoStylesheet = (html: string, pathname: string) => {");
+    expect(source).toContain('if (resolveStaticBootstrapMode(pathname) !== "home-static")');
+    expect(source).toContain('home-demo-shared\\.css');
+    expect(source).toContain("stripHomeStaticDeferredDemoStylesheet(");
+  });
+
   it("does not inline or rewrite home critical css in the SSR output", async () => {
     const source = await readSource();
 
@@ -106,5 +115,17 @@ describe("entry.ssr static bootstrap injection", () => {
     expect(source).toContain("const resolvedManifest = manifest as");
     expect(source).toContain("if (!resolvedManifest || typeof resolvedManifest !== \"object\")");
     expect(source).toContain("return undefined;");
+  });
+
+  it("applies the filtered render manifest after incoming render options", async () => {
+    const source = await readSource();
+
+    expect(source).toContain("const renderManifest = resolveRenderManifest();");
+    expect(source).toContain("const renderOptions = {");
+    expect(source).toContain("...opts,");
+    expect(source).toContain("manifest: renderManifest,");
+    expect(source.indexOf("...opts,")).toBeLessThan(
+      source.indexOf("manifest: renderManifest,"),
+    );
   });
 });

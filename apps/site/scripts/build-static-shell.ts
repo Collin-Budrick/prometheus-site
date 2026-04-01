@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import http from 'node:http'
 import path from 'node:path'
@@ -31,6 +31,28 @@ const distRoot = path.resolve(siteRoot, 'dist')
 const staticShellOutDir = path.resolve(distRoot, 'build', 'static-shell')
 const snapshotOutDir = path.resolve(distRoot, path.dirname(STATIC_SHELL_SNAPSHOT_MANIFEST_PATH))
 const previewEntryPath = path.resolve(siteRoot, 'server', 'entry.preview.js')
+const homeDemoSharedStylesheetSourcePath = path.resolve(
+  siteRoot,
+  'src',
+  'shell',
+  'home',
+  'home-demo-shared.css'
+)
+const homeDemoSharedStylesheetOutputPath = path.resolve(
+  staticShellOutDir,
+  'apps',
+  'site',
+  'src',
+  'shell',
+  'home',
+  'home-demo-shared.css'
+)
+const HOME_STATIC_SHELL_FALLBACK_COMPONENT_STYLES = [
+  path.resolve(siteRoot, 'src', 'components', 'home-demo-active-planner.css'),
+  path.resolve(siteRoot, 'src', 'components', 'home-demo-active-preact-island.css'),
+  path.resolve(siteRoot, 'src', 'components', 'home-demo-active-react-binary.css'),
+  path.resolve(siteRoot, 'src', 'components', 'home-demo-active-wasm-renderer.css')
+] as const
 const buildEnv = {
   ...process.env,
   BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0'
@@ -224,11 +246,31 @@ const writeSnapshots = async (origin: string) => {
   writeFileSync(path.resolve(distRoot, STATIC_SHELL_SNAPSHOT_MANIFEST_PATH), `${JSON.stringify(manifest)}\n`)
 }
 
+const stageStaticShellHomeDemoStylesheet = () => {
+  const sharedSource = readFileSync(homeDemoSharedStylesheetSourcePath, 'utf8')
+  const mergedSource = [
+    sharedSource
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('@import '))
+      .join('\n')
+      .trimEnd(),
+    ...HOME_STATIC_SHELL_FALLBACK_COMPONENT_STYLES.map((assetPath) =>
+      readFileSync(assetPath, 'utf8').trim()
+    )
+  ]
+    .filter((value) => value.length > 0)
+    .join('\n\n')
+
+  mkdirSync(path.dirname(homeDemoSharedStylesheetOutputPath), { recursive: true })
+  writeFileSync(homeDemoSharedStylesheetOutputPath, `${mergedSource}\n`)
+}
+
 runPreviewBuild()
 
 const previewServer = await createPreviewServer()
 try {
   await writeSnapshots(previewServer.origin)
+  stageStaticShellHomeDemoStylesheet()
 } finally {
   await previewServer.close()
 }

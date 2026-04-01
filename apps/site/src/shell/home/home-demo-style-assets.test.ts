@@ -51,10 +51,13 @@ describe('home-demo-style-assets', () => {
     expect(resolveBuiltHomeDemoSharedStylesheetHref(cwd)).toBe('/assets/Cabc123-home-demo-shared.css')
   })
 
-  it('falls back to the build-time stylesheet import when the manifest is unavailable', () => {
+  it('falls back to the static-shell stylesheet when the manifest is unavailable', () => {
     const cwd = mkdtempSync(path.join(tmpdir(), 'prom-home-demo-style-assets-missing-'))
     tempDirs.push(cwd)
 
     expect(resolveHomeDemoSharedStylesheetHref(cwd)).toBe(homeDemoSharedStylesheetHref)
+    expect(homeDemoSharedStylesheetHref).toContain(
+      'build/static-shell/apps/site/src/shell/home/home-demo-shared.css'
+    )
   })
 })
