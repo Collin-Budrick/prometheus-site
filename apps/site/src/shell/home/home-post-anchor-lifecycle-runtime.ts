@@ -4,9 +4,10 @@ import {
   installDeferredHomePostLcpRuntime,
   stopHomeHydrationFetches
 } from './home-bootstrap-controller-utils'
-import { requestHomeDemoObserve, updateFragmentStatus } from './home-bootstrap-ui'
 import type { HomeControllerState } from './home-active-controller'
 import { getActiveHomeController } from './home-active-controller'
+import { dispatchHomeDemoObserveEvent } from './home-demo-observe-event'
+import { updateFragmentStatusFromBootstrapData } from './home-fragment-status'
 
 type InstallHomePostAnchorLifecycleRuntimeOptions = {
   controller: HomeControllerState
@@ -64,10 +65,10 @@ export const installHomePostAnchorLifecycleRuntime = async ({
     }
 
     controller.sharedRuntime?.resumeAfterPageShow()
-    updateFragmentStatus(controller.lang, 'idle')
+    updateFragmentStatusFromBootstrapData(data, 'idle', { doc })
     homeFragmentHydration.observeWithin(doc)
     homeFragmentHydration.retryPending()
-    requestHomeDemoObserve({ root: doc, doc })
+    dispatchHomeDemoObserveEvent({ root: doc, doc })
   }
 
   win.addEventListener('pagehide', handlePageHide)

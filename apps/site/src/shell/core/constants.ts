@@ -6,7 +6,10 @@ export {
   STATIC_HOME_DATA_SCRIPT_ID,
   STATIC_HOME_WORKER_DATA_SCRIPT_ID,
   STATIC_FRAGMENT_DATA_SCRIPT_ID,
-  STATIC_ISLAND_DATA_SCRIPT_ID
+  STATIC_ISLAND_DATA_SCRIPT_ID,
+  STATIC_FRAGMENT_CARD_ATTR,
+  STATIC_FRAGMENT_VERSION_ATTR,
+  STATIC_HOME_PATCH_STATE_ATTR
 } from './static-shell-dom-constants'
 
 export const HOME_STATIC_ROUTE_PATH = '/'
@@ -30,9 +33,7 @@ type TemplateSelection = Pick<ResolvedTemplateFeatures, 'features'>
 
 export const STATIC_ROUTE_ATTR = 'data-static-route'
 export const STATIC_SHELL_REGION_ATTR = 'data-static-shell-region'
-export const STATIC_FRAGMENT_CARD_ATTR = 'data-static-fragment-card'
 export const STATIC_FRAGMENT_BODY_ATTR = 'data-static-fragment-body'
-export const STATIC_FRAGMENT_VERSION_ATTR = 'data-fragment-version'
 export const STATIC_FRAGMENT_WIDTH_BUCKET_ATTR = 'data-fragment-width-bucket'
 export const STATIC_FRAGMENT_WIDTH_BUCKET_MOBILE_ATTR = 'data-fragment-width-bucket-mobile'
 export const STATIC_FRAGMENT_LOCKED_ATTR = 'data-static-fragment-locked'
@@ -42,7 +43,6 @@ export const STATIC_HOME_LCP_STABLE_ATTR = 'data-static-home-lcp-stable'
 export const STATIC_HOME_PREVIEW_VISIBLE_ATTR = 'data-static-home-preview-visible'
 export type StaticHomeCardStage = 'critical' | 'anchor' | 'deferred'
 export const STATIC_HOME_STAGE_ATTR = 'data-static-home-stage'
-export const STATIC_HOME_PATCH_STATE_ATTR = 'data-static-home-patch-state'
 export const STATIC_HOME_PAINT_ATTR = 'data-home-paint'
 export const STATIC_PAGE_ROOT_ATTR = 'data-static-page-root'
 

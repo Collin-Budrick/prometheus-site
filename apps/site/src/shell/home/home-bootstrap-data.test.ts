@@ -10,6 +10,7 @@ import {
   serializeHomeRuntimeFetchGroups,
   serializeHomeRuntimePlanEntries
 } from './home-bootstrap-data'
+import { readStaticHomeDemoAssets } from './home-demo-asset-data'
 
 describe('home-bootstrap-data', () => {
   it('reads the shared static home bootstrap payload from DOM script tags', () => {
@@ -192,5 +193,34 @@ describe('home-bootstrap-data', () => {
     expect(data?.isAuthenticated).toBe(false)
     expect(data?.fragmentBootstrapHref).toContain('/api/fragments/bootstrap?protocol=2')
     expect(data?.runtimeAnchorBootstrapHref).toBeNull()
+  })
+
+  it('reads home demo assets without parsing the full bootstrap payload', () => {
+    const scripts = new Map<string, { textContent: string | null }>([
+      [
+        STATIC_HOME_DATA_SCRIPT_ID,
+        {
+          textContent: JSON.stringify({
+            lang: 'en',
+            homeDemoAssets: {
+              planner: {
+                moduleHref: '/build/static-shell/apps/site/src/shell/home/home-demo-planner-runtime.js',
+                styleHref: '/assets/home-demo-shared.css'
+              }
+            }
+          })
+        }
+      ]
+    ])
+    const doc = {
+      getElementById: (id: string) => scripts.get(id) ?? null
+    }
+
+    expect(readStaticHomeDemoAssets({ doc: doc as never })).toEqual({
+      planner: {
+        moduleHref: '/build/static-shell/apps/site/src/shell/home/home-demo-planner-runtime.js',
+        styleHref: '/assets/home-demo-shared.css'
+      }
+    })
   })
 })

@@ -1,4 +1,4 @@
-import { readStaticHomeBootstrapData } from './home-bootstrap-data'
+import { readStaticHomeDemoAssets } from './home-demo-asset-data'
 import { HOME_DEMO_KINDS, normalizeHomeDemoAssetMap } from './home-demo-runtime-types'
 import {
   warmHomeDemoKind,
@@ -20,12 +20,7 @@ export const warmStaticHomeDemoAssets = async ({
     return
   }
 
-  const data = readStaticHomeBootstrapData({ doc })
-  if (!data) {
-    return
-  }
-
-  const assets = normalizeHomeDemoAssetMap(data.homeDemoAssets)
+  const assets = normalizeHomeDemoAssetMap(readStaticHomeDemoAssets({ doc }))
 
   await Promise.all([
     warmHomeDemoStartupAttachRuntime({ doc }),

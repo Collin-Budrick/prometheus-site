@@ -53,18 +53,10 @@ import { homeStaticEagerStylesheetHref } from '../shell/home/home-style-assets'
 import {
   HOME_STATIC_ANCHOR_ENTRY_ASSET_PATH
 } from '../shell/home/runtime-loaders'
-import { HOME_STATIC_ENTRY_ASSET_PATH } from '../shell/home/runtime-loaders'
 import {
   HOME_BOOTSTRAP_ANCHOR_RUNTIME_ASSET_PATH
 } from '../shell/home/runtime-loaders'
-import { HOME_STATIC_ENTRY_DEMO_WARMUP_ASSET_PATH } from '../shell/home/runtime-loaders'
 import {
-  HOME_DEMO_ENTRY_ASSET_PATH,
-  HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH
-} from '../shell/home/home-demo-runtime-types'
-import {
-  expandStaticShellDemoWarmHintPaths,
-  expandStaticShellPostAnchorHintPaths,
   expandStaticShellPreloadPaths
 } from '../shell/core/build-manifest.server'
 import {
@@ -165,18 +157,6 @@ const STATIC_BOOTSTRAP_PRELOAD_PATHS = {
   'island-static': [
     STATIC_BOOTSTRAP_BUNDLE_PATHS['island-static'],
     'build/static-shell/apps/site/src/shell/core/island-bootstrap-runtime.js'
-  ]
-} as const
-const STATIC_BOOTSTRAP_ROUTE_POST_ANCHOR_HINT_PATHS = {
-  [HOME_STATIC_ROUTE_PATH]: [HOME_STATIC_ENTRY_ASSET_PATH]
-} as const
-const STATIC_BOOTSTRAP_ROUTE_DEMO_WARM_HINT_PATHS = {
-  [HOME_STATIC_ROUTE_PATH]: [HOME_STATIC_ENTRY_DEMO_WARMUP_ASSET_PATH]
-} as const
-const STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS = {
-  [HOME_STATIC_ROUTE_PATH]: [
-    HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH,
-    HOME_DEMO_ENTRY_ASSET_PATH
   ]
 } as const
 const STATIC_BOOTSTRAP_ROUTE_STYLE_HINTS = {
@@ -568,20 +548,7 @@ const buildStaticBootstrapEarlyHints = (pathName: string, buildVersion: string |
   const moduleHints = [
     ...expandStaticShellPreloadPaths(
       STATIC_BOOTSTRAP_PRELOAD_PATHS[routeConfig.bootstrapMode]
-    ),
-    ...expandStaticShellPostAnchorHintPaths(
-      STATIC_BOOTSTRAP_ROUTE_POST_ANCHOR_HINT_PATHS[
-        normalizedPath as keyof typeof STATIC_BOOTSTRAP_ROUTE_POST_ANCHOR_HINT_PATHS
-      ] ?? []
-    ),
-    ...expandStaticShellDemoWarmHintPaths(
-      STATIC_BOOTSTRAP_ROUTE_DEMO_WARM_HINT_PATHS[
-        normalizedPath as keyof typeof STATIC_BOOTSTRAP_ROUTE_DEMO_WARM_HINT_PATHS
-      ] ?? []
-    ),
-    ...(STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS[
-      normalizedPath as keyof typeof STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS
-    ] ?? [])
+    )
   ].map((path) => ({
     href: resolveStaticAssetPublicHref(path, {
       publicBase: STATIC_PUBLIC_BASE,

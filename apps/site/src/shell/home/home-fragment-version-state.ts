@@ -2,7 +2,7 @@ import {
   STATIC_FRAGMENT_CARD_ATTR,
   STATIC_FRAGMENT_VERSION_ATTR,
   STATIC_HOME_PATCH_STATE_ATTR
-} from '../core/constants'
+} from '../core/static-shell-dom-constants'
 
 export const collectStaticHomeKnownVersions = (root: ParentNode = document) =>
   Array.from(
