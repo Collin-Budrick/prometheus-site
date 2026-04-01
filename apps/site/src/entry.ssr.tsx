@@ -47,6 +47,7 @@ import {
   HOME_DEMO_ENTRY_ASSET_PATH,
   HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH,
 } from "./shell/home/home-demo-runtime-types";
+import { HOME_DEFERRED_GLOBAL_STYLE_META_NAME } from "./shell/home/home-deferred-global-style-loader";
 import { prewarmStaticFragmentResources } from "./routes/fragment-resource";
 
 const STATIC_BOOTSTRAP_BUNDLE_PATHS = {
@@ -451,9 +452,29 @@ const stripHomeStaticDeferredDemoStylesheet = (html: string, pathname: string) =
   }
 
   return html.replace(
-    /<link\b[^>]*rel=["']stylesheet["'][^>]*href=["'][^"']*\/assets\/[^"']*home-demo-shared\.css[^"']*["'][^>]*>\s*/gi,
+    /<link\b(?=[^>]*rel=["']stylesheet["'])(?=[^>]*href=["'][^"']*\/assets\/[^"']*home-demo-shared\.css[^"']*["'])[^>]*>\s*/gi,
     "",
   );
+};
+
+const stripHomeStaticDeferredGlobalStylesheet = (html: string, pathname: string) => {
+  if (resolveStaticBootstrapMode(pathname) !== "home-static") {
+    return { html, href: null as string | null };
+  }
+
+  let deferredHref: string | null = null;
+  const nextHtml = html.replace(
+    /<link\b(?=[^>]*rel=["']stylesheet["'])(?=[^>]*href=["']([^"']*\/assets\/[^"']*-style\.css[^"']*)["'])[^>]*>\s*/i,
+    (_match, href: string) => {
+      deferredHref = href;
+      return "";
+    },
+  );
+
+  return {
+    html: nextHtml,
+    href: deferredHref,
+  };
 };
 
 const buildStaticBootstrapPreloadTag = (path: string, publicBase: string) => {
@@ -476,6 +497,7 @@ export const injectStaticBootstrap = (
   publicBase: string,
   pathname: string,
   nonce?: string,
+  deferredHomeGlobalStylesheetHref?: string | null,
 ) => {
   const bundlePath = resolveStaticBootstrapBundlePath(pathname);
   if (!bundlePath) return html;
@@ -496,6 +518,11 @@ export const injectStaticBootstrap = (
     .join("");
   const stylePreloadTags = "";
   const nonceAttr = nonce ? ` nonce="${escapeHtmlAttr(nonce)}"` : "";
+  const deferredHomeGlobalStyleMetaTag = deferredHomeGlobalStylesheetHref
+    ? `<meta name="${HOME_DEFERRED_GLOBAL_STYLE_META_NAME}" content="${escapeHtmlAttr(
+        deferredHomeGlobalStylesheetHref,
+      )}">`
+    : "";
   const scriptTag =
     resolveStaticBootstrapMode(pathname) === "home-static"
       ? buildImmediateHomeStaticEntryTag(
@@ -506,7 +533,10 @@ export const injectStaticBootstrap = (
         )
       : `<script type="module" src="${bundleHref}"${nonceAttr}></script>`;
   if (resolveStaticBootstrapMode(pathname) === "home-static") {
-    return html.replace("</head>", `${preloadTags}${stylePreloadTags}${scriptTag}</head>`);
+    return html.replace(
+      "</head>",
+      `${preloadTags}${stylePreloadTags}${deferredHomeGlobalStyleMetaTag}${scriptTag}</head>`,
+    );
   }
 
   return html
@@ -594,9 +624,8 @@ export default function (opts: RenderOptions & Partial<RenderToStreamOptions>) {
           return result;
         }
 
-        return {
-          ...result,
-          html: injectStaticBootstrap(
+        const { html: homeDeferredStyleStrippedHtml, href: deferredHomeGlobalStylesheetHref } =
+          stripHomeStaticDeferredGlobalStylesheet(
             stripHomeStaticDeferredDemoStylesheet(
               stripNonCriticalStaticRouteStyles(
                 stripStaticQwikScripts(result.html),
@@ -604,9 +633,17 @@ export default function (opts: RenderOptions & Partial<RenderToStreamOptions>) {
               ),
               pathname,
             ),
+            pathname,
+          );
+
+        return {
+          ...result,
+          html: injectStaticBootstrap(
+            homeDeferredStyleStrippedHtml,
             resolvePublicBase(renderOptions),
             pathname,
             nonce,
+            deferredHomeGlobalStylesheetHref,
           ),
         };
       });

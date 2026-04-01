@@ -24,6 +24,8 @@ const HOME_LANGUAGE_RUNTIME_ASSET_PATH =
   'build/static-shell/apps/site/src/shell/home/home-language-runtime.js'
 export const HOME_POST_ANCHOR_CORE_ASSET_PATH =
   'build/static-shell/apps/site/src/shell/home/home-post-anchor-core.js'
+export const HOME_POST_ANCHOR_LANGUAGE_RESTORE_RUNTIME_ASSET_PATH =
+  'build/static-shell/apps/site/src/shell/home/home-post-anchor-language-restore-runtime.js'
 export const HOME_POST_ANCHOR_LIFECYCLE_RUNTIME_ASSET_PATH =
   'build/static-shell/apps/site/src/shell/home/home-post-anchor-lifecycle-runtime.js'
 export const HOME_SETTINGS_INTERACTION_RUNTIME_ASSET_PATH =
@@ -93,6 +95,10 @@ export type HomeLanguageRuntimeModule = {
 export type HomePostAnchorCoreModule = {
   installHomeStaticEntry: typeof import('./home-post-anchor-core').installHomeStaticEntry
   primeHomeSettingsInteraction: typeof import('./home-post-anchor-core').primeHomeSettingsInteraction
+}
+
+export type HomePostAnchorLanguageRestoreRuntimeModule = {
+  restorePreferredStaticHomeLanguageIfNeeded: typeof import('./home-post-anchor-language-restore-runtime').restorePreferredStaticHomeLanguageIfNeeded
 }
 
 export type HomePostAnchorLifecycleRuntimeModule = {
@@ -166,6 +172,11 @@ type LoadHomePostAnchorCoreOptions = {
   importer?: (url: string) => Promise<HomePostAnchorCoreModule>
 }
 
+type LoadHomePostAnchorLanguageRestoreRuntimeOptions = {
+  assetUrl?: string
+  importer?: (url: string) => Promise<HomePostAnchorLanguageRestoreRuntimeModule>
+}
+
 type LoadHomePostAnchorLifecycleRuntimeOptions = {
   assetUrl?: string
   importer?: (url: string) => Promise<HomePostAnchorLifecycleRuntimeModule>
@@ -201,6 +212,8 @@ let homeDemoWarmCorePromise: Promise<HomeDemoWarmCoreModule> | null = null
 let homeDockAuthRuntimePromise: Promise<HomeDockAuthRuntimeModule> | null = null
 let homeLanguageRuntimePromise: Promise<HomeLanguageRuntimeModule> | null = null
 let homePostAnchorCorePromise: Promise<HomePostAnchorCoreModule> | null = null
+let homePostAnchorLanguageRestoreRuntimePromise: Promise<HomePostAnchorLanguageRestoreRuntimeModule> | null =
+  null
 let homePostAnchorLifecycleRuntimePromise: Promise<HomePostAnchorLifecycleRuntimeModule> | null = null
 let homeSettingsInteractionRuntimePromise: Promise<HomeSettingsInteractionRuntimeModule> | null = null
 let homeStaticEntryDemoWarmupPromise: Promise<HomeStaticEntryDemoWarmupModule> | null = null
@@ -236,6 +249,9 @@ const importHomeLanguageRuntime = async (url: string) =>
 
 const importHomePostAnchorCore = async (url: string) =>
   (await import(/* @vite-ignore */ url)) as HomePostAnchorCoreModule
+
+const importHomePostAnchorLanguageRestoreRuntime = async (url: string) =>
+  (await import(/* @vite-ignore */ url)) as HomePostAnchorLanguageRestoreRuntimeModule
 
 const importHomePostAnchorLifecycleRuntime = async (url: string) =>
   (await import(/* @vite-ignore */ url)) as HomePostAnchorLifecycleRuntimeModule
@@ -295,6 +311,10 @@ export const resolveHomeLanguageRuntimeUrl = (
 export const resolveHomePostAnchorCoreUrl = (
   options?: Parameters<typeof resolveStaticAssetUrl>[1]
 ) => resolveStaticAssetUrl(HOME_POST_ANCHOR_CORE_ASSET_PATH, options)
+
+export const resolveHomePostAnchorLanguageRestoreRuntimeUrl = (
+  options?: Parameters<typeof resolveStaticAssetUrl>[1]
+) => resolveStaticAssetUrl(HOME_POST_ANCHOR_LANGUAGE_RESTORE_RUNTIME_ASSET_PATH, options)
 
 export const resolveHomePostAnchorLifecycleRuntimeUrl = (
   options?: Parameters<typeof resolveStaticAssetUrl>[1]
@@ -433,6 +453,16 @@ export const loadHomePostAnchorCore = ({
   return homePostAnchorCorePromise
 }
 
+export const loadHomePostAnchorLanguageRestoreRuntime = ({
+  assetUrl = resolveHomePostAnchorLanguageRestoreRuntimeUrl(),
+  importer = importHomePostAnchorLanguageRestoreRuntime
+}: LoadHomePostAnchorLanguageRestoreRuntimeOptions = {}) => {
+  if (!homePostAnchorLanguageRestoreRuntimePromise) {
+    homePostAnchorLanguageRestoreRuntimePromise = importer(assetUrl)
+  }
+  return homePostAnchorLanguageRestoreRuntimePromise
+}
+
 export const loadHomePostAnchorLifecycleRuntime = ({
   assetUrl = resolveHomePostAnchorLifecycleRuntimeUrl(),
   importer = importHomePostAnchorLifecycleRuntime
@@ -494,6 +524,7 @@ export const resetHomeRuntimeLoadersForTests = () => {
   homeDockAuthRuntimePromise = null
   homeLanguageRuntimePromise = null
   homePostAnchorCorePromise = null
+  homePostAnchorLanguageRestoreRuntimePromise = null
   homePostAnchorLifecycleRuntimePromise = null
   homeSettingsInteractionRuntimePromise = null
   homeStaticEntryDemoWarmupPromise = null

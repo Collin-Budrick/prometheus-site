@@ -1,5 +1,6 @@
 import { loadFragmentWidgetRuntime } from '../../fragment/ui/fragment-widget-runtime-loader'
 import { resumeDeferredHomeHydration } from './home-active-controller'
+import { ensureHomeDeferredGlobalStylesheet } from './home-deferred-global-style-loader'
 import { loadHomeBootstrapDeferredRuntime } from './runtime-loaders'
 import { scheduleStaticShellTask } from '../core/scheduler'
 import { loadHomeSettingsInteractionRuntime, loadHomeStaticEntryDemoWarmup } from './runtime-loaders'
@@ -45,6 +46,7 @@ type InstallHomeStaticEntryOptions = {
   }) => Promise<void>) | null
   resumeDeferredHydration?: typeof resumeDeferredHomeHydration
   warmDemoAssets?: (options: WarmHomeDemoAssetsOptions) => Promise<void>
+  ensureDeferredGlobalStylesheet?: typeof ensureHomeDeferredGlobalStylesheet
   loadWidgetRuntime?: typeof loadFragmentWidgetRuntime
   preconnectPostAnchorOrigins?: typeof ensureHomePostAnchorPreconnects
 }
@@ -184,6 +186,7 @@ export const installHomeStaticEntry = ({
   installDeferredRuntime = null,
   resumeDeferredHydration = resumeDeferredHomeHydration,
   warmDemoAssets = warmStaticHomeDemoAssets,
+  ensureDeferredGlobalStylesheet = ensureHomeDeferredGlobalStylesheet,
   loadWidgetRuntime = loadFragmentWidgetRuntime,
   preconnectPostAnchorOrigins = ensureHomePostAnchorPreconnects
 }: InstallHomeStaticEntryOptions = {}) => {
@@ -201,7 +204,9 @@ export const installHomeStaticEntry = ({
     | null = null
   let homeDemoWarmupPromise: Promise<void> | null = null
   let deferredRuntimePromise: Promise<void> | null = null
+  let cancelDeferredGlobalStylesheetStart: (() => void) | null = null
   let cancelDeferredRuntimeStart: (() => void) | null = null
+  let cancelHomeDemoWarmupStart: (() => void) | null = null
   let cancelPendingClickReplay: (() => void) | null = null
 
   const eventOptions: AddEventListenerOptions = { capture: true, passive: true }
@@ -266,6 +271,11 @@ export const installHomeStaticEntry = ({
       })
 
     return homeDemoWarmupPromise
+  }
+
+  const cancelHomeDemoWarmup = () => {
+    cancelHomeDemoWarmupStart?.()
+    cancelHomeDemoWarmupStart = null
   }
 
   const resumeHomeHydration = () => {
@@ -344,10 +354,49 @@ export const installHomeStaticEntry = ({
       },
       {
         priority: 'background',
-        delayMs: 250,
-        timeoutMs: 0,
-        preferIdle: false,
+        timeoutMs: 1500,
+        preferIdle: true,
+        waitForPaint: true
+      }
+    )
+  }
+
+  const scheduleDeferredGlobalStylesheet = () => {
+    if (cancelDeferredGlobalStylesheetStart) {
+      return
+    }
+
+    cancelDeferredGlobalStylesheetStart = scheduleTask(
+      () => {
+        cancelDeferredGlobalStylesheetStart = null
+        void ensureDeferredGlobalStylesheet({
+          doc: liveDoc
+        })
+      },
+      {
+        priority: 'background',
+        timeoutMs: 5000,
+        preferIdle: true,
         waitForLoad: true,
+        waitForPaint: true
+      }
+    )
+  }
+
+  const scheduleHomeDemoWarmup = () => {
+    if (cancelHomeDemoWarmupStart || homeDemoWarmupPromise) {
+      return
+    }
+
+    cancelHomeDemoWarmupStart = scheduleTask(
+      () => {
+        cancelHomeDemoWarmupStart = null
+        void startHomeDemoWarmup()
+      },
+      {
+        priority: 'background',
+        timeoutMs: 2000,
+        preferIdle: true,
         waitForPaint: true
       }
     )
@@ -470,6 +519,21 @@ export const installHomeStaticEntry = ({
     void startWidgetRuntime(liveDoc.activeElement)
   }
 
+  function handleVisibilityChange() {
+    if (liveDoc.visibilityState !== 'hidden') {
+      return
+    }
+    cancelDeferredGlobalStylesheetStart?.()
+    cancelDeferredGlobalStylesheetStart = null
+    cancelHomeDemoWarmup()
+  }
+
+  function handlePageHide() {
+    cancelDeferredGlobalStylesheetStart?.()
+    cancelDeferredGlobalStylesheetStart = null
+    cancelHomeDemoWarmup()
+  }
+
   HOME_BOOTSTRAP_INTENT_EVENTS.forEach((eventName) => {
     const handler = eventName === 'keydown' ? handleKeyDown : handlePointerDown
     if (eventName === 'touchstart') {
@@ -479,6 +543,8 @@ export const installHomeStaticEntry = ({
     liveWin.addEventListener(eventName, handler, eventOptions)
   })
   liveDoc.addEventListener?.('focusin', handleFocusIn, eventOptions)
+  liveDoc.addEventListener?.('visibilitychange', handleVisibilityChange, eventOptions)
+  liveWin.addEventListener('pagehide', handlePageHide, eventOptions)
 
   preconnectPostAnchorOrigins({
     win: liveWin,
@@ -494,8 +560,9 @@ export const installHomeStaticEntry = ({
     })
   }
   resumeHomeHydration()
+  scheduleDeferredGlobalStylesheet()
   scheduleDeferredRuntime()
-  void startHomeDemoWarmup()
+  scheduleHomeDemoWarmup()
 
   return () => {
     HOME_BOOTSTRAP_INTENT_EVENTS.forEach((eventName) => {
@@ -507,10 +574,15 @@ export const installHomeStaticEntry = ({
       liveWin.removeEventListener(eventName, handler, eventOptions)
     })
     liveDoc.removeEventListener?.('focusin', handleFocusIn, eventOptions)
+    liveDoc.removeEventListener?.('visibilitychange', handleVisibilityChange, eventOptions)
+    liveWin.removeEventListener('pagehide', handlePageHide, eventOptions)
     cleanupEarlySettingsBridge()
     primeHomeSettingsInteractionHandler = undefined
+    cancelDeferredGlobalStylesheetStart?.()
+    cancelDeferredGlobalStylesheetStart = null
     cancelDeferredRuntimeStart?.()
     cancelDeferredRuntimeStart = null
+    cancelHomeDemoWarmup()
     clearPendingClickReplay()
     widgetRuntime?.destroy()
     widgetRuntime = null

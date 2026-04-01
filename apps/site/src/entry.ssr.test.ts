@@ -82,6 +82,17 @@ describe("entry.ssr static bootstrap injection", () => {
     expect(source).toContain("stripNonCriticalStaticRouteStyles(");
   });
 
+  it("strips the shared style.css stylesheet from static home SSR output only and preserves its href for deferred loading", async () => {
+    const source = await readSource();
+
+    expect(source).toContain("const stripHomeStaticDeferredGlobalStylesheet = (html: string, pathname: string) => {");
+    expect(source).toContain('if (resolveStaticBootstrapMode(pathname) !== "home-static")');
+    expect(source).toContain('*-style\\.css');
+    expect(source).toContain('HOME_DEFERRED_GLOBAL_STYLE_META_NAME');
+    expect(source).toContain("deferredHomeGlobalStylesheetHref");
+    expect(source).toContain("stripHomeStaticDeferredGlobalStylesheet(");
+  });
+
   it("strips the deferred home demo stylesheet from static home SSR output only", async () => {
     const source = await readSource();
 

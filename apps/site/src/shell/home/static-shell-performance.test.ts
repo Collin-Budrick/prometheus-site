@@ -136,7 +136,10 @@ describe("static shell performance invariants", () => {
       "requestFragments: sharedRuntime?.requestFragments",
     );
     expect(bootstrapSource).toContain("resolvePreferredStaticHomeLang");
+    expect(bootstrapSource).toContain("loadHomePostAnchorLanguageRestoreRuntime");
     expect(bootstrapSource).toContain("loadHomePostAnchorLifecycleRuntime");
+    expect(bootstrapDeferredSource).toContain("preferIdle: true");
+    expect(bootstrapDeferredSource).toContain("timeoutMs: 1500");
     expect(bootstrapSource).toContain("loadHomeBootstrapPostLcpRuntime()");
     expect(bootstrapSource).toContain("installDeferredHomePostLcpRuntime = ({");
     expect(bootstrapSource).not.toContain("loadHomeDemoEntryRuntime()");
@@ -164,6 +167,7 @@ describe("static shell performance invariants", () => {
     expect(bootstrapSource).toContain(
       "resolvePreferredStaticHomeLang(data.lang) !== data.lang",
     );
+    expect(bootstrapSource).toContain("restorePreferredStaticHomeLanguageIfNeeded");
     expect(bootstrapSource).not.toContain("HOME_PREVIEW_REFRESH_DELAY_MS");
     expect(bootstrapSource).not.toContain(
       "HOME_PREVIEW_REFRESH_IDLE_TIMEOUT_MS",
@@ -520,6 +524,8 @@ describe("static shell performance invariants", () => {
       globalStyleAssetsSource,
       homeStaticEntrySource,
       homePostAnchorCoreSource,
+      homePostAnchorLifecycleRuntimeSource,
+      homePostAnchorLanguageRestoreRuntimeSource,
       homeSettingsInteractionRuntimeSource,
       homeSettingsInteractionRuntimeLoaderSource,
       homeStaticEntryDemoWarmupSource,
@@ -566,6 +572,8 @@ describe("static shell performance invariants", () => {
       readSource("../core/global-style-assets.ts"),
       readSource("./home-static-entry.ts"),
       readSource("./home-post-anchor-core.ts"),
+      readSource("./home-post-anchor-lifecycle-runtime.ts"),
+      readSource("./home-post-anchor-language-restore-runtime.ts"),
       readSource("./home-settings-interaction-runtime.ts"),
       readSource("./runtime-loaders.ts"),
       readSource("./home-static-entry-demo-warmup.ts"),
@@ -603,6 +611,7 @@ describe("static shell performance invariants", () => {
     expect(buildScriptSource).toContain("home-collab-entry.ts");
     expect(buildScriptSource).toContain("home-bootstrap-deferred-runtime.ts");
     expect(buildScriptSource).toContain("home-post-anchor-core.ts");
+    expect(buildScriptSource).toContain("home-post-anchor-language-restore-runtime.ts");
     expect(buildScriptSource).toContain("home-settings-interaction-runtime.ts");
     expect(buildScriptSource).toContain("home-post-anchor-lifecycle-runtime.ts");
     expect(buildScriptSource).toContain("home-static-anchor-entry.ts");
@@ -827,15 +836,17 @@ describe("static shell performance invariants", () => {
     expect(homePostAnchorCoreSource).toContain("installHomeStaticEntry");
     expect(homePostAnchorCoreSource).toContain("loadHomeBootstrapDeferredRuntime");
     expect(homePostAnchorCoreSource).toContain("loadHomeSettingsInteractionRuntime");
+    expect(homePostAnchorCoreSource).toContain("ensureHomeDeferredGlobalStylesheet");
     expect(homePostAnchorCoreSource).toContain("resumeDeferredHomeHydration");
     expect(homePostAnchorCoreSource).toContain("loadHomeStaticEntryDemoWarmup");
     expect(homePostAnchorCoreSource).toContain("HOME_BOOTSTRAP_INTENT_EVENTS");
     expect(homePostAnchorCoreSource).toContain("loadFragmentWidgetRuntime");
-    expect(homePostAnchorCoreSource).toContain("void startHomeDemoWarmup()");
+    expect(homePostAnchorCoreSource).toContain("scheduleHomeDemoWarmup");
+    expect(homePostAnchorCoreSource).toContain("scheduleDeferredGlobalStylesheet");
     expect(homePostAnchorCoreSource).toContain("scheduleDeferredRuntime");
     expect(homePostAnchorCoreSource).toContain("prom:home:lifecycle-runtime-requested");
     expect(homePostAnchorCoreSource).toContain("prom:home:lifecycle-runtime-ready");
-    expect(homePostAnchorCoreSource).toContain("waitForLoad: true");
+    expect(homePostAnchorCoreSource).toContain("preferIdle: true");
     expect(homePostAnchorCoreSource).not.toContain("scheduleDeferredWidgetRuntime");
     expect(homePostAnchorCoreSource).not.toContain("scheduleDeferredBootstrap");
     expect(homePostAnchorCoreSource).not.toContain("primeHomeFragmentBootstrapBytes");
@@ -856,6 +867,20 @@ describe("static shell performance invariants", () => {
       "from './runtime-loaders'",
     );
     expect(homePostAnchorCoreSource).toContain("scheduleStaticShellTask");
+    expect(homePostAnchorLifecycleRuntimeSource).not.toContain("loadHomeLanguageRuntime");
+    expect(homePostAnchorLifecycleRuntimeSource).not.toContain("resolvePreferredStaticHomeLang");
+    expect(homePostAnchorLifecycleRuntimeSource).not.toContain("bootstrapStaticHome = bootstrapStaticHome");
+    expect(homePostAnchorLifecycleRuntimeSource).not.toContain("destroyHomeController");
+    expect(homePostAnchorLanguageRestoreRuntimeSource).toContain("loadHomeLanguageRuntime");
+    expect(homePostAnchorLanguageRestoreRuntimeSource).toContain(
+      "restorePreferredStaticHomeLanguageIfNeeded",
+    );
+    expect(bootstrapRuntimeLoaderSource).toContain(
+      "HOME_POST_ANCHOR_LANGUAGE_RESTORE_RUNTIME_ASSET_PATH",
+    );
+    expect(bootstrapRuntimeLoaderSource).toContain(
+      "loadHomePostAnchorLanguageRestoreRuntime",
+    );
     expect(homeSettingsInteractionRuntimeLoaderSource).toContain(
       "home-settings-interaction-runtime.js",
     );

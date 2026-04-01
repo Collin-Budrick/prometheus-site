@@ -1,7 +1,10 @@
 import { readStaticHomeBootstrapData } from './home-bootstrap-data'
 import { getActiveHomeController, resumeDeferredHomeHydration } from './home-active-controller'
 import { resolvePreferredStaticHomeLang } from './home-language-preference'
-import { loadHomePostAnchorLifecycleRuntime } from './runtime-loaders'
+import {
+  loadHomePostAnchorLanguageRestoreRuntime,
+  loadHomePostAnchorLifecycleRuntime
+} from './runtime-loaders'
 import { scheduleStaticShellTask } from '../core/scheduler'
 
 type InstallHomeBootstrapDeferredRuntimeOptions = {
@@ -9,6 +12,7 @@ type InstallHomeBootstrapDeferredRuntimeOptions = {
   doc?: Document | null
   scheduleTask?: typeof scheduleStaticShellTask
   loadLifecycleRuntime?: typeof loadHomePostAnchorLifecycleRuntime
+  loadLanguageRestoreRuntime?: typeof loadHomePostAnchorLanguageRestoreRuntime
   eagerLifecycleRuntime?: boolean
   postLcpIntentTarget?: EventTarget | null
 }
@@ -18,6 +22,7 @@ export const installHomeBootstrapDeferredRuntime = async ({
   doc = typeof document !== 'undefined' ? document : null,
   scheduleTask = scheduleStaticShellTask,
   loadLifecycleRuntime = loadHomePostAnchorLifecycleRuntime,
+  loadLanguageRestoreRuntime = loadHomePostAnchorLanguageRestoreRuntime,
   eagerLifecycleRuntime = false,
   postLcpIntentTarget = null
 }: InstallHomeBootstrapDeferredRuntimeOptions = {}) => {
@@ -42,6 +47,18 @@ export const installHomeBootstrapDeferredRuntime = async ({
   let lifecycleCleanup: (() => void) | null = null
   let lifecyclePromise: Promise<void> | null = null
   let cancelLifecycleStart: (() => void) | null = null
+  const preferredLanguageMismatch =
+    resolvePreferredStaticHomeLang(data.lang) !== data.lang
+
+  const bootstrapStaticHome = async () => {
+    const { bootstrapStaticHome } = await import('./home-bootstrap-orchestrator')
+    await bootstrapStaticHome()
+  }
+
+  const destroyActiveController = async () => {
+    const { destroyHomeController } = await import('./home-bootstrap-controller-utils')
+    await destroyHomeController(getActiveHomeController())
+  }
 
   const startLifecycleRuntime = () => {
     if (lifecyclePromise || controller.destroyed) {
@@ -55,6 +72,8 @@ export const installHomeBootstrapDeferredRuntime = async ({
           data,
           win,
           doc,
+          bootstrapStaticHome,
+          destroyActiveController,
           postLcpIntentTarget
         })
       )
@@ -71,8 +90,21 @@ export const installHomeBootstrapDeferredRuntime = async ({
 
   if (
     eagerLifecycleRuntime ||
-    resolvePreferredStaticHomeLang(data.lang) !== data.lang
+    preferredLanguageMismatch
   ) {
+    if (preferredLanguageMismatch) {
+      const { restorePreferredStaticHomeLanguageIfNeeded } =
+        await loadLanguageRestoreRuntime()
+      const restored = await restorePreferredStaticHomeLanguageIfNeeded({
+        controller,
+        data,
+        bootstrapStaticHome,
+        destroyActiveController
+      })
+      if (restored) {
+        return
+      }
+    }
     await startLifecycleRuntime()
   } else {
     cancelLifecycleStart = scheduleTask(
@@ -82,9 +114,8 @@ export const installHomeBootstrapDeferredRuntime = async ({
       },
       {
         priority: 'background',
-        timeoutMs: 0,
-        preferIdle: false,
-        waitForLoad: true,
+        timeoutMs: 1500,
+        preferIdle: true,
         waitForPaint: true
       }
     )

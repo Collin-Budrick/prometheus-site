@@ -40,6 +40,7 @@ class MockDocument {
   activeElement: unknown = null
   readonly mainRoot = { kind: 'main-root' }
   readonly homeRoot = { kind: 'home-root' }
+  visibilityState: 'visible' | 'hidden' = 'visible'
 
   addEventListener(type: string, listener: MockListener) {
     const listeners = this.listeners.get(type) ?? new Set()
@@ -147,20 +148,25 @@ afterEach(() => {
 })
 
 describe('installHomeStaticEntry', () => {
-  it('resumes hydration immediately, warms demos, and defers the lifecycle runtime', async () => {
+  it('resumes hydration immediately and schedules deferred home work through idle tasks', async () => {
     const win = new MockWindow()
     const doc = new MockDocument()
     const taskQueue = createTaskQueue()
+    const scheduledOptions: Array<Record<string, unknown> | undefined> = []
     let deferredRuntimeLoads = 0
     let deferredRuntimeInstalls = 0
     let resumeCalls = 0
+    let globalStyleCallCount = 0
     let warmupCallCount = 0
     let warmupDoc: unknown = null
 
     const cleanup = installHomeStaticEntry({
       win: win as never,
       doc: doc as never,
-      scheduleTask: taskQueue.schedule as never,
+      scheduleTask: ((callback: () => void, options?: Record<string, unknown>) => {
+        scheduledOptions.push(options)
+        return taskQueue.schedule(callback)
+      }) as never,
       loadDeferredRuntime: async () => {
         deferredRuntimeLoads += 1
         return {
@@ -175,6 +181,10 @@ describe('installHomeStaticEntry', () => {
         expect(previewRefresh).toBeUndefined()
         return true
       },
+      ensureDeferredGlobalStylesheet: async ({ doc: liveDoc }) => {
+        globalStyleCallCount += 1
+        expect(liveDoc).toBe(doc)
+      },
       warmDemoAssets: async ({ doc: liveDoc }) => {
         warmupCallCount += 1
         warmupDoc = liveDoc
@@ -186,16 +196,39 @@ describe('installHomeStaticEntry', () => {
     expect(resumeCalls).toBe(1)
     expect(deferredRuntimeLoads).toBe(0)
     expect(deferredRuntimeInstalls).toBe(0)
-    expect(warmupCallCount).toBe(1)
-    expect(warmupDoc).toBe(doc)
+    expect(globalStyleCallCount).toBe(0)
+    expect(warmupCallCount).toBe(0)
     expect(win.listeners.has('pointerdown')).toBe(true)
     expect(win.listeners.has('keydown')).toBe(true)
     expect(win.listeners.has('touchstart')).toBe(true)
+    expect(win.listeners.has('pagehide')).toBe(true)
     expect(doc.listeners.has('focusin')).toBe(true)
+    expect(doc.listeners.has('visibilitychange')).toBe(true)
+    expect(scheduledOptions).toEqual([
+      expect.objectContaining({
+        preferIdle: true,
+        waitForLoad: true,
+        waitForPaint: true,
+        timeoutMs: 5000
+      }),
+      expect.objectContaining({
+        preferIdle: true,
+        waitForPaint: true,
+        timeoutMs: 1500
+      }),
+      expect.objectContaining({
+        preferIdle: true,
+        waitForPaint: true,
+        timeoutMs: 2000
+      })
+    ])
 
     taskQueue.flush()
     await flushMicrotasks()
 
+    expect(globalStyleCallCount).toBe(1)
+    expect(warmupCallCount).toBe(1)
+    expect(warmupDoc).toBe(doc)
     expect(deferredRuntimeLoads).toBe(1)
     expect(deferredRuntimeInstalls).toBe(1)
 
@@ -204,6 +237,37 @@ describe('installHomeStaticEntry', () => {
     expect(win.listeners.size).toBe(0)
     expect(doc.listeners.size).toBe(0)
     expect(win.__PROM_STATIC_HOME_ENTRY__).toBe(false)
+  })
+
+  it('cancels deferred demo warmup when the page becomes hidden before idle work runs', async () => {
+    const win = new MockWindow()
+    const doc = new MockDocument()
+    const taskQueue = createTaskQueue()
+    let warmupCallCount = 0
+
+    const cleanup = installHomeStaticEntry({
+      win: win as never,
+      doc: doc as never,
+      scheduleTask: taskQueue.schedule as never,
+      loadDeferredRuntime: async () => ({
+        installHomeBootstrapDeferredRuntime: async () => undefined
+      }) as never,
+      resumeDeferredHydration: () => true,
+      ensureDeferredGlobalStylesheet: async () => undefined,
+      warmDemoAssets: async () => {
+        warmupCallCount += 1
+      }
+    })
+
+    doc.visibilityState = 'hidden'
+    doc.emit('visibilitychange')
+    win.emit('pagehide')
+    taskQueue.flush()
+    await flushMicrotasks()
+
+    expect(warmupCallCount).toBe(0)
+
+    cleanup()
   })
 
   it('starts the widget runtime on fragment-card pointer interaction and reuses it', async () => {
