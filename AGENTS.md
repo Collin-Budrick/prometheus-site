@@ -13,14 +13,15 @@ This monorepo ships as a reusable web showcase template: a Qwik frontend that st
 - **Site (`apps/site`):** Qwik + Qwik City SPA/SSR composition layer, FragmentShell, routes, branding/copy.
 - **API/runtime (platform entrypoint):** Combined Rust entrypoint that boots the platform server, registers site fragment definitions, serves WebTransport, and hosts the `/yjs` signaling endpoint from the same runtime.
 - **Infrastructure (`infra/` + `docker-compose.yml`):**
-  - Caddy terminates TLS and routes `prometheus.dev` traffic to web/API containers.
+  - Caddy terminates TLS and routes the active site host for the current runtime mode to the web/API containers.
   - Caddy serves HTTP over TCP (h1/h2); UDP 4444 is bound to the integrated WebTransport runtime for HTTP/3 sessions.
   - SpaceTimeDB 2.0 + Microsoft Garnet containers with healthchecks; SpaceTimeDB uses a persistent volume and Garnet runs as an in-memory low-latency cache tier.
   - Dynamic Caddy config generated for dev via `scripts/compose-utils.ts` (writes `infra/caddy/Caddyfile`, controlled by `scripts/runtime-config.ts`).
 
 ## Dev and runtime flow
 
-- **Local dev entrypoint:** `bun run dev` (runs Compose services, ensures the Caddy file, starts Qwik dev server on 4173 with HTTPS routed through Caddy at `https://prometheus.dev`, and defaults to the `full` template preset).
+- **Local dev entrypoint:** `bun run dev` (runs Compose services, ensures the Caddy file, starts Qwik dev server on 4173 with HTTPS routed through Caddy at `https://prometheus.dev`, disables `https://prometheus.prod`, and defaults to the `full` template preset).
+- **Preview entrypoint:** `bun run preview` (builds the site for the prod host set, serves `https://prometheus.prod` through Compose/Caddy, and disables `https://prometheus.dev`).
 - **Runtime defaults:** canonical host/port/profile/preset defaults live in `scripts/runtime-config.ts`.
 - **Storybook:** Storybook stays scoped to `apps/site`. Use the app-local scripts inside `apps/site` when you need it; keep the repo root limited to template-facing commands.
 - **Desktop shell:** `apps/desktop` packages the existing HTTPS app through Electrobun. It defaults to `https://prometheus.dev` for dev builds and `https://prometheus.prod` for canary/stable builds, and you can override the target with `PROMETHEUS_DESKTOP_TARGET_URL` or the per-channel `PROMETHEUS_DESKTOP_TARGET_URL_{DEV,CANARY,STABLE}` envs.

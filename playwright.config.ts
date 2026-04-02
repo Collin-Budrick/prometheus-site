@@ -5,7 +5,7 @@ const runtimeConfig = getRuntimeConfig(process.env)
 const baseURL =
   process.env.PLAYWRIGHT_BASE_URL?.trim() ||
   process.env.PW_BASE_URL?.trim() ||
-  `https://${runtimeConfig.domains.web}`
+  `https://${runtimeConfig.domains.webProd}`
 
 export default defineConfig({
   testDir: './tests/browser',

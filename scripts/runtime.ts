@@ -292,10 +292,10 @@ const runBrowserSmoke = async () => {
   assertHostedAuthConfigForNonDevelopmentHosts({
     context: 'runtime browser smoke',
     env,
-    hosts: [runtimeConfig.domains.web, runtimeConfig.domains.webProd]
+    hosts: [runtimeConfig.domains.webProd]
   })
   const baseURL =
-    env.PLAYWRIGHT_BASE_URL?.trim() || env.PW_BASE_URL?.trim() || `https://${runtimeConfig.domains.web}`
+    env.PLAYWRIGHT_BASE_URL?.trim() || env.PW_BASE_URL?.trim() || `https://${runtimeConfig.domains.webProd}`
   env.PLAYWRIGHT_BASE_URL = baseURL
   const requiredServices = [
     ...runtimeConfig.compose.services.core,

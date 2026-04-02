@@ -61,6 +61,11 @@ bun run test:browser:full
 bun run test:browser:core
 ```
 
+## Host Modes
+
+- `bun run dev` serves `https://prometheus.dev` and keeps `https://prometheus.prod` disabled.
+- `bun run preview` serves `https://prometheus.prod` and keeps `https://prometheus.dev` disabled.
+
 ## Desktop Target
 
 `apps/desktop` packages the existing HTTPS deployment as an Electrobun desktop shell. It does not start a local API stack; it loads the same site and Rust API/WebTransport endpoints you already run behind Caddy.

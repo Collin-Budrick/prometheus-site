@@ -195,8 +195,8 @@ const previewSpacetimeDbPort = runtimeConfig.ports.spacetimedb
 const previewGarnetPort = runtimeConfig.ports.garnet
 const previewWebTransportPort = runtimeConfig.ports.webtransport
 const previewProject = runtimeConfig.compose.projectName
-const previewWebHost = runtimeConfig.domains.web
-const previewDbHost = runtimeConfig.domains.db
+const previewWebHost = runtimeConfig.domains.webProd
+const previewDbHost = runtimeConfig.domains.dbProd
 const previewDeviceHost = process.env.PROMETHEUS_DEVICE_HOST?.trim()
 const useDeviceHost = Boolean(previewDeviceHost)
 const templateFeatures = runtimeConfig.template.features
@@ -376,7 +376,7 @@ const composeEnv = withResolvedSpacetimeAuthEnv({
   PROMETHEUS_CONVEX_SITE_PROXY_PORT: runtimeConfig.ports.convexSiteProxy,
   PROMETHEUS_CONVEX_DASHBOARD_PORT: runtimeConfig.ports.convexDashboard,
   PROMETHEUS_WEBTRANSPORT_PORT: previewWebTransportPort,
-  PROMETHEUS_DB_HOST: runtimeConfig.domains.db,
+  PROMETHEUS_DB_HOST: previewDbHost,
   PROMETHEUS_DB_HOST_PROD: runtimeConfig.domains.dbProd,
   PROMETHEUS_WEB_HOST: previewWebHost,
   PROMETHEUS_WEB_HOST_PROD: runtimeConfig.domains.webProd,
@@ -426,12 +426,14 @@ const composeEnv = withResolvedSpacetimeAuthEnv({
 assertHostedAuthConfigForNonDevelopmentHosts({
   context: 'preview compose runtime',
   env: composeEnv,
-  hosts: [previewWebHost, runtimeConfig.domains.webProd]
+  hosts: [previewWebHost]
 })
 const composeSiteBuildEnv = {
   ...process.env,
   BETTER_AUTH_SECRET: composeEnv.BETTER_AUTH_SECRET,
   BETTER_AUTH_COOKIE_SECRET: composeEnv.BETTER_AUTH_COOKIE_SECRET,
+  PROMETHEUS_WEB_HOST: composeEnv.PROMETHEUS_WEB_HOST,
+  PROMETHEUS_HTTPS_PORT: composeEnv.PROMETHEUS_HTTPS_PORT,
   PROMETHEUS_TEMPLATE_PRESET: composeEnv.PROMETHEUS_TEMPLATE_PRESET,
   PROMETHEUS_TEMPLATE_HOME_MODE: composeEnv.PROMETHEUS_TEMPLATE_HOME_MODE,
   PROMETHEUS_TEMPLATE_FEATURES: composeEnv.PROMETHEUS_TEMPLATE_FEATURES,
@@ -539,8 +541,13 @@ const buildComposeSiteDist = () => {
 }
 
 const { configChanged } = ensureCaddyConfig('http://web:4173', 'http://web:4173', {
-  dev: composeStaticSiteOptions,
-  prod: composeStaticSiteOptions
+  dev: {
+    mode: 'disabled'
+  },
+  prod: {
+    ...composeStaticSiteOptions,
+    mode: 'active'
+  }
 })
 let keepContainers = false
 
@@ -670,9 +677,6 @@ const needsComposeSiteDistBuild =
   !existsSync(composeSiteServerEntryPath) ||
   !composeSiteSelectionMatches ||
   cache[composeSiteDistCacheKey]?.fingerprint !== composeSiteDistFingerprint
-if (needsComposeSiteDistBuild) {
-  buildComposeSiteDist()
-}
 const buildTargets: BuildTarget[] = [
   {
     service: 'api',
@@ -710,7 +714,14 @@ const buildResults = activeBuildTargets.map((target) => {
 })
 const resetSpacetimeData = cache[spacetimedbModuleCacheKey]?.fingerprint !== spacetimedbModuleFingerprint
 
-if (resetSpacetimeData) {
+if (needsComposeSiteDistBuild) {
+  const downArgs = resetSpacetimeData
+    ? ['down', '--volumes', '--remove-orphans']
+    : ['down', '--remove-orphans']
+  const down = runSync(command, [...prefix, ...downArgs], composeEnv)
+  if (down.status !== 0) process.exit(down.status ?? 1)
+  buildComposeSiteDist()
+} else if (resetSpacetimeData) {
   const down = runSync(command, [...prefix, 'down', '--volumes', '--remove-orphans'], composeEnv)
   if (down.status !== 0) process.exit(down.status ?? 1)
 }

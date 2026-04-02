@@ -301,12 +301,12 @@ const composeEnv: NodeJS.ProcessEnv = withResolvedSpacetimeAuthEnv({
 
 const { devUpstream, configChanged } = ensureCaddyConfig(process.env.DEV_WEB_UPSTREAM?.trim(), undefined, {
   dev: {
+    mode: 'active',
     encode: 'br gzip',
     stripAcceptEncoding: true
   },
   prod: {
-    encode: 'br gzip',
-    stripAcceptEncoding: true
+    mode: 'disabled'
   }
 })
 

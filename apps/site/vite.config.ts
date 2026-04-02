@@ -826,13 +826,11 @@ export default defineConfig(async (configEnv): Promise<UserConfig> => {
       ws: true,
       rewrite: (pathValue) => pathValue.replace(/^\/api/, '')
     }
-    const previewAllowedHosts = new Set(['prometheus.prod', 'prometheus.dev'])
     const configuredWebHost = normalizeHost(process.env.PROMETHEUS_WEB_HOST)
-    if (configuredWebHost) previewAllowedHosts.add(configuredWebHost)
+    const previewAllowedHosts = new Set([configuredWebHost || 'prometheus.prod'])
     const deviceHost = normalizeHost(process.env.PROMETHEUS_DEVICE_HOST)
-    if (deviceHost) previewAllowedHosts.add(deviceHost)
     const previewAllowedHostsList = Array.from(previewAllowedHosts)
-    const devAllowedHosts = new Set([devHost, 'prometheus.dev', 'localhost', '127.0.0.1'])
+    const devAllowedHosts = new Set([devHost, 'localhost', '127.0.0.1'])
     if (configuredWebHost) devAllowedHosts.add(configuredWebHost)
     if (deviceHost) devAllowedHosts.add(deviceHost)
     const devAllowedHostsList = Array.from(devAllowedHosts)

@@ -68,6 +68,7 @@ const resolveLocalIp = () => {
 }
 
 type SiteCaddyConfigOptions = {
+  mode?: 'active' | 'disabled'
   servePrecompressed?: boolean
   staticRoot?: string
   encode?: string
@@ -97,7 +98,7 @@ export const ensureCaddyConfig = (override?: string, prodOverride?: string, opti
   const devOptions = { ...baseOptions, ...devOverrides }
   const prodOptions = { ...baseOptions, ...prodOverrides }
 
-  const buildSite = (host: string, upstream: string, siteOptions: SiteCaddyConfigOptions) => {
+  const buildActiveSite = (host: string, upstream: string, siteOptions: SiteCaddyConfigOptions) => {
     const staticRoot = siteOptions.staticRoot ?? '/srv/web/dist'
     const encodeValue = siteOptions.encode?.trim()
     const encodeBlock = encodeValue ? `\tencode ${encodeValue}\n` : ''
@@ -110,6 +111,14 @@ export const ensureCaddyConfig = (override?: string, prodOverride?: string, opti
 
     return `${host} {\n\ttls ${caddy.certPemPath} ${caddy.certKeyPath}\n\theader {\n\t\talt-svc "h3=\\":443\\"; ma=2592000"\n\t\tStrict-Transport-Security "max-age=31536000; includeSubDomains; preload"\n\t}\n\n${encodeBlock}${staticBlock}${staticCacheBlock}\thandle /yjs {\n\t\treverse_proxy ${PROMETHEUS_INTERNAL_UPSTREAMS.yjs}\n\t}\n\n\thandle /yjs/* {\n\t\treverse_proxy ${PROMETHEUS_INTERNAL_UPSTREAMS.yjs}\n\t}\n\n\thandle /auth {\n\t\treverse_proxy ${PROMETHEUS_INTERNAL_UPSTREAMS.api} {\n${stripAcceptEncoding}\t\t\tlb_try_duration 5s\n\t\t\tlb_try_interval 100ms\n\t\t}\n\t}\n\n\thandle /auth/* {\n\t\treverse_proxy ${PROMETHEUS_INTERNAL_UPSTREAMS.api} {\n${stripAcceptEncoding}\t\t\tlb_try_duration 5s\n\t\t\tlb_try_interval 100ms\n\t\t}\n\t}\n\n\thandle /api/auth {\n\t\treverse_proxy ${PROMETHEUS_INTERNAL_UPSTREAMS.convexSite} {\n${stripAcceptEncoding}\t\t\tlb_try_duration 5s\n\t\t\tlb_try_interval 100ms\n\t\t}\n\t}\n\n\thandle /api/auth/* {\n\t\treverse_proxy ${PROMETHEUS_INTERNAL_UPSTREAMS.convexSite} {\n${stripAcceptEncoding}\t\t\tlb_try_duration 5s\n\t\t\tlb_try_interval 100ms\n\t\t}\n\t}\n\n\thandle_path /api/* {\n\t\treverse_proxy ${PROMETHEUS_INTERNAL_UPSTREAMS.api} {\n${stripAcceptEncoding}\t\t\tlb_try_duration 5s\n\t\t\tlb_try_interval 100ms\n\t\t}\n\t}\n\n\thandle /v1/* {\n\t\treverse_proxy ${PROMETHEUS_INTERNAL_UPSTREAMS.spacetimedb} {\n\t\t\tlb_try_duration 5s\n\t\t\tlb_try_interval 100ms\n\t\t}\n\t}\n\n\tredir /spacetimedb /spacetimedb/ 308\n\n\thandle_path /spacetimedb/* {\n\t\treverse_proxy ${PROMETHEUS_INTERNAL_UPSTREAMS.spacetimedb} {\n\t\t\tlb_try_duration 5s\n\t\t\tlb_try_interval 100ms\n\t\t}\n\t}\n\n\tredir /convex-dashboard /convex-dashboard/ 308\n\n\thandle_path /convex-dashboard/* {\n\t\treverse_proxy ${PROMETHEUS_INTERNAL_UPSTREAMS.convexDashboard} {\n\t\t\tlb_try_duration 5s\n\t\t\tlb_try_interval 100ms\n\t\t}\n\t}\n\n\t@ai path_regexp ai ^/(?:[a-z]{2}/)?ai(?:/|$)\n\thandle @ai {\n\t\theader {\n\t\t\tCross-Origin-Embedder-Policy "require-corp"\n\t\t}\n\t\treverse_proxy ${upstream} {\n${stripAcceptEncoding}\t\t\tlb_try_duration 5s\n\t\t\tlb_try_interval 100ms\n${stripEarlyHints}\t\t}\n\t}\n\n\thandle {\n\t\treverse_proxy ${upstream} {\n${stripAcceptEncoding}\t\t\tlb_try_duration 5s\n\t\t\tlb_try_interval 100ms\n${stripEarlyHints}\t\t}\n\t}\n}\n`
   }
+
+  const buildDisabledSite = (host: string) =>
+    `${host} {\n\ttls ${caddy.certPemPath} ${caddy.certKeyPath}\n\theader {\n\t\talt-svc "h3=\\":443\\"; ma=2592000"\n\t\tStrict-Transport-Security "max-age=31536000; includeSubDomains; preload"\n\t}\n\n\thandle {\n\t\trespond "Host disabled for this runtime mode." 404\n\t}\n}\n`
+
+  const buildSite = (host: string, upstream: string, siteOptions: SiteCaddyConfigOptions) =>
+    siteOptions.mode === 'disabled'
+      ? buildDisabledSite(host)
+      : buildActiveSite(host, upstream, siteOptions)
 
   const buildSpacetimeDbSite = (host: string) =>
     `${host} {\n\ttls ${caddy.certPemPath} ${caddy.certKeyPath}\n\theader {\n\t\talt-svc "h3=\\":443\\"; ma=2592000"\n\t\tStrict-Transport-Security "max-age=31536000; includeSubDomains; preload"\n\t}\n\n\thandle {\n\t\treverse_proxy ${PROMETHEUS_INTERNAL_UPSTREAMS.spacetimedb} {\n\t\t\tlb_try_duration 5s\n\t\t\tlb_try_interval 100ms\n\t\t}\n\t}\n}\n`
