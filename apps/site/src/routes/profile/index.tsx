@@ -1,4 +1,4 @@
-import { $, component$, useComputed$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
+import { $, component$, useComputed$, useSignal, useTask$ } from '@builder.io/qwik'
 import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteTemplate } from '@prometheus/ui'
 import authModuleStyles from '@site/features/auth/auth.module.css'
@@ -188,7 +188,7 @@ export default component$(() => {
   const trimmedName = nameInput.value.trim()
   const canSave = !saving.value && trimmedName.length >= 2 && trimmedName !== savedName.value
 
-  useVisibleTask$((ctx) => {
+  useTask$((ctx) => {
     if (typeof window === 'undefined') return
     if (localProfile) return
     let active = true

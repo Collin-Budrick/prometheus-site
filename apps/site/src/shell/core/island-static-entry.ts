@@ -105,7 +105,8 @@ const isContainedTarget = (container: Element, target: EventTarget | null) =>
   Boolean(target && typeof target === 'object' && container.contains(target as Node))
 
 const isTextInputLike = (target: HTMLElement) =>
-  target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement
+  (typeof HTMLInputElement === 'function' && target instanceof HTMLInputElement) ||
+  (typeof HTMLTextAreaElement === 'function' && target instanceof HTMLTextAreaElement)
 
 const replayDeferredInteraction = (target: HTMLElement | null) => {
   if (!target || !target.isConnected) {
@@ -169,6 +170,7 @@ export const installIslandStaticEntry = ({
   let readyHandler: (() => void) | null = null
   let bootstrapRequested = false
   let bootstrapStarted = false
+  let bootstrapCompleted = false
   let deferredBootstrapTimer: ReturnType<typeof setTimeout> | null = null
 
   const runBootstrap = () => {
@@ -196,9 +198,13 @@ export const installIslandStaticEntry = ({
     }
 
     bootstrapStarted = true
+    bootstrapCompleted = false
+    let bootstrapSucceeded = false
     bootstrapPromise = loadRuntime()
       .then(({ bootstrapStaticIslandShell }) => bootstrapStaticIslandShell())
       .then(() => {
+        bootstrapSucceeded = true
+        bootstrapCompleted = true
         lastSnapshot = snapshot
         stopInteractionBridge?.()
         stopInteractionBridge = null
@@ -211,6 +217,10 @@ export const installIslandStaticEntry = ({
         console.error('Static island bootstrap failed:', error)
       })
       .finally(() => {
+        if (!bootstrapSucceeded) {
+          bootstrapStarted = false
+          bootstrapCompleted = false
+        }
         bootstrapPromise = null
         if (disposed) return
         if (rebootstrapRequested) {
@@ -231,12 +241,32 @@ export const installIslandStaticEntry = ({
   }
 
   const installInteractionBridge = () => {
-    if (stopInteractionBridge || bootstrapStarted) {
+    if (stopInteractionBridge || bootstrapCompleted) {
       return
     }
 
     const requestBootstrap = () => {
       queueBootstrap()
+    }
+
+    const replayAfterBootstrap = (target: HTMLElement | null, replay: () => void) => {
+      if (!target) {
+        return
+      }
+      queueMicrotask(() => {
+        const pendingBootstrap = bootstrapPromise
+        if (!pendingBootstrap) {
+          if (bootstrapCompleted) {
+            setTimeout(replay, 0)
+          }
+          return
+        }
+        void pendingBootstrap.then(() => {
+          if (!disposed && bootstrapCompleted) {
+            setTimeout(replay, 0)
+          }
+        })
+      })
     }
 
     const handlePointerDown = (event: Event) => {
@@ -251,9 +281,6 @@ export const installIslandStaticEntry = ({
     }
 
     const handleClick = (event: Event) => {
-      if (bootstrapStarted) {
-        return
-      }
       const target =
         event.target && typeof event.target === 'object' && 'closest' in event.target
           ? (event.target as Element).closest<HTMLElement>(ISLAND_BOOTSTRAP_REPLAY_SELECTOR)
@@ -269,19 +296,12 @@ export const installIslandStaticEntry = ({
       event.preventDefault()
       event.stopImmediatePropagation()
       requestBootstrap()
-      queueMicrotask(() => {
-        void bootstrapPromise?.then(() => {
-          window.setTimeout(() => {
-            replayDeferredInteraction(target)
-          }, 0)
-        })
+      replayAfterBootstrap(target, () => {
+        replayDeferredInteraction(target)
       })
     }
 
     const handleSubmit = (event: Event) => {
-      if (bootstrapStarted) {
-        return
-      }
       const form = event.target instanceof HTMLFormElement ? event.target : null
       const snapshot = readIslandBootstrapDomSnapshot(doc)
       if (!form || !snapshot || !snapshot.pageRoot.contains(form)) {
@@ -292,18 +312,19 @@ export const installIslandStaticEntry = ({
       event.stopImmediatePropagation()
       const submitter = event instanceof SubmitEvent ? (event.submitter as HTMLElement | null) : null
       requestBootstrap()
-      queueMicrotask(() => {
-        void bootstrapPromise?.then(() => {
-          if (submitter && submitter.isConnected && typeof submitter.click === 'function') {
-            submitter.click()
-            return
-          }
-          if (typeof form.requestSubmit === 'function') {
-            form.requestSubmit()
-            return
-          }
-          form.submit()
-        })
+      replayAfterBootstrap(submitter, () => {
+        if (!form.isConnected) {
+          return
+        }
+        if (submitter && submitter.isConnected && typeof submitter.click === 'function') {
+          submitter.click()
+          return
+        }
+        if (typeof form.requestSubmit === 'function') {
+          form.requestSubmit()
+          return
+        }
+        form.submit()
       })
     }
 

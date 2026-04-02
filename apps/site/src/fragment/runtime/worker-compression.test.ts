@@ -35,7 +35,7 @@ describe('worker compression helpers', () => {
     ).toBe(false)
   })
 
-  it('keeps zstd off long-lived live streams until the worker can stream-read it directly', () => {
-    expect(shouldAdvertiseZstdForWorkerLiveStream()).toBe(false)
+  it('advertises zstd for long-lived live streams and relies on the worker fallback path when needed', () => {
+    expect(shouldAdvertiseZstdForWorkerLiveStream()).toBe(true)
   })
 })

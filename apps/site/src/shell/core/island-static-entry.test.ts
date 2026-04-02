@@ -8,8 +8,23 @@ class MockWindow {
 }
 
 class MockElement {
+  isConnected = true
+  containedTargets = new Set<unknown>()
+
   contains(target: unknown) {
-    return target === this
+    return target === this || this.containedTargets.has(target)
+  }
+}
+
+class MockInteractiveElement extends MockElement {
+  clickCount = 0
+
+  closest() {
+    return this
+  }
+
+  click() {
+    this.clickCount += 1
   }
 }
 
@@ -181,6 +196,59 @@ describe('installIslandStaticEntry', () => {
     await flushMicrotasks()
 
     expect(bootstrapCount).toBe(1)
+
+    cleanup()
+  })
+
+  it('replays early clicks that land while island bootstrap is still in flight', async () => {
+    const win = new MockWindow()
+    const doc = new MockDocument()
+    doc.islandDataScript = new MockScriptElement('{"island":"settings"}')
+    let resolveBootstrap: (() => void) | null = null
+    const bootstrapReady = new Promise<void>((resolve) => {
+      resolveBootstrap = resolve
+    })
+    const toggle = new MockInteractiveElement()
+    doc.pageRoot?.containedTargets.add(toggle)
+    let bootstrapCount = 0
+
+    const cleanup = installIslandStaticEntry({
+      win: win as never,
+      doc: doc as never,
+      observeDom: () => () => undefined,
+      loadRuntime: async () => ({
+        bootstrapStaticIslandShell: async () => {
+          bootstrapCount += 1
+          await bootstrapReady
+        }
+      })
+    })
+
+    await flushMicrotasks()
+    expect(bootstrapCount).toBe(1)
+
+    let prevented = false
+    let stopped = false
+    doc.emit('click', {
+      target: toggle,
+      preventDefault() {
+        prevented = true
+      },
+      stopImmediatePropagation() {
+        stopped = true
+      }
+    } as Event)
+    await flushMicrotasks()
+
+    expect(prevented).toBe(true)
+    expect(stopped).toBe(true)
+    expect(toggle.clickCount).toBe(0)
+
+    resolveBootstrap?.()
+    await flushMicrotasks()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(toggle.clickCount).toBe(1)
 
     cleanup()
   })

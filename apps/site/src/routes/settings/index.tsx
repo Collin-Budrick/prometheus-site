@@ -1,4 +1,4 @@
-import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
+import { $, component$, useSignal, useTask$ } from '@builder.io/qwik'
 import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteTemplate } from '@prometheus/ui'
 import authModuleStyles from '@site/features/auth/auth.module.css'
@@ -188,7 +188,7 @@ export default component$(() => {
   const pwaEnabled = isSiteFeatureEnabled('pwa')
   const nativeFeatureEnabled = isSiteFeatureEnabled('native')
 
-  useVisibleTask$((ctx) => {
+  useTask$((ctx) => {
     if (typeof window === 'undefined') return
     privacyAlwaysOn.value = getPrivacyScreenAlwaysOn()
     textZoom.value = getStoredTextZoom()
@@ -198,7 +198,7 @@ export default component$(() => {
     })
   })
 
-  useVisibleTask$((ctx) => {
+  useTask$((ctx) => {
     if (typeof window === 'undefined') return
     let active = true
     let removeServiceWorkerListeners = () => {}

@@ -220,7 +220,6 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang,
                   role="tab"
                   aria-selected="true"
                   data-static-login-tab="login"
-                  data-static-login-disable
                 >
                   {copy.loginTab}
                 </button>
@@ -231,7 +230,6 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang,
                   aria-selected="false"
                   data-static-login-tab="signup"
                   data-static-login-signup-tab
-                  data-static-login-disable
                 >
                   {copy.signupTab}
                 </button>

@@ -408,7 +408,6 @@ export const mountStaticLoginController = ({ lang }: MountStaticLoginControllerO
         button.dataset.staticLoginTab === 'signup' ? 'signup' : 'login'
 
       const handler = () => {
-        if (busy) return
         setMode(root, mode)
         setStatus(root, 'neutral', null)
       }
