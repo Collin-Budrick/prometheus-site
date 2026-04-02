@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { lookup } from 'node:dns/promises'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { networkInterfaces } from 'node:os'
 import path from 'node:path'
 import { templateBranding } from '../packages/template-config/src/index.ts'
@@ -480,6 +480,23 @@ const composeSiteBuildEnv = {
     templateBranding.ids.spacetimeModule
 }
 const composeSiteDistManifestPath = path.join(root, 'apps', 'site', 'dist', 'q-manifest.json')
+const composeSiteServerEntryPath = path.join(root, 'apps', 'site', 'server', 'entry.preview.js')
+
+const readComposeSiteBuildSelection = () => {
+  if (!existsSync(composeSiteServerEntryPath)) return null
+
+  try {
+    const source = readFileSync(composeSiteServerEntryPath, 'utf8')
+    const presetMatch = source.match(/VITE_TEMPLATE_PRESET:"([^"]+)"/)
+    const homeModeMatch = source.match(/VITE_TEMPLATE_HOME_MODE:"([^"]+)"/)
+    return {
+      preset: presetMatch?.[1]?.trim().toLowerCase() || '',
+      homeMode: homeModeMatch?.[1]?.trim().toLowerCase() || ''
+    }
+  } catch {
+    return null
+  }
+}
 
 const logSpawnFailure = (
   label: string,
@@ -505,6 +522,19 @@ const buildComposeSiteDist = () => {
   if (result.status !== 0) {
     logSpawnFailure('Compose static site build', result)
     process.exit(result.status ?? 1)
+  }
+
+  const resolvedSelection = readComposeSiteBuildSelection()
+  const selectionMatches =
+    resolvedSelection?.preset === resolvedTemplatePreset &&
+    resolvedSelection?.homeMode === resolvedTemplateHomeMode
+  if (!selectionMatches) {
+    console.error(
+      `[preview] Compose static site build completed but produced preset=${resolvedSelection?.preset || 'unknown'} ` +
+        `homeMode=${resolvedSelection?.homeMode || 'unknown'} instead of ` +
+        `preset=${resolvedTemplatePreset} homeMode=${resolvedTemplateHomeMode}.`
+    )
+    process.exit(1)
   }
 }
 
@@ -582,6 +612,10 @@ const webBuildExtra = {
 }
 const composeSiteDistCacheKey = `${cacheKeyPrefix}:site-dist`
 const composeSiteDistFingerprint = computeFingerprint(webBuildInputs, webBuildExtra)
+const composeSiteBuildSelection = readComposeSiteBuildSelection()
+const composeSiteSelectionMatches =
+  composeSiteBuildSelection?.preset === resolvedTemplatePreset &&
+  composeSiteBuildSelection?.homeMode === resolvedTemplateHomeMode
 const spacetimedbModuleFingerprint = computeFingerprint(
   [
     'extras/spacetimedb-module/Cargo.toml',
@@ -632,7 +666,10 @@ const composeRuntimeFingerprint = computeFingerprint(
 )
 const needsComposeRefresh = cache[composeRuntimeCacheKey]?.fingerprint !== composeRuntimeFingerprint
 const needsComposeSiteDistBuild =
-  !existsSync(composeSiteDistManifestPath) || cache[composeSiteDistCacheKey]?.fingerprint !== composeSiteDistFingerprint
+  !existsSync(composeSiteDistManifestPath) ||
+  !existsSync(composeSiteServerEntryPath) ||
+  !composeSiteSelectionMatches ||
+  cache[composeSiteDistCacheKey]?.fingerprint !== composeSiteDistFingerprint
 if (needsComposeSiteDistBuild) {
   buildComposeSiteDist()
 }

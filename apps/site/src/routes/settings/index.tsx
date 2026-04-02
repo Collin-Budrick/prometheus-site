@@ -42,6 +42,7 @@ import {
 } from '../../features/auth/spacetime-auth'
 import { buildGlobalStylesheetLinks } from '../../shell/core/global-style-assets'
 import { buildStaticRouteTemplatePretextProps } from '../../shell/pretext/pretext-template'
+import { runAfterClientIntentIdle } from '../../shared/client-boot'
 
 type ProtectedRouteData = {
   lang: Lang
@@ -187,15 +188,6 @@ export default component$(() => {
   const pwaEnabled = isSiteFeatureEnabled('pwa')
   const nativeFeatureEnabled = isSiteFeatureEnabled('native')
 
-  useVisibleTask$(() => {
-    if (typeof window === 'undefined') return
-    saveChatSettings(userId, chatSettings.value)
-  })
-
-  useVisibleTask$(() => {
-    passkeySupported.value = getSpacetimeAuthMode() === 'hosted' && isHostedPasskeySupported()
-  })
-
   useVisibleTask$((ctx) => {
     if (typeof window === 'undefined') return
     privacyAlwaysOn.value = getPrivacyScreenAlwaysOn()
@@ -206,37 +198,52 @@ export default component$(() => {
     })
   })
 
-  useVisibleTask$(() => {
-    if (typeof window === 'undefined') return
-    nativeRuntime.value = isNativeShellRuntime()
-    if (!messagingEnabled) return
-    const friendUser = resolveFriendCodeUser(user)
-    if (!friendUser) return
-    friendCode.value = ensureFriendCode(friendUser)
-  })
-
   useVisibleTask$((ctx) => {
     if (typeof window === 'undefined') return
-    if (!pwaEnabled) return
-    if (isNativeShellRuntime()) return
-    const handleCacheRefreshed = () => {
-      swStatus.value = { tone: 'success', message: copy.value.settingsOfflineRefreshSuccess }
-    }
-    const handleCacheCleared = () => {
-      swStatus.value = { tone: 'success', message: copy.value.settingsOfflineCleanupSuccess }
-    }
-    const handleSyncRequested = () => {
-      swStatus.value = { tone: 'info', message: copy.value.settingsOfflineSyncQueued }
-    }
+    let active = true
+    let removeServiceWorkerListeners = () => {}
+    const cancelDeferredBoot = runAfterClientIntentIdle(() => {
+      if (!active || typeof window === 'undefined') return
 
-    window.addEventListener('prom:sw-cache-refreshed', handleCacheRefreshed)
-    window.addEventListener('prom:sw-cache-cleared', handleCacheCleared)
-    window.addEventListener('prom:sw-sync-requested', handleSyncRequested)
+      passkeySupported.value = getSpacetimeAuthMode() === 'hosted' && isHostedPasskeySupported()
+      nativeRuntime.value = isNativeShellRuntime()
+
+      if (messagingEnabled) {
+        const friendUser = resolveFriendCodeUser(user)
+        if (friendUser) {
+          friendCode.value = ensureFriendCode(friendUser)
+        }
+      }
+
+      if (!pwaEnabled || isNativeShellRuntime()) {
+        return
+      }
+
+      const handleCacheRefreshed = () => {
+        swStatus.value = { tone: 'success', message: copy.value.settingsOfflineRefreshSuccess }
+      }
+      const handleCacheCleared = () => {
+        swStatus.value = { tone: 'success', message: copy.value.settingsOfflineCleanupSuccess }
+      }
+      const handleSyncRequested = () => {
+        swStatus.value = { tone: 'info', message: copy.value.settingsOfflineSyncQueued }
+      }
+
+      window.addEventListener('prom:sw-cache-refreshed', handleCacheRefreshed)
+      window.addEventListener('prom:sw-cache-cleared', handleCacheCleared)
+      window.addEventListener('prom:sw-sync-requested', handleSyncRequested)
+
+      removeServiceWorkerListeners = () => {
+        window.removeEventListener('prom:sw-cache-refreshed', handleCacheRefreshed)
+        window.removeEventListener('prom:sw-cache-cleared', handleCacheCleared)
+        window.removeEventListener('prom:sw-sync-requested', handleSyncRequested)
+      }
+    })
 
     ctx.cleanup(() => {
-      window.removeEventListener('prom:sw-cache-refreshed', handleCacheRefreshed)
-      window.removeEventListener('prom:sw-cache-cleared', handleCacheCleared)
-      window.removeEventListener('prom:sw-sync-requested', handleSyncRequested)
+      active = false
+      cancelDeferredBoot()
+      removeServiceWorkerListeners()
     })
   })
 

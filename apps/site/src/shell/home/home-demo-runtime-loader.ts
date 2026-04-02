@@ -14,7 +14,15 @@ import { resolveStaticAssetUrl } from '../core/static-asset-url'
 export type { HomeDemoRuntimeModule } from './home-demo-runtime-types'
 export type { HomeDemoStartupAttachRuntimeModule } from './home-demo-runtime-types'
 
-type HomeDemoStylesheetDocument = Pick<Document, 'createElement' | 'head' | 'querySelector' | 'scripts'>
+type HomeDemoStylesheetBaseDocument = {
+  baseURI?: string
+}
+
+type HomeDemoStylesheetDocument = Pick<
+  Document,
+  'createElement' | 'head' | 'querySelector' | 'scripts'
+> &
+  Partial<HomeDemoStylesheetBaseDocument>
 
 type HomeDemoStylesheetSearchDocument = Pick<
   Document,
@@ -96,7 +104,7 @@ const getGlobalHomeDemoStylePromises = () => {
 }
 
 const getDocumentBaseHref = (
-  doc: HomeDemoStylesheetSearchDocument | null = typeof document !== 'undefined' ? document : null
+  doc: HomeDemoStylesheetBaseDocument | null = typeof document !== 'undefined' ? document : null
 ) => {
   if (doc && typeof doc.baseURI === 'string' && doc.baseURI.length > 0) {
     return doc.baseURI
@@ -109,7 +117,7 @@ const getDocumentBaseHref = (
 
 const canonicalizeDocumentHref = (
   href: string,
-  doc: HomeDemoStylesheetSearchDocument | null = typeof document !== 'undefined' ? document : null
+  doc: HomeDemoStylesheetBaseDocument | null = typeof document !== 'undefined' ? document : null
 ) => {
   try {
     return new URL(href, getDocumentBaseHref(doc)).toString()

@@ -20,6 +20,12 @@ type RouteShellBootstrapConfig = {
 }
 
 const ROUTE_TRANSITION_STATE_KEY = '__PROMETHEUS_ROUTE_TRANSITION__'
+const PROM_PERF_DEBUG_KEY = '__PROM_PERF_DEBUG__'
+const PROM_PERF_DEBUG_FLAG = '__PROM_STATIC_SHELL_DEBUG_PERF__'
+const FIRST_ACTIONABLE_CONTROL_MARK = 'prom:perf:first-actionable-control'
+const ROUTE_TRANSITION_START_MARK = 'prom:perf:route-transition-start'
+const ROUTE_TRANSITION_END_MARK = 'prom:perf:route-transition-end'
+const ROUTE_TRANSITION_MEASURE = 'prom:perf:route-transition'
 const CSP_NONCE_ATTR = 'data-csp-nonce'
 const ROUTE_FALLBACK_ANIMATION_DURATION_MS = 420
 
@@ -114,6 +120,12 @@ export const routeShellTransitionStyle = `@view-transition {
 
 export const routeDirectionRestoreScript = `(function () {
   var stateKey = ${serializeJson(ROUTE_TRANSITION_STATE_KEY)};
+  var perfDebugKey = ${serializeJson(PROM_PERF_DEBUG_KEY)};
+  var perfDebugFlag = ${serializeJson(PROM_PERF_DEBUG_FLAG)};
+  var firstActionableControlMark = ${serializeJson(FIRST_ACTIONABLE_CONTROL_MARK)};
+  var routeTransitionStartMark = ${serializeJson(ROUTE_TRANSITION_START_MARK)};
+  var routeTransitionEndMark = ${serializeJson(ROUTE_TRANSITION_END_MARK)};
+  var routeTransitionMeasure = ${serializeJson(ROUTE_TRANSITION_MEASURE)};
   var fallbackAttr = 'data-nav-fallback';
   var fallbackDurationMs = ${String(ROUTE_FALLBACK_ANIMATION_DURATION_MS)};
   var skippedTransitionThresholdMs = 80;
@@ -127,6 +139,76 @@ export const routeDirectionRestoreScript = `(function () {
       return performance.now();
     }
     return Date.now();
+  };
+  var allowPerfDebug = function () {
+    return Boolean(window[perfDebugFlag]);
+  };
+  var markPerf = function (name) {
+    if (!allowPerfDebug()) return;
+    if (typeof performance !== 'undefined' && typeof performance.mark === 'function') {
+      performance.mark(name);
+    }
+  };
+  var measurePerf = function (name, startMark, endMark) {
+    if (!allowPerfDebug()) return;
+    if (typeof performance === 'undefined' || typeof performance.measure !== 'function') {
+      return;
+    }
+    try {
+      performance.measure(name, startMark, endMark);
+    } catch (error) {
+      // Ignore measure collisions or missing marks.
+    }
+  };
+  var ensurePerfDebugState = function () {
+    if (!allowPerfDebug()) return null;
+    var existing = window[perfDebugKey];
+    if (existing && typeof existing === 'object') {
+      return existing;
+    }
+    var next = {
+      staticShellBootstrapAt: null,
+      workerPrewarmAt: null,
+      firstFragmentCommitAt: null,
+      firstActionableControlAt: null,
+      routeTransitions: []
+    };
+    window[perfDebugKey] = next;
+    return next;
+  };
+  var recordFirstActionableControl = function () {
+    var state = ensurePerfDebugState();
+    if (!state || state.firstActionableControlAt !== null) return;
+    state.firstActionableControlAt = now();
+    markPerf(firstActionableControlMark);
+  };
+  var scheduleFirstActionableControl = function () {
+    var run = function () {
+      if (typeof queueMicrotask === 'function') {
+        queueMicrotask(recordFirstActionableControl);
+        return;
+      }
+      window.setTimeout(recordFirstActionableControl, 0);
+    };
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', run, { once: true });
+      return;
+    }
+    run();
+  };
+  scheduleFirstActionableControl();
+  var reconstructPerfStart = function (startedAtEpoch) {
+    if (typeof startedAtEpoch !== 'number' || !isFinite(startedAtEpoch)) return null;
+    var elapsed = Date.now() - startedAtEpoch;
+    var reconstructed = now() - elapsed;
+    return reconstructed > 0 ? reconstructed : 0;
+  };
+  var routeTransitionDebugEntry = null;
+  var finishRouteTransition = function () {
+    if (!routeTransitionDebugEntry || routeTransitionDebugEntry.endAt !== null) return;
+    routeTransitionDebugEntry.endAt = now();
+    markPerf(routeTransitionEndMark);
+    measurePerf(routeTransitionMeasure, routeTransitionStartMark, routeTransitionEndMark);
   };
   var isSkippedTransitionError = function (error) {
     if (!error || typeof error !== 'object') return false;
@@ -179,6 +261,17 @@ export const routeDirectionRestoreScript = `(function () {
     if (!parsed || parsed.targetKey !== comparableKey || typeof parsed.direction !== 'string') return;
     restoredDirection = parsed.direction;
     document.documentElement.dataset.navDirection = restoredDirection;
+    var perfDebugState = ensurePerfDebugState();
+    if (perfDebugState) {
+      routeTransitionDebugEntry = {
+        from: typeof parsed.from === 'string' ? parsed.from : normalizePath(location.pathname),
+        to: typeof parsed.to === 'string' ? parsed.to : normalizePath(location.pathname),
+        startAt: reconstructPerfStart(parsed.startedAtEpoch),
+        endAt: null
+      };
+      perfDebugState.routeTransitions.push(routeTransitionDebugEntry);
+      markPerf(routeTransitionStartMark);
+    }
     sessionStorage.removeItem(stateKey);
   } catch (error) {
     console.warn('Failed to restore route transition state:', error);
@@ -191,6 +284,7 @@ export const routeDirectionRestoreScript = `(function () {
       if (handled) return;
       handled = true;
       scheduleFallback(restoredDirection);
+      finishRouteTransition();
     };
     if (!transition) {
       scheduleOnce();
@@ -201,10 +295,15 @@ export const routeDirectionRestoreScript = `(function () {
       scheduleOnce();
     };
     var handleFinished = function () {
-      if (handled) return;
+      if (handled) {
+        finishRouteTransition();
+        return;
+      }
       if (now() - startedAt <= skippedTransitionThresholdMs) {
         scheduleOnce();
+        return;
       }
+      finishRouteTransition();
     };
     if (transition.ready && typeof transition.ready.catch === 'function') {
       transition.ready.catch(handleSkippedTransition);
@@ -492,7 +591,10 @@ export const buildRouteShellBootstrapScript = ({
         stateKey,
         JSON.stringify({
           direction: direction,
-          targetKey: targetKey
+          targetKey: targetKey,
+          from: normalizePath(currentUrl.pathname),
+          to: normalizePath(targetUrl.pathname),
+          startedAtEpoch: Date.now()
         })
       );
     } catch (error) {

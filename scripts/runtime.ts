@@ -12,6 +12,7 @@ const bunBin =
   (bunGlobal.Bun?.execPath && typeof bunGlobal.Bun.execPath === 'string' && bunGlobal.Bun.execPath) ||
   (typeof process.execPath === 'string' && process.execPath) ||
   'bun'
+const DEFAULT_BROWSER_PREVIEW_TIMEOUT_MS = 240000
 
 const command = process.argv[2]?.trim() || 'dev'
 
@@ -116,19 +117,37 @@ const readServedTemplatePreset = async (url: string) => {
   return ''
 }
 
-const assertPreviewPreset = async (url: string, expectedPreset: string) => {
-  const resolvedPreset = await readServedTemplatePreset(url)
-  if (!resolvedPreset) {
+const waitForPreviewPreset = async (url: string, expectedPreset: string, timeoutMs: number) => {
+  const startedAt = Date.now()
+  let lastPreset = ''
+  let missingPreset = false
+
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const resolvedPreset = await readServedTemplatePreset(url)
+      if (resolvedPreset === expectedPreset) {
+        return
+      }
+      if (!resolvedPreset) {
+        missingPreset = true
+      } else {
+        lastPreset = resolvedPreset
+      }
+    } catch {
+      // Ignore transient read failures while the preview rebuild is still settling.
+    }
+    await wait(1000)
+  }
+
+  if (!lastPreset && missingPreset) {
     throw new Error(
       `[runtime] Preview responded at ${url} but did not expose data-static-template-preset or a preset label.`
     )
   }
 
-  if (resolvedPreset !== expectedPreset) {
-    throw new Error(
-      `[runtime] Preview served preset '${resolvedPreset}' but '${expectedPreset}' was requested.`
-    )
-  }
+  throw new Error(
+    `[runtime] Preview served preset '${lastPreset || 'unknown'}' but '${expectedPreset}' was requested.`
+  )
 }
 
 const previewWarningPatterns = [
@@ -336,9 +355,9 @@ const runBrowserSmoke = async () => {
       previewStdoutPath,
       previewStderrPath,
       url: baseURL,
-      timeoutMs: readPositiveIntEnv(process.env.PROMETHEUS_BROWSER_PREVIEW_TIMEOUT_MS, 1200000)
+      timeoutMs: readPositiveIntEnv(process.env.PROMETHEUS_BROWSER_PREVIEW_TIMEOUT_MS, DEFAULT_BROWSER_PREVIEW_TIMEOUT_MS)
     })
-    await assertPreviewPreset(baseURL, preset)
+    await waitForPreviewPreset(baseURL, preset, 60000)
     assertNoPreviewWarnings(previewStderr, previewStderrPath)
 
     const test = spawnSync(bunBin, ['x', 'playwright', 'test', specPath], {

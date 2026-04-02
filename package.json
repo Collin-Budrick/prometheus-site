@@ -36,7 +36,7 @@
     "_internal:dev:api": "cargo run --manifest-path packages/platform-rs/Cargo.toml --locked",
     "_internal:dev:storybook": "bun run --cwd apps/site storybook",
     "_internal:build:storybook": "bun run --cwd apps/site build-storybook",
-    "_internal:bench:initial-route": "bun run scripts/benchmark-initial-route.ts",
+    "_internal:bench:initial-route": "node --experimental-strip-types scripts/benchmark-initial-route.ts",
     "_internal:lint:workspace": "bun x oxlint packages apps --config .oxlintrc.json",
     "_internal:lint:api": "cargo fmt --manifest-path packages/platform-rs/Cargo.toml --check",
     "_internal:lint:web": "bun run --cwd apps/site lint",

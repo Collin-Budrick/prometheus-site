@@ -1,6 +1,11 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { chromium } from '@playwright/test'
+import { chromium, type Page } from '@playwright/test'
+
+type AuditCredentials = {
+  email: string
+  password: string
+}
 
 type ManifestBundle = {
   origin?: string
@@ -19,6 +24,22 @@ type ClientBootDebugState = {
   ready: boolean
   source: string
   unlockedAt: number | null
+}
+
+type PrometheusRouteTransitionDebugEntry = {
+  from?: string | null
+  to?: string | null
+  startAt?: number | null
+  endAt?: number | null
+  duration?: number | null
+}
+
+type PrometheusPerfDebugState = {
+  staticShellBootstrapAt?: number | null
+  workerPrewarmAt?: number | null
+  firstFragmentCommitAt?: number | null
+  firstActionableControlAt?: number | null
+  routeTransitions?: PrometheusRouteTransitionDebugEntry[]
 }
 
 type FragmentStartupDebugEntry = {
@@ -40,6 +61,7 @@ type FragmentNetworkDebugEntry = {
 type RouteBenchmark = {
   route: string
   scenario: 'cold-no-interaction'
+  usedAuditCredentials: boolean
   finalPath: string
   observeWindowMs: number
   longTaskCount: number
@@ -49,11 +71,24 @@ type RouteBenchmark = {
   topLongTasks: Array<{ startTime: number; duration: number }>
   unlockSource: string
   unlockAt: number | null
+  staticShellBootstrapAt: number | null
+  workerPrewarmAt: number | null
+  firstFragmentCommitAt: number | null
+  firstActionableControlAt: number | null
+  lastRouteTransition:
+    | {
+        from: string | null
+        to: string | null
+        startAt: number | null
+        endAt: number | null
+        duration: number | null
+      }
+    | null
   fragmentBootstrapBytesBeforeUnlock: number
   fragmentStreamBytesBeforeUnlock: number
   duplicateFragmentBytesBeforeUnlock: number
   duplicateFragmentIdsBeforeUnlock: string[]
-  preUnlockHomeNonCriticalRequests: Array<{
+  preUnlockNonCriticalRequests: Array<{
     at: number
     kind: 'fetch' | 'stream-start'
     ids: string[]
@@ -72,7 +107,8 @@ type RouteBenchmark = {
 const DEFAULT_BASE_URL = 'http://127.0.0.1:4173'
 const DEFAULT_THRESHOLD_MS = 150
 const DEFAULT_OBSERVE_WINDOW_MS = 3000
-const DEFAULT_ROUTES = ['/', '/store', '/login', '/settings', '/profile', '/chat']
+const DEFAULT_ROUTES = ['/', '/login', '/store', '/chat', '/settings', '/profile']
+const AUTHENTICATED_ROUTE_PREFIXES = ['/chat', '/dashboard', '/profile', '/settings'] as const
 const SETTINGS_CHUNK_PATTERNS = [
   /ThemeToggle/i,
   /LanguageToggle/i,
@@ -152,6 +188,73 @@ const parseArgs = () => {
   }
 }
 
+const normalizeRoute = (value: string) => (value.length > 1 && value.endsWith('/') ? value.slice(0, -1) : value)
+
+const routeRequiresAuditCredentials = (route: string) => {
+  const normalized = normalizeRoute(route)
+  return AUTHENTICATED_ROUTE_PREFIXES.some((prefix) => normalized === prefix || normalized.startsWith(`${prefix}/`))
+}
+
+const readAuditCredentials = (): AuditCredentials | null => {
+  const email = process.env.PROMETHEUS_E2E_EMAIL?.trim() ?? ''
+  const password = process.env.PROMETHEUS_E2E_PASSWORD?.trim() ?? ''
+  if (!email || !password) return null
+  return { email, password }
+}
+
+const navigateToAuthenticatedProfile = async (page: Page, baseUrl: string) => {
+  try {
+    await page.goto(`${baseUrl}/profile/`, { waitUntil: 'domcontentloaded' })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (!message.includes('net::ERR_ABORTED')) {
+      throw error
+    }
+  }
+  await page.waitForURL((url) => normalizeRoute(url.pathname) === '/profile', {
+    timeout: 20000
+  })
+}
+
+const signInWithAuditCredentials = async (
+  page: Page,
+  baseUrl: string,
+  credentials: AuditCredentials
+) => {
+  await page.goto(`${baseUrl}/login/`, { waitUntil: 'domcontentloaded' })
+  await page.getByRole('heading', { name: 'Welcome back' }).waitFor({ state: 'visible', timeout: 20000 })
+  await page.getByRole('textbox', { name: 'EMAIL' }).fill(credentials.email)
+  await page.getByRole('textbox', { name: 'PASSWORD' }).fill(credentials.password)
+  await page.getByRole('button', { name: 'SIGN IN' }).click()
+  await navigateToAuthenticatedProfile(page, baseUrl)
+}
+
+const signInWithDevSession = async (page: Page, baseUrl: string) => {
+  await page.goto(`${baseUrl}/login/`, { waitUntil: 'domcontentloaded' })
+  await page.getByRole('heading', { name: 'Welcome back' }).waitFor({ state: 'visible', timeout: 20000 })
+  const response = await page.evaluate(async () => {
+    const authResponse = await fetch('/auth/dev/session', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        loginMethod: 'github',
+        providerId: 'github'
+      })
+    })
+    return {
+      ok: authResponse.ok,
+      status: authResponse.status,
+      text: await authResponse.text()
+    }
+  })
+  if (!response.ok) {
+    throw new Error(`Dev session bootstrap failed: ${response.status} ${response.text}`.trim())
+  }
+  await navigateToAuthenticatedProfile(page, baseUrl)
+}
+
 const collectChunkNames = (patterns: RegExp[]) => {
   const manifestPath = resolve(process.cwd(), 'apps/site/dist/q-manifest.json')
   if (!existsSync(manifestPath)) return new Set<string>()
@@ -191,13 +294,36 @@ const run = async () => {
   const bootChunkNames = collectChunkNames(BOOT_CHUNK_PATTERNS)
   const forbiddenChunkNames = collectForbiddenChunkNames(FORBIDDEN_CHUNK_RULES)
   const browser = await chromium.launch({ headless: true })
+  const context = await browser.newContext({ ignoreHTTPSErrors: true })
+  const auditCredentials = readAuditCredentials()
+  let authenticatedSessionReady = false
 
   try {
     const results: RouteBenchmark[] = []
+    const ensureAuthenticatedSession = async () => {
+      if (authenticatedSessionReady) {
+        return true
+      }
+      const authPage = await context.newPage()
+      try {
+        if (auditCredentials) {
+          await signInWithAuditCredentials(authPage, baseUrl, auditCredentials)
+        } else {
+          await signInWithDevSession(authPage, baseUrl)
+        }
+        authenticatedSessionReady = true
+        return true
+      } finally {
+        await authPage.close()
+      }
+    }
 
     for (const route of routes) {
-      const page = await browser.newPage()
+      const usedAuditCredentials = routeRequiresAuditCredentials(route) ? await ensureAuthenticatedSession() : false
+      const page = await context.newPage()
       await page.addInitScript(() => {
+        ;(window as Window & { __PROM_STATIC_SHELL_DEBUG_PERF__?: boolean }).__PROM_STATIC_SHELL_DEBUG_PERF__ =
+          true
         const entries: Array<{ startTime: number; duration: number }> = []
         ;(window as Window & { __promLongTasks?: Array<{ startTime: number; duration: number }> }).__promLongTasks =
           entries
@@ -217,6 +343,42 @@ const run = async () => {
 
       const result = await page.evaluate(
         ({ settingsChunks, demoChunks, bootChunks, forbiddenChunks, observeWindowMs }) => {
+          const readTimestamp = (value: unknown) => {
+            if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return null
+            return Math.round(value)
+          }
+          const perfDebug =
+            (window as Window & { __PROM_PERF_DEBUG__?: PrometheusPerfDebugState }).__PROM_PERF_DEBUG__ ?? null
+          const perfMarks = performance
+            .getEntriesByType('mark')
+            .map((entry) => ({
+              name: entry.name,
+              startTime: entry.startTime
+            }))
+            .sort((left, right) => left.startTime - right.startTime)
+          const perfMeasures = performance
+            .getEntriesByType('measure')
+            .map((entry) => ({
+              name: entry.name,
+              startTime: entry.startTime,
+              duration: entry.duration
+            }))
+            .sort((left, right) => left.startTime - right.startTime)
+          const findLatestMark = (names: string[]) => {
+            const nameSet = new Set(names)
+            const entry = [...perfMarks].reverse().find((mark) => nameSet.has(mark.name))
+            return readTimestamp(entry?.startTime)
+          }
+          const findLatestMeasure = (names: string[]) => {
+            const nameSet = new Set(names)
+            const entry = [...perfMeasures].reverse().find((measure) => nameSet.has(measure.name))
+            if (!entry) return null
+            return {
+              startAt: readTimestamp(entry.startTime),
+              endAt: readTimestamp(entry.startTime + entry.duration),
+              duration: readTimestamp(entry.duration)
+            }
+          }
           const longTasks = (
             (window as Window & { __promLongTasks?: Array<{ startTime: number; duration: number }> })
               .__promLongTasks ?? []
@@ -233,6 +395,74 @@ const run = async () => {
           const fragmentNetwork =
             (window as Window & { __PROM_FRAGMENT_NETWORK_DEBUG__?: FragmentNetworkDebugEntry[] })
               .__PROM_FRAGMENT_NETWORK_DEBUG__ ?? []
+          const staticShellBootstrapAt =
+            readTimestamp(perfDebug?.staticShellBootstrapAt) ??
+            findLatestMark([
+              'prom:perf:static-shell-bootstrap-start',
+              'prom:perf:static-shell-bootstrap-end',
+              'prom:static-shell-bootstrap',
+              'prometheus:static-shell-bootstrap'
+            ])
+          const workerPrewarmAt =
+            readTimestamp(perfDebug?.workerPrewarmAt) ??
+            findLatestMark([
+              'prom:perf:worker-prewarm',
+              'prom:home:worker-instantiated',
+              'prom:fragment-worker-prewarm',
+              'prom:worker-prewarm',
+              'prometheus:worker-prewarm'
+            ])
+          const firstFragmentCommitAt =
+            readTimestamp(perfDebug?.firstFragmentCommitAt) ??
+            findLatestMark([
+              'prom:perf:first-fragment-commit',
+              'prom:home:first-anchor-patch-applied',
+              'prom:first-fragment-commit',
+              'prometheus:first-fragment-commit'
+            ])
+          const firstActionableControlAt =
+            readTimestamp(perfDebug?.firstActionableControlAt) ??
+            findLatestMark([
+              'prom:perf:first-actionable-control',
+              'prom:home:lcp-release',
+              'prom:first-actionable-control',
+              'prom:actionable-control-ready',
+              'prometheus:first-actionable-control'
+            ]) ??
+            readTimestamp(clientBoot.unlockedAt)
+          const debugRouteTransitions = (perfDebug?.routeTransitions ?? [])
+            .map((entry) => {
+              const startAt = readTimestamp(entry.startAt)
+              const endAt = readTimestamp(entry.endAt)
+              return {
+                from: typeof entry.from === 'string' ? entry.from : null,
+                to: typeof entry.to === 'string' ? entry.to : null,
+                startAt,
+                endAt,
+                duration:
+                  readTimestamp(entry.duration) ??
+                  (startAt !== null && endAt !== null ? Math.max(0, endAt - startAt) : null)
+              }
+            })
+            .filter(
+              (entry) => entry.startAt !== null || entry.endAt !== null || entry.duration !== null
+            )
+          const measuredRouteTransition = findLatestMeasure([
+            'prom:perf:route-transition',
+            'prom:route-transition',
+            'prometheus:route-transition'
+          ])
+          const lastRouteTransition =
+            debugRouteTransitions.at(-1) ??
+            (measuredRouteTransition
+              ? {
+                  from: null,
+                  to: null,
+                  startAt: measuredRouteTransition.startAt,
+                  endAt: measuredRouteTransition.endAt,
+                  duration: measuredRouteTransition.duration
+                }
+              : null)
           const unlockCutoff = clientBoot.unlockedAt ?? observeWindowMs
           const fragmentEntriesBeforeUnlock = fragmentNetwork
             .filter((entry) => entry.at <= unlockCutoff)
@@ -262,8 +492,7 @@ const run = async () => {
             }
             seenFragmentIds.add(entry.id)
           })
-          const preUnlockHomeNonCriticalRequests = fragmentStartup
-            .filter((entry) => entry.shellMode === 'static-home')
+          const preUnlockNonCriticalRequests = fragmentStartup
             .filter((entry) => entry.at <= unlockCutoff)
             .filter((entry) => entry.nonCriticalIds.length > 0)
             .map((entry) => ({
@@ -309,11 +538,16 @@ const run = async () => {
             longTasksOver50ms: longTasks.filter((entry) => entry.duration >= 50).length,
             unlockSource: clientBoot.source,
             unlockAt: clientBoot.unlockedAt === null ? null : Math.round(clientBoot.unlockedAt),
+            staticShellBootstrapAt,
+            workerPrewarmAt,
+            firstFragmentCommitAt,
+            firstActionableControlAt,
+            lastRouteTransition,
             fragmentBootstrapBytesBeforeUnlock,
             fragmentStreamBytesBeforeUnlock,
             duplicateFragmentBytesBeforeUnlock,
             duplicateFragmentIdsBeforeUnlock,
-            preUnlockHomeNonCriticalRequests,
+            preUnlockNonCriticalRequests,
             topLongTasks: [...longTasks]
               .sort((left, right) => right.duration - left.duration)
               .slice(0, 4)
@@ -355,6 +589,7 @@ const run = async () => {
       results.push({
         route,
         scenario: 'cold-no-interaction',
+        usedAuditCredentials,
         ...result
       })
 
@@ -369,7 +604,19 @@ const run = async () => {
         .map((entry) => `${entry.label}:${entry.chunks.join(', ') || 'none'}`)
         .join('; ')
       console.log(
-        `${result.route} [${result.scenario}] -> longTasks=${result.longTaskCount}, over50ms=${result.longTasksOver50ms}, total=${result.totalLongTaskDuration}ms, max=${result.maxLongTask}ms, unlock=${result.unlockSource}${result.unlockAt === null ? '' : `@${result.unlockAt}ms`}, fragmentBootstrapBytes=${result.fragmentBootstrapBytesBeforeUnlock}, fragmentStreamBytes=${result.fragmentStreamBytesBeforeUnlock}, duplicateStreamBytes=${result.duplicateFragmentBytesBeforeUnlock}, homePreUnlockNonCritical=${result.preUnlockHomeNonCriticalRequests.length}, settingsChunks=${
+        `${result.route} [${result.scenario}]${result.usedAuditCredentials ? ' [auth]' : ''} -> longTasks=${result.longTaskCount}, over50ms=${result.longTasksOver50ms}, total=${result.totalLongTaskDuration}ms, max=${result.maxLongTask}ms, unlock=${result.unlockSource}${result.unlockAt === null ? '' : `@${result.unlockAt}ms`}, firstControl=${
+          result.firstActionableControlAt === null ? 'missing' : `${result.firstActionableControlAt}ms`
+        }, staticBootstrap=${
+          result.staticShellBootstrapAt === null ? 'n/a' : `${result.staticShellBootstrapAt}ms`
+        }, workerPrewarm=${
+          result.workerPrewarmAt === null ? 'n/a' : `${result.workerPrewarmAt}ms`
+        }, firstFragmentCommit=${
+          result.firstFragmentCommitAt === null ? 'n/a' : `${result.firstFragmentCommitAt}ms`
+        }, routeTransition=${
+          result.lastRouteTransition?.duration === null || result.lastRouteTransition === null
+            ? 'none'
+            : `${result.lastRouteTransition.duration}ms`
+        }, fragmentBootstrapBytes=${result.fragmentBootstrapBytesBeforeUnlock}, fragmentStreamBytes=${result.fragmentStreamBytesBeforeUnlock}, duplicateStreamBytes=${result.duplicateFragmentBytesBeforeUnlock}, preUnlockNonCritical=${result.preUnlockNonCriticalRequests.length}, settingsChunks=${
           result.loadedSettingsChunksBeforeInteraction.join(', ') || 'none'
         }, demoChunks=${result.loadedDemoChunksBeforeActivation.join(', ') || 'none'}, bootChunks=${
           result.loadedBootChunksBeforeInteraction.join(', ') || 'none'
@@ -386,10 +633,13 @@ const run = async () => {
       (result) => result.route === '/' && result.loadedDemoChunksBeforeActivation.length > 0
     )
     const hasPreUnlockHomeFailure = results.some(
-      (result) => result.route === '/' && result.preUnlockHomeNonCriticalRequests.length > 0
+      (result) => result.preUnlockNonCriticalRequests.length > 0
     )
     const hasDuplicateFragmentFailure = results.some(
       (result) => result.duplicateFragmentBytesBeforeUnlock > 0
+    )
+    const hasFirstActionableFailure = results.some(
+      (result) => result.firstActionableControlAt === null || result.firstActionableControlAt > observeWindowMs
     )
     const hasForbiddenChunkFailure = results.some((result) =>
       result.forbiddenChunkLoadsBeforeInteraction.some((entry) => entry.chunks.length > 0)
@@ -400,11 +650,13 @@ const run = async () => {
       hasDemoChunkFailure ||
       hasPreUnlockHomeFailure ||
       hasDuplicateFragmentFailure ||
+      hasFirstActionableFailure ||
       hasForbiddenChunkFailure
     ) {
       process.exitCode = 1
     }
   } finally {
+    await context.close()
     await browser.close()
   }
 }

@@ -1,5 +1,6 @@
 import { $, component$, useComputed$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { getFragmentTextCopy } from '../lang/client'
+import { runAfterClientIntentIdle } from '../shared/client-boot'
 import {
   beginInitialTask,
   failInitialTask,
@@ -148,19 +149,6 @@ const resolveStoreItemName = (copy: Record<string, string> | undefined, item: St
   if (item.name && item.name !== `Item ${item.id}`) return item.name
   const template = copy?.['Item {{id}}'] ?? 'Item {{id}}'
   return interpolate(template, { id: item.id })
-}
-
-const scheduleIdleTask = (callback: () => void, timeoutMs = 1200) => {
-  if (typeof window === 'undefined') {
-    callback()
-    return () => {}
-  }
-  if (typeof window.requestIdleCallback === 'function') {
-    const handle = window.requestIdleCallback(callback, { timeout: timeoutMs })
-    return () => window.cancelIdleCallback(handle)
-  }
-  const handle = window.setTimeout(callback, Math.min(timeoutMs, 250))
-  return () => window.clearTimeout(handle)
 }
 
 export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, class: className }) => {
@@ -451,16 +439,20 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
         setStoreCommandSender(null)
         return
       }
-      const cleanup = subscribeStoreInventory((snapshot) => {
-        inventoryItems.value = snapshot.items.map((item) => ({ ...item }))
-        streamState.value = snapshot.status
-        streamError.value = snapshot.error
-        if (!initialTaskSettled.value && snapshot.status !== 'connecting') {
-          void settleInitialTask()
-        }
+      let cleanup = () => {}
+      const cancelDeferredSetup = runAfterClientIntentIdle(() => {
+        cleanup = subscribeStoreInventory((snapshot) => {
+          inventoryItems.value = snapshot.items.map((item) => ({ ...item }))
+          streamState.value = snapshot.status
+          streamError.value = snapshot.error
+          if (!initialTaskSettled.value && snapshot.status !== 'connecting') {
+            void settleInitialTask()
+          }
+        })
+        setStoreCommandSender((payload) => executeStoreCommandDirect(payload, { preferHttp: true }))
       })
-      setStoreCommandSender((payload) => executeStoreCommandDirect(payload, { preferHttp: true }))
       ctx.cleanup(() => {
+        cancelDeferredSetup()
         cleanup()
         setStoreCommandSender(null)
       })
@@ -471,41 +463,45 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   useVisibleTask$(
     (ctx) => {
       if (typeof window === 'undefined') return
-      const refreshQueuedCount = async () => {
-        queuedCount.value = await getStoreCartQueueSize()
-      }
-      const cancelInitialQueueSync = scheduleIdleTask(() => {
+      let cleanupQueueBindings = () => {}
+      const cancelDeferredQueueSync = runAfterClientIntentIdle(() => {
+        const refreshQueuedCount = async () => {
+          queuedCount.value = await getStoreCartQueueSize()
+        }
         void refreshQueuedCount()
         if (!(queuedCount.value > 0 && !isOnline())) {
           void flushStoreCartQueue(window.location.origin)
         }
-      })
-      const handleQueue = (event: Event) => {
-        const detail = (event as CustomEvent).detail as { size?: unknown } | undefined
-        const size = Number(detail?.size)
-        if (Number.isFinite(size)) {
-          queuedCount.value = Math.max(0, size)
-          return
+        const handleQueue = (event: Event) => {
+          const detail = (event as CustomEvent).detail as { size?: unknown } | undefined
+          const size = Number(detail?.size)
+          if (Number.isFinite(size)) {
+            queuedCount.value = Math.max(0, size)
+            return
+          }
+          void refreshQueuedCount()
         }
-        void refreshQueuedCount()
-      }
-      const handleMessage = (event: MessageEvent) => {
-        const data = event.data as Record<string, unknown> | undefined
-        if (data?.type === 'store:cart:flush') {
+        const handleMessage = (event: MessageEvent) => {
+          const data = event.data as Record<string, unknown> | undefined
+          if (data?.type === 'store:cart:flush') {
+            void flushStoreCartQueue(window.location.origin)
+          }
+        }
+        const handleResume = () => {
           void flushStoreCartQueue(window.location.origin)
         }
-      }
-      const handleResume = () => {
-        void flushStoreCartQueue(window.location.origin)
-      }
-      window.addEventListener(storeCartQueueEvent, handleQueue)
-      navigator.serviceWorker?.addEventListener('message', handleMessage)
-      window.addEventListener('resume', handleResume)
+        window.addEventListener(storeCartQueueEvent, handleQueue)
+        navigator.serviceWorker?.addEventListener('message', handleMessage)
+        window.addEventListener('resume', handleResume)
+        cleanupQueueBindings = () => {
+          window.removeEventListener(storeCartQueueEvent, handleQueue)
+          navigator.serviceWorker?.removeEventListener('message', handleMessage)
+          window.removeEventListener('resume', handleResume)
+        }
+      })
       ctx.cleanup(() => {
-        cancelInitialQueueSync()
-        window.removeEventListener(storeCartQueueEvent, handleQueue)
-        navigator.serviceWorker?.removeEventListener('message', handleMessage)
-        window.removeEventListener('resume', handleResume)
+        cancelDeferredQueueSync()
+        cleanupQueueBindings()
       })
     },
     { strategy: 'document-idle' }
@@ -514,24 +510,31 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   useVisibleTask$(
     (ctx) => {
       if (typeof window === 'undefined') return
-      const handleInventoryUpdate = (event: Event) => {
-        const detail = (event as CustomEvent).detail
-        const update = normalizeInventoryUpdate(detail)
-        if (!update) return
-        const inventoryIndex = inventoryItems.value.findIndex((entry) => entry.id === update.id)
-        if (inventoryIndex >= 0) {
-          const nextInventory = [...inventoryItems.value]
-          nextInventory[inventoryIndex] = { ...nextInventory[inventoryIndex], quantity: update.quantity }
-          inventoryItems.value = nextInventory
+      let cleanupInventoryUpdates = () => {}
+      const cancelDeferredInventoryUpdates = runAfterClientIntentIdle(() => {
+        const handleInventoryUpdate = (event: Event) => {
+          const detail = (event as CustomEvent).detail
+          const update = normalizeInventoryUpdate(detail)
+          if (!update) return
+          const inventoryIndex = inventoryItems.value.findIndex((entry) => entry.id === update.id)
+          if (inventoryIndex >= 0) {
+            const nextInventory = [...inventoryItems.value]
+            nextInventory[inventoryIndex] = { ...nextInventory[inventoryIndex], quantity: update.quantity }
+            inventoryItems.value = nextInventory
+          }
+          const existingIndex = items.value.findIndex((entry) => entry.id === update.id)
+          if (existingIndex < 0) return
+          const next = [...items.value]
+          next[existingIndex] = { ...next[existingIndex], quantity: update.quantity }
+          items.value = next
         }
-        const existingIndex = items.value.findIndex((entry) => entry.id === update.id)
-        if (existingIndex < 0) return
-        const next = [...items.value]
-        next[existingIndex] = { ...next[existingIndex], quantity: update.quantity }
-        items.value = next
-      }
-      window.addEventListener(storeInventoryEvent, handleInventoryUpdate)
-      ctx.cleanup(() => window.removeEventListener(storeInventoryEvent, handleInventoryUpdate))
+        window.addEventListener(storeInventoryEvent, handleInventoryUpdate)
+        cleanupInventoryUpdates = () => window.removeEventListener(storeInventoryEvent, handleInventoryUpdate)
+      })
+      ctx.cleanup(() => {
+        cancelDeferredInventoryUpdates()
+        cleanupInventoryUpdates()
+      })
     },
     { strategy: 'document-ready' }
   )

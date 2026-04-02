@@ -3,7 +3,7 @@ import { resumeDeferredHomeHydration } from './home-active-controller'
 import { ensureHomeDeferredGlobalStylesheet } from './home-deferred-global-style-loader'
 import { loadHomeBootstrapDeferredRuntime } from './runtime-loaders'
 import { scheduleStaticShellTask } from '../core/scheduler'
-import { loadHomeSettingsInteractionRuntime, loadHomeStaticEntryDemoWarmup } from './runtime-loaders'
+import { loadHomeSettingsInteractionRuntime } from './runtime-loaders'
 import { ensureHomePostAnchorPreconnects } from './home-post-anchor-preconnect'
 import {
   markStaticShellUserTiming,
@@ -24,11 +24,6 @@ type HomeStaticEntryWindow = Window & {
   __PROM_STATIC_HOME_ENTRY__?: boolean
 }
 
-type WarmHomeDemoAssetsOptions = {
-  doc: Document
-  scheduleTask: typeof scheduleStaticShellTask
-}
-
 let primeHomeSettingsInteractionHandler:
   | ((target?: EventTarget | null) => Promise<void> | void)
   | undefined
@@ -45,21 +40,12 @@ type InstallHomeStaticEntryOptions = {
     postLcpIntentTarget?: EventTarget | null
   }) => Promise<void>) | null
   resumeDeferredHydration?: typeof resumeDeferredHomeHydration
-  warmDemoAssets?: (options: WarmHomeDemoAssetsOptions) => Promise<void>
   ensureDeferredGlobalStylesheet?: typeof ensureHomeDeferredGlobalStylesheet
   loadWidgetRuntime?: typeof loadFragmentWidgetRuntime
   preconnectPostAnchorOrigins?: typeof ensureHomePostAnchorPreconnects
 }
 
 const HOME_FRAGMENT_CARD_SELECTOR = '[data-static-fragment-card]'
-
-const warmStaticHomeDemoAssets = ({ doc, scheduleTask }: WarmHomeDemoAssetsOptions) =>
-  loadHomeStaticEntryDemoWarmup().then(({ warmStaticHomeDemoAssets }) =>
-    warmStaticHomeDemoAssets({
-      doc,
-      scheduleTask
-    })
-  )
 
 const resolveInteractionCard = (target: EventTarget | null) => {
   if (!target || typeof target !== 'object') {
@@ -185,7 +171,6 @@ export const installHomeStaticEntry = ({
   loadDeferredRuntime = loadHomeBootstrapDeferredRuntime,
   installDeferredRuntime = null,
   resumeDeferredHydration = resumeDeferredHomeHydration,
-  warmDemoAssets = warmStaticHomeDemoAssets,
   ensureDeferredGlobalStylesheet = ensureHomeDeferredGlobalStylesheet,
   loadWidgetRuntime = loadFragmentWidgetRuntime,
   preconnectPostAnchorOrigins = ensureHomePostAnchorPreconnects
@@ -202,11 +187,9 @@ export const installHomeStaticEntry = ({
   let widgetRuntime:
     | import('../../fragment/ui/fragment-widget-runtime').FragmentWidgetRuntime
     | null = null
-  let homeDemoWarmupPromise: Promise<void> | null = null
   let deferredRuntimePromise: Promise<void> | null = null
   let cancelDeferredGlobalStylesheetStart: (() => void) | null = null
   let cancelDeferredRuntimeStart: (() => void) | null = null
-  let cancelHomeDemoWarmupStart: (() => void) | null = null
   let cancelPendingClickReplay: (() => void) | null = null
 
   const eventOptions: AddEventListenerOptions = { capture: true, passive: true }
@@ -245,37 +228,6 @@ export const installHomeStaticEntry = ({
         settingsBridgeEventOptions
       )
     })
-  }
-
-  const startHomeDemoWarmup = () => {
-    if (homeDemoWarmupPromise) {
-      return homeDemoWarmupPromise
-    }
-
-    markStaticShellUserTiming('prom:home:demo-warm-start')
-    homeDemoWarmupPromise = warmDemoAssets({
-      doc: liveDoc,
-      scheduleTask
-    })
-      .catch((error) => {
-        homeDemoWarmupPromise = null
-        console.error('Static home demo warmup failed:', error)
-      })
-      .finally(() => {
-        markStaticShellUserTiming('prom:home:demo-warm-ready')
-        measureStaticShellUserTiming(
-          'prom:home:demo-warm',
-          'prom:home:demo-warm-start',
-          'prom:home:demo-warm-ready'
-        )
-      })
-
-    return homeDemoWarmupPromise
-  }
-
-  const cancelHomeDemoWarmup = () => {
-    cancelHomeDemoWarmupStart?.()
-    cancelHomeDemoWarmupStart = null
   }
 
   const resumeHomeHydration = () => {
@@ -378,25 +330,6 @@ export const installHomeStaticEntry = ({
         timeoutMs: 5000,
         preferIdle: true,
         waitForLoad: true,
-        waitForPaint: true
-      }
-    )
-  }
-
-  const scheduleHomeDemoWarmup = () => {
-    if (cancelHomeDemoWarmupStart || homeDemoWarmupPromise) {
-      return
-    }
-
-    cancelHomeDemoWarmupStart = scheduleTask(
-      () => {
-        cancelHomeDemoWarmupStart = null
-        void startHomeDemoWarmup()
-      },
-      {
-        priority: 'background',
-        timeoutMs: 2000,
-        preferIdle: true,
         waitForPaint: true
       }
     )
@@ -525,13 +458,11 @@ export const installHomeStaticEntry = ({
     }
     cancelDeferredGlobalStylesheetStart?.()
     cancelDeferredGlobalStylesheetStart = null
-    cancelHomeDemoWarmup()
   }
 
   function handlePageHide() {
     cancelDeferredGlobalStylesheetStart?.()
     cancelDeferredGlobalStylesheetStart = null
-    cancelHomeDemoWarmup()
   }
 
   HOME_BOOTSTRAP_INTENT_EVENTS.forEach((eventName) => {
@@ -562,7 +493,6 @@ export const installHomeStaticEntry = ({
   resumeHomeHydration()
   scheduleDeferredGlobalStylesheet()
   scheduleDeferredRuntime()
-  scheduleHomeDemoWarmup()
 
   return () => {
     HOME_BOOTSTRAP_INTENT_EVENTS.forEach((eventName) => {
@@ -582,7 +512,6 @@ export const installHomeStaticEntry = ({
     cancelDeferredGlobalStylesheetStart = null
     cancelDeferredRuntimeStart?.()
     cancelDeferredRuntimeStart = null
-    cancelHomeDemoWarmup()
     clearPendingClickReplay()
     widgetRuntime?.destroy()
     widgetRuntime = null

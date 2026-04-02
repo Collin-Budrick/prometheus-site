@@ -24,6 +24,10 @@ describe("entry.ssr static bootstrap injection", () => {
     expect(source).toContain("STATIC_HOME_WORKER_DATA_SCRIPT_ID");
     expect(source).toContain("const dataScriptId =");
     expect(source).toContain("scheduleAnchorEntry");
+    expect(source).toContain("const maxAnchorEntryAttempts = 4;");
+    expect(source).toContain("const anchorEntryRetryBaseDelayMs = 250;");
+    expect(source).toContain("scheduleAnchorEntryRetry");
+    expect(source).toContain('console.warn("Static home anchor entry import failed; retrying.", error);');
     expect(source).toContain('requestId: "static-home-anchor-bootstrap"');
     expect(source).toContain('console.error("Static home anchor entry failed:", error);');
     expect(source).toContain('console.error("Static home worker bootstrap failed:", error);');

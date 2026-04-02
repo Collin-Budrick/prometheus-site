@@ -1,6 +1,7 @@
 import { $, component$, useComputed$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { markInitialTasksComplete, resolveFragmentInitialTaskHost } from '../fragment/ui/initial-settle'
 import { getFragmentTextCopy } from '../lang/client'
+import { runAfterClientIntentIdle } from '../shared/client-boot'
 import { useSharedLangSignal } from '../shared/lang-bridge'
 import { createStoreItemDirect } from '../features/store/spacetime-store'
 
@@ -112,33 +113,36 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
     const statusMessage = useSignal<string | null>(null)
     const rootRef = useSignal<HTMLElement>()
 
-    useVisibleTask$(() => {
-      const browserCookies = document.cookie || null
-      if (!browserCookies) return
-      if (
-        name.value !== initialState.name ||
-        price.value !== initialState.price ||
-        quantity.value !== initialState.quantity ||
-        lastQuantity.value !== initialState.lastQuantity ||
-        digitalProduct.value !== initialState.digital
-      ) {
-        return
-      }
-      const nextState = resolveCookieState(browserCookies)
-      if (
-        nextState.name === initialState.name &&
-        nextState.price === initialState.price &&
-        nextState.quantity === initialState.quantity &&
-        nextState.lastQuantity === initialState.lastQuantity &&
-        nextState.digital === initialState.digital
-      ) {
-        return
-      }
-      name.value = nextState.name
-      price.value = nextState.price
-      quantity.value = nextState.quantity
-      lastQuantity.value = nextState.lastQuantity
-      digitalProduct.value = nextState.digital
+    useVisibleTask$((ctx) => {
+      const cancelSync = runAfterClientIntentIdle(() => {
+        const browserCookies = document.cookie || null
+        if (!browserCookies) return
+        if (
+          name.value !== initialState.name ||
+          price.value !== initialState.price ||
+          quantity.value !== initialState.quantity ||
+          lastQuantity.value !== initialState.lastQuantity ||
+          digitalProduct.value !== initialState.digital
+        ) {
+          return
+        }
+        const nextState = resolveCookieState(browserCookies)
+        if (
+          nextState.name === initialState.name &&
+          nextState.price === initialState.price &&
+          nextState.quantity === initialState.quantity &&
+          nextState.lastQuantity === initialState.lastQuantity &&
+          nextState.digital === initialState.digital
+        ) {
+          return
+        }
+        name.value = nextState.name
+        price.value = nextState.price
+        quantity.value = nextState.quantity
+        lastQuantity.value = nextState.lastQuantity
+        digitalProduct.value = nextState.digital
+      })
+      ctx.cleanup(cancelSync)
     })
 
     const fragmentCopy = useComputed$(() => getFragmentTextCopy(langSignal.value))

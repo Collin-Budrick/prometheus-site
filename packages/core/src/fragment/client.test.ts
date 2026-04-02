@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'bun:test'
+import { gunzipSync, gzipSync } from 'node:zlib'
 
 import { buildFragmentFrame, buildFragmentHeartbeatFrame } from './frames'
 import { createFragmentClient } from './client'
@@ -6,16 +7,18 @@ import { decodeFragmentPayload, encodeFragmentPayloadFromTree } from './binary'
 import type { FragmentDefinition, RenderNode } from './types'
 
 const originalFetch = globalThis.fetch
-type MutableGlobals = Omit<typeof globalThis, 'window' | 'Worker' | 'WebTransport'> & {
+type MutableGlobals = Omit<typeof globalThis, 'window' | 'Worker' | 'WebTransport' | 'DecompressionStream'> & {
   window?: Window & typeof globalThis
   Worker?: typeof Worker
   WebTransport?: unknown
+  DecompressionStream?: typeof DecompressionStream
 }
 
 const mutableGlobals = globalThis as MutableGlobals
 const originalWindow = mutableGlobals.window
 const originalWorker = mutableGlobals.Worker
 const originalWebTransport = mutableGlobals.WebTransport
+const originalDecompressionStream = mutableGlobals.DecompressionStream
 
 const tree: RenderNode = {
   type: 'element',
@@ -85,11 +88,37 @@ class ResettingWebTransport {
   close() {}
 }
 
+class MockGzipDecompressionStream {
+  readonly readable: ReadableStream<Uint8Array>
+  readonly writable: WritableStream<Uint8Array>
+
+  constructor(format: string) {
+    if (format !== 'gzip') {
+      throw new Error(`Unsupported mock format: ${format}`)
+    }
+
+    const chunks: Uint8Array[] = []
+    const transform = new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk) {
+        chunks.push(chunk)
+      },
+      flush(controller) {
+        const input = Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)))
+        controller.enqueue(new Uint8Array(gunzipSync(input)))
+      }
+    })
+
+    this.readable = transform.readable
+    this.writable = transform.writable
+  }
+}
+
 afterEach(() => {
   globalThis.fetch = originalFetch
   mutableGlobals.window = originalWindow
   mutableGlobals.Worker = originalWorker
   mutableGlobals.WebTransport = originalWebTransport
+  mutableGlobals.DecompressionStream = originalDecompressionStream
 })
 
 describe('fragment client V2 decoding', () => {
@@ -254,5 +283,62 @@ describe('fragment client V2 decoding', () => {
     expect(transportUrl).toContain(
       `ids=${encodeURIComponent('fragment://visible/a,fragment://visible/b')}`
     )
+  })
+
+  it('decompresses gzip-compressed protocol 2 batch payloads when compression is preferred', async () => {
+    let acceptEncoding = ''
+
+    mutableGlobals.DecompressionStream = MockGzipDecompressionStream as unknown as typeof DecompressionStream
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(String(input), init)
+      acceptEncoding = request.headers.get('x-fragment-accept-encoding') ?? ''
+      return new Response(gzipSync(buildFragmentFrame(definition.id, encodeFragmentPayloadFromTree(definition, tree))), {
+        headers: {
+          'content-type': 'application/octet-stream',
+          'x-fragment-content-encoding': 'gzip'
+        }
+      })
+    }) as unknown as typeof fetch
+
+    const client = createFragmentClient({
+      getApiBase: () => 'http://api.test',
+      getFragmentProtocol: () => 2,
+      isFragmentCompressionPreferred: () => true
+    })
+
+    const payloads = await client.fetchFragmentBatch([{ id: definition.id }])
+
+    expect(acceptEncoding).toContain('gzip')
+    expect(payloads[definition.id]?.tree).toEqual(tree)
+  })
+
+  it('does not advertise streamed compression without native decompression support', async () => {
+    let acceptEncoding = ''
+
+    mutableGlobals.DecompressionStream = undefined
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(String(input), init)
+      acceptEncoding = request.headers.get('x-fragment-accept-encoding') ?? ''
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.close()
+          }
+        }),
+        {
+          headers: { 'content-type': 'application/octet-stream' }
+        }
+      )
+    }) as unknown as typeof fetch
+
+    const client = createFragmentClient({
+      getApiBase: () => 'http://api.test',
+      getFragmentProtocol: () => 2,
+      isFragmentCompressionPreferred: () => true
+    })
+
+    await client.streamFragments('/', () => {})
+
+    expect(acceptEncoding).toBe('')
   })
 })

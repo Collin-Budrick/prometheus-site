@@ -3,10 +3,19 @@
 import { encodeFragmentKnownVersions } from '@core/fragment/known-versions'
 import { isFragmentHeartbeatFrame, parseFragmentFrames } from '@core/fragment/frames'
 import {
+  buildFragmentDecompressionReader,
+  decompressFragmentBytesWithNativeStream,
+  getFragmentResponseEncoding,
+  getSupportedNativeFragmentDecompressionEncodings,
+  type FragmentCompressionEncoding
+} from '@core/fragment/compression'
+import { canDecompressZstd, decompressZstd } from './zstd-runtime'
+import {
   getFragmentHeightViewport,
   resolveFragmentHeightWidthBucket,
   resolveReservedFragmentHeight
 } from '@prometheus/ui/fragment-height'
+import { canReadWorkerStreamEncoding, shouldUseCompressedWorkerBootStream } from './worker-compression'
 import type { FragmentPayload } from '../types'
 import type {
   FragmentRuntimeCommitMessage,
@@ -354,6 +363,140 @@ const decodeBootstrapPayloads = async (bytes: Uint8Array) => {
   return payloads
 }
 
+let supportedWorkerPayloadEncodingsPromise: Promise<FragmentCompressionEncoding[]> | null = null
+
+const getSupportedWorkerPayloadEncodings = async () => {
+  if (!supportedWorkerPayloadEncodingsPromise) {
+    supportedWorkerPayloadEncodingsPromise = (async () => {
+      const supported: FragmentCompressionEncoding[] = [...getSupportedNativeFragmentDecompressionEncodings()]
+      if (await canDecompressZstd()) {
+        supported.push('zstd')
+      }
+      return supported
+    })()
+  }
+  return await supportedWorkerPayloadEncodingsPromise
+}
+
+const buildWorkerFragmentHeaders = async ({
+  includeZstd
+}: {
+  includeZstd: boolean
+}) => {
+  const acceptedEncodings = includeZstd
+    ? await getSupportedWorkerPayloadEncodings()
+    : getSupportedNativeFragmentDecompressionEncodings()
+  if (!acceptedEncodings.length) {
+    return {
+      acceptedEncodings,
+      headers: undefined
+    }
+  }
+  return {
+    acceptedEncodings,
+    headers: {
+      'x-fragment-accept-encoding': acceptedEncodings.join(',')
+    }
+  }
+}
+
+type WorkerFragmentFetchOptions = {
+  url: string
+  signal: AbortSignal
+  cache?: RequestCache
+  includeZstd: boolean
+  label: string
+}
+
+type WorkerFragmentFetchAttempt = {
+  acceptedEncodings: FragmentCompressionEncoding[]
+  encoding: FragmentCompressionEncoding | null
+  response: Response
+}
+
+const fetchWorkerFragmentResponse = async ({
+  url,
+  signal,
+  cache,
+  includeZstd,
+  label
+}: WorkerFragmentFetchOptions) => {
+  const runFetch = async (headers?: HeadersInit): Promise<WorkerFragmentFetchAttempt> => {
+    const acceptedEncodings = headers
+      ? includeZstd
+        ? await getSupportedWorkerPayloadEncodings()
+        : getSupportedNativeFragmentDecompressionEncodings()
+      : getSupportedNativeFragmentDecompressionEncodings()
+    const response = await fetch(url, {
+      cache,
+      signal,
+      headers
+    })
+    if (!response.ok) {
+      throw new Error(`${label} failed: ${response.status}`)
+    }
+    return {
+      acceptedEncodings,
+      encoding: getFragmentResponseEncoding(response.headers),
+      response
+    }
+  }
+
+  const { headers } = await buildWorkerFragmentHeaders({ includeZstd })
+  const initialAttempt = await runFetch(headers)
+
+  return {
+    ...initialAttempt,
+    retryWithoutCompression: async () => await runFetch(undefined)
+  }
+}
+
+const decompressWorkerFragmentBytes = async (
+  bytes: Uint8Array,
+  encoding: FragmentCompressionEncoding | null,
+  acceptedEncodings: FragmentCompressionEncoding[]
+) => {
+  if (!encoding) return bytes
+  if (!acceptedEncodings.includes(encoding)) {
+    throw new Error(`Fragment response encoding '${encoding}' is not supported by the worker runtime`)
+  }
+  if (encoding === 'zstd') {
+    const decoded = await decompressZstd(bytes)
+    if (decoded) {
+      return decoded
+    }
+    throw new Error('Fragment response zstd decompression failed')
+  }
+  const decoded = await decompressFragmentBytesWithNativeStream(bytes, encoding)
+  if (decoded) {
+    return decoded
+  }
+  throw new Error(`Fragment response ${encoding} decompression failed`)
+}
+
+const readWorkerFragmentResponseBytes = async (
+  attempt: WorkerFragmentFetchAttempt,
+  retryWithoutCompression: () => Promise<WorkerFragmentFetchAttempt>
+) => {
+  try {
+    return await decompressWorkerFragmentBytes(
+      new Uint8Array(await attempt.response.arrayBuffer()),
+      attempt.encoding,
+      attempt.acceptedEncodings
+    )
+  } catch (error) {
+    if (!attempt.encoding) {
+      throw error
+    }
+    const fallback = await retryWithoutCompression()
+    return await decompressWorkerFragmentBytes(
+      new Uint8Array(await fallback.response.arrayBuffer()),
+      fallback.encoding,
+      fallback.acceptedEncodings
+    )
+  }
+}
+
 const parseBootstrapHrefSelection = (href: string | null | undefined) => {
   if (!href) return null
   try {
@@ -647,18 +790,16 @@ const fetchFragmentPayload = async (
     params.set('refresh', '1')
   }
 
-  const response = await fetch(`${normalizeApiBase(apiBase)}/fragments?${params.toString()}`, {
+  const attempt = await fetchWorkerFragmentResponse({
+    url: `${normalizeApiBase(apiBase)}/fragments?${params.toString()}`,
     cache: refresh ? 'no-store' : 'default',
-    signal
+    signal,
+    includeZstd: true,
+    label: 'Fragment fetch'
   })
-
-  if (!response.ok) {
-    throw new Error(`Fragment fetch failed: ${response.status}`)
-  }
-
-  const bytes = new Uint8Array(await response.arrayBuffer())
+  const bytes = await readWorkerFragmentResponseBytes(attempt, attempt.retryWithoutCompression)
   const payload = await getDecodePool().decode(fragmentId, bytes)
-  const cacheUpdatedAtRaw = response.headers.get('x-fragment-cache-updated')
+  const cacheUpdatedAtRaw = attempt.response.headers.get('x-fragment-cache-updated')
   const cacheUpdatedAt = cacheUpdatedAtRaw ? Number(cacheUpdatedAtRaw) : Number.NaN
   return {
     ...payload,
@@ -680,16 +821,15 @@ const fetchBootstrapPayloadGroup = async (
     params.set('lang', lang)
   }
 
-  const response = await fetch(`${normalizeApiBase(apiBase)}/fragments/bootstrap?${params.toString()}`, {
+  const attempt = await fetchWorkerFragmentResponse({
+    url: `${normalizeApiBase(apiBase)}/fragments/bootstrap?${params.toString()}`,
     cache: 'default',
-    signal
+    signal,
+    includeZstd: true,
+    label: 'Fragment bootstrap fetch'
   })
-
-  if (!response.ok) {
-    throw new Error(`Fragment bootstrap fetch failed: ${response.status}`)
-  }
-
-  return decodeBootstrapPayloads(new Uint8Array(await response.arrayBuffer()))
+  const bytes = await readWorkerFragmentResponseBytes(attempt, attempt.retryWithoutCompression)
+  return decodeBootstrapPayloads(bytes)
 }
 
 const removeClientFromJobs = (clientId: string) => {
@@ -1077,12 +1217,14 @@ const buildKnownVersions = (client: ClientState, ids: string[]) =>
     return acc
   }, {})
 
-const streamVisibleFragments = async (client: ClientState, ids: string[], controller: AbortController) => {
-  const apiBase = normalizeApiBase(client.apiBase)
+const buildStreamParams = (client: ClientState, ids: string[], live: boolean) => {
   const params = new URLSearchParams({
     path: client.path,
     protocol: '2'
   })
+  if (!live) {
+    params.set('live', '0')
+  }
   if (client.lang) {
     params.set('lang', client.lang)
   }
@@ -1093,75 +1235,137 @@ const streamVisibleFragments = async (client: ClientState, ids: string[], contro
   if (knownVersions) {
     params.set('known', knownVersions)
   }
+  return params
+}
 
-  const response = await fetch(`${apiBase}/fragments/stream?${params.toString()}`, {
-    signal: controller.signal
-  })
-  if (!response.ok || !response.body) {
-    throw new Error(`Fragment stream failed: ${response.status}`)
-  }
+const queueStreamFrameCommit = (client: ClientState, frame: { id: string; payloadBytes: Uint8Array }) => {
+  const pendingTask = getDecodePool()
+    .decode(frame.id, frame.payloadBytes)
+    .then((payload) => {
+      const nextPayload = {
+        ...payload,
+        cacheUpdatedAt:
+          payloadCache.get(buildPayloadCacheKey(client.path, client.lang, payload.id))?.payload.cacheUpdatedAt ??
+          payload.cacheUpdatedAt
+      }
+      const payloadKey = buildPayloadCacheKey(client.path, client.lang, nextPayload.id)
+      const previousVersion = payloadCache.get(payloadKey)?.version
+      if (previousVersion && previousVersion !== buildPayloadVersion(nextPayload)) {
+        void persistentCache.invalidatePayload(client.path, client.lang, nextPayload.id, previousVersion)
+      }
+      payloadCache.set(payloadKey, {
+        payload: nextPayload,
+        version: buildPayloadVersion(nextPayload)
+      })
+      void persistentCache.seedPayload(client.path, client.lang, nextPayload)
+      const currentClient = clients.get(client.id)
+      if (!currentClient || currentClient.lang !== client.lang) return
+      commitPayloadToClient(
+        currentClient,
+        nextPayload,
+        currentClient.entriesById.get(nextPayload.id)?.critical ? 'critical' : 'visible',
+        'stream'
+      )
+    })
+    .catch((error) => {
+      notifyError([client.id], error instanceof Error ? error.message : 'Fragment stream decode failed', [frame.id])
+    })
+    .finally(() => {
+      client.stream?.pendingTasks.delete(pendingTask)
+    })
+  client.stream?.pendingTasks.add(pendingTask)
+}
 
-  const reader = response.body.getReader()
+const processBufferedStreamBytes = async (client: ClientState, bytes: Uint8Array) => {
   const frameBuffer = new FragmentFrameBuffer()
-
-  try {
-    while (true) {
-      if (controller.signal.aborted) {
-        await reader.cancel()
-        return
-      }
-      const chunk = await reader.read()
-      if (chunk.done) {
-        await Promise.allSettled(Array.from(client.stream?.pendingTasks ?? []))
-        return
-      }
-      if (!chunk.value) continue
-
-      frameBuffer.append(chunk.value)
-      for (const frame of frameBuffer.drainFrames()) {
-        if (isFragmentHeartbeatFrame(frame)) {
-          continue
-        }
-        const pendingTask = getDecodePool()
-          .decode(frame.id, frame.payloadBytes)
-          .then((payload) => {
-            const nextPayload = {
-              ...payload,
-              cacheUpdatedAt:
-                payloadCache.get(buildPayloadCacheKey(client.path, client.lang, payload.id))?.payload.cacheUpdatedAt ??
-                payload.cacheUpdatedAt
-            }
-            const payloadKey = buildPayloadCacheKey(client.path, client.lang, nextPayload.id)
-            const previousVersion = payloadCache.get(payloadKey)?.version
-            if (previousVersion && previousVersion !== buildPayloadVersion(nextPayload)) {
-              void persistentCache.invalidatePayload(client.path, client.lang, nextPayload.id, previousVersion)
-            }
-            payloadCache.set(payloadKey, {
-              payload: nextPayload,
-              version: buildPayloadVersion(nextPayload)
-            })
-            void persistentCache.seedPayload(client.path, client.lang, nextPayload)
-            const currentClient = clients.get(client.id)
-            if (!currentClient || currentClient.lang !== client.lang) return
-            commitPayloadToClient(
-              currentClient,
-              nextPayload,
-              currentClient.entriesById.get(nextPayload.id)?.critical ? 'critical' : 'visible',
-              'stream'
-            )
-          })
-          .catch((error) => {
-            notifyError([client.id], error instanceof Error ? error.message : 'Fragment stream decode failed', [frame.id])
-          })
-          .finally(() => {
-            client.stream?.pendingTasks.delete(pendingTask)
-          })
-        client.stream?.pendingTasks.add(pendingTask)
-      }
+  frameBuffer.append(bytes)
+  for (const frame of frameBuffer.drainFrames()) {
+    if (isFragmentHeartbeatFrame(frame)) {
+      continue
     }
-  } finally {
-    await Promise.allSettled(Array.from(client.stream?.pendingTasks ?? []))
+    queueStreamFrameCommit(client, frame)
   }
+  await Promise.allSettled(Array.from(client.stream?.pendingTasks ?? []))
+}
+
+const streamVisibleFragments = async (client: ClientState, ids: string[], controller: AbortController) => {
+  const apiBase = normalizeApiBase(client.apiBase)
+  const readStreamingResponse = async (attempt: WorkerFragmentFetchAttempt) => {
+    let activeAttempt = attempt
+    if (!canReadWorkerStreamEncoding(activeAttempt.encoding, activeAttempt.acceptedEncodings)) {
+      const retryAttempt = await fetchWorkerFragmentResponse({
+        url: `${apiBase}/fragments/stream?${buildStreamParams(client, ids, true).toString()}`,
+        signal: controller.signal,
+        includeZstd: false,
+        label: 'Fragment stream'
+      })
+      activeAttempt = canReadWorkerStreamEncoding(retryAttempt.encoding, retryAttempt.acceptedEncodings)
+        ? retryAttempt
+        : await retryAttempt.retryWithoutCompression()
+    }
+
+    if (!activeAttempt.response.body) {
+      throw new Error('Fragment stream failed: missing response body')
+    }
+
+    const reader = buildFragmentDecompressionReader(
+      activeAttempt.response.body,
+      activeAttempt.encoding,
+      canReadWorkerStreamEncoding(activeAttempt.encoding, activeAttempt.acceptedEncodings)
+    )
+    const frameBuffer = new FragmentFrameBuffer()
+
+    try {
+      while (true) {
+        if (controller.signal.aborted) {
+          await reader.cancel()
+          return
+        }
+        const chunk = await reader.read()
+        if (chunk.done) {
+          await Promise.allSettled(Array.from(client.stream?.pendingTasks ?? []))
+          return
+        }
+        if (!chunk.value) continue
+
+        frameBuffer.append(chunk.value)
+        for (const frame of frameBuffer.drainFrames()) {
+          if (isFragmentHeartbeatFrame(frame)) {
+            continue
+          }
+          queueStreamFrameCommit(client, frame)
+        }
+      }
+    } finally {
+      await Promise.allSettled(Array.from(client.stream?.pendingTasks ?? []))
+    }
+  }
+
+  const shouldUseCompressedBootStream = shouldUseCompressedWorkerBootStream({
+    firstWorkerCommitSent: client.firstWorkerCommitSent,
+    supportedEncodingCount: (await getSupportedWorkerPayloadEncodings()).length
+  })
+  if (shouldUseCompressedBootStream) {
+    const bootAttempt = await fetchWorkerFragmentResponse({
+      url: `${apiBase}/fragments/stream?${buildStreamParams(client, ids, false).toString()}`,
+      signal: controller.signal,
+      includeZstd: true,
+      label: 'Fragment stream'
+    })
+    const bootBytes = await readWorkerFragmentResponseBytes(bootAttempt, bootAttempt.retryWithoutCompression)
+    await processBufferedStreamBytes(client, bootBytes)
+    if (controller.signal.aborted) {
+      return
+    }
+  }
+
+  const liveAttempt = await fetchWorkerFragmentResponse({
+    url: `${apiBase}/fragments/stream?${buildStreamParams(client, ids, true).toString()}`,
+    signal: controller.signal,
+    includeZstd: true,
+    label: 'Fragment stream'
+  })
+  await readStreamingResponse(liveAttempt)
 }
 
 const restartClientStream = (client: ClientState) => {
@@ -1213,13 +1417,9 @@ const startClientEagerFetch = (client: ClientState) => {
   }
 
   const criticalIds = client.planOrder.filter((fragmentId) => client.entriesById.get(fragmentId)?.critical)
-  const deferredIds = client.planOrder.filter((fragmentId) => !client.entriesById.get(fragmentId)?.critical)
 
   if (criticalIds.length) {
     requestClientFragments(client, criticalIds, 'critical')
-  }
-  if (deferredIds.length) {
-    requestClientFragments(client, deferredIds, 'visible')
   }
 }
 

@@ -3,6 +3,13 @@ import { applySpeculationRules, buildSpeculationRulesForPlan } from '@core/fragm
 import type { FragmentPayloadMap, FragmentPlan } from '../types'
 import { appConfig } from '../../site-config'
 import { getCspNonce } from '../../security/client'
+import {
+  isRouteWarmupConstrained,
+  resolveRouteSafetyMode,
+  resolveRouteWarmupAudience,
+  shouldWarmRouteOnTrigger,
+  type RouteWarmupTrigger
+} from '../../shared/route-navigation'
 
 const INITIAL_SPECULATION_IDLE_TIMEOUT_MS = 4000
 
@@ -42,26 +49,74 @@ export const FragmentShellClientEffects = component$(
         const currentPath = window.location.pathname
         const isInitialLoad = pageWindow.__PROM_INITIAL_SPECULATION_HANDLED !== true
         const connectionState = getInitialLoadConnectionState()
-        const applySpeculation = () => {
+        const currentRouteSafety = resolveRouteSafetyMode(currentPath)
+        const currentRouteAudience = resolveRouteWarmupAudience(currentPath)
+        const applySpeculation = (trigger: RouteWarmupTrigger) => {
           if (!active) return
           teardownSpeculation()
-          teardownSpeculation = applySpeculationRules(
-            buildSpeculationRulesForPlan(planValue, appConfig.apiBase, {
-              knownFragments: initialFragmentMap,
-              currentPath,
-              initialLoad: isInitialLoad,
-              saveData: connectionState.saveData,
-              effectiveType: connectionState.effectiveType,
-              maxInitialPrefetchUrls: 2
-            }),
-            document,
-            getCspNonce()
-          )
+          const isConstrained = isRouteWarmupConstrained()
+
+          if (!shouldWarmRouteOnTrigger(currentPath, true, trigger, isConstrained)) {
+            pageWindow.__PROM_INITIAL_SPECULATION_HANDLED = true
+            return
+          }
+
+          const run = async () => {
+            if (!active) return
+            if (currentRouteSafety === 'no-warmup') {
+              pageWindow.__PROM_INITIAL_SPECULATION_HANDLED = true
+              return
+            }
+
+            let isAuthenticated = true
+            if (currentRouteAudience === 'auth') {
+              try {
+                const { loadClientAuthSession } = await import('../../features/auth/auth-session-client')
+                const authSession = await loadClientAuthSession()
+                if (!active) return
+                isAuthenticated = authSession.status === 'authenticated'
+              } catch {
+                pageWindow.__PROM_INITIAL_SPECULATION_HANDLED = true
+                return
+              }
+            }
+
+            if (!active) return
+            if (!shouldWarmRouteOnTrigger(currentPath, isAuthenticated, trigger, isConstrained)) {
+              pageWindow.__PROM_INITIAL_SPECULATION_HANDLED = true
+              return
+            }
+
+            teardownSpeculation()
+            teardownSpeculation = applySpeculationRules(
+              buildSpeculationRulesForPlan(planValue, appConfig.apiBase, {
+                knownFragments: initialFragmentMap,
+                currentPath,
+                initialLoad: isInitialLoad,
+                saveData: connectionState.saveData,
+                effectiveType: connectionState.effectiveType,
+                maxInitialPrefetchUrls: 2
+              }),
+              document,
+              getCspNonce()
+            )
+            pageWindow.__PROM_INITIAL_SPECULATION_HANDLED = true
+          }
+
+          void run()
+        }
+
+        const markHandled = () => {
           pageWindow.__PROM_INITIAL_SPECULATION_HANDLED = true
         }
 
+        if (currentRouteSafety === 'no-warmup') {
+          markHandled()
+          return
+        }
+
         if (!isInitialLoad) {
-          applySpeculation()
+          applySpeculation('pointer')
           ctx.cleanup(() => {
             active = false
             teardownSpeculation()
@@ -71,8 +126,12 @@ export const FragmentShellClientEffects = component$(
 
         const effectiveType = connectionState.effectiveType?.trim().toLowerCase() ?? ''
         if (connectionState.saveData || effectiveType === 'slow-2g' || effectiveType === '2g') {
-          pageWindow.__PROM_INITIAL_SPECULATION_HANDLED = true
+          markHandled()
           return
+        }
+
+        if (currentRouteAudience === 'auth') {
+          // Delay the auth session read until the user has shown intent or the page goes idle.
         }
 
         let settled = false
@@ -83,11 +142,11 @@ export const FragmentShellClientEffects = component$(
         let idleHandle: number | null = null
         let timeoutHandle: number | null = null
         const removeUnlockListeners = () => {
-          window.removeEventListener('pointerdown', unlock)
-          window.removeEventListener('keydown', unlock)
-          window.removeEventListener('focusin', unlock)
+          window.removeEventListener('pointerdown', handlePointerUnlock)
+          window.removeEventListener('keydown', handleFocusUnlock)
+          window.removeEventListener('focusin', handleFocusUnlock)
         }
-        const unlock = () => {
+        const unlock = (trigger: RouteWarmupTrigger) => {
           if (settled) return
           settled = true
           removeUnlockListeners()
@@ -99,18 +158,22 @@ export const FragmentShellClientEffects = component$(
             window.clearTimeout(timeoutHandle)
             timeoutHandle = null
           }
-          applySpeculation()
+          applySpeculation(trigger)
         }
 
-        window.addEventListener('pointerdown', unlock, { once: true })
-        window.addEventListener('keydown', unlock, { once: true })
-        window.addEventListener('focusin', unlock, { once: true })
+        const handlePointerUnlock = () => unlock('pointer')
+        const handleFocusUnlock = () => unlock('focus')
+        const handleIdleUnlock = () => unlock('idle')
+
+        window.addEventListener('pointerdown', handlePointerUnlock, { once: true })
+        window.addEventListener('keydown', handleFocusUnlock, { once: true })
+        window.addEventListener('focusin', handleFocusUnlock, { once: true })
         if (typeof idleApi.requestIdleCallback === 'function') {
-          idleHandle = idleApi.requestIdleCallback(unlock, {
+          idleHandle = idleApi.requestIdleCallback(handleIdleUnlock, {
             timeout: INITIAL_SPECULATION_IDLE_TIMEOUT_MS
           })
         } else {
-          timeoutHandle = window.setTimeout(unlock, INITIAL_SPECULATION_IDLE_TIMEOUT_MS)
+          timeoutHandle = window.setTimeout(handleIdleUnlock, INITIAL_SPECULATION_IDLE_TIMEOUT_MS)
         }
 
         ctx.cleanup(() => {

@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 
-import initLoro, { LoroDoc } from 'loro-crdt/web'
+import { LoroDoc } from 'loro-crdt/web'
+import initLoro from 'loro-crdt/web/loro_wasm'
 import {
   HOME_COLLAB_RECONNECT_BASE_MS,
   HOME_COLLAB_RECONNECT_MAX_MS,
@@ -288,7 +289,7 @@ const connect = () => {
       return
     }
 
-    const payload = parsed as Partial<HomeCollabSocketEvent>
+    const payload = parsed as Partial<Record<string, unknown>> & { type?: unknown }
     if (payload.type === 'home-collab:init' && typeof payload.snapshot === 'string') {
       void applyInitPayload({
         snapshot: payload.snapshot,

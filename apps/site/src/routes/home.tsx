@@ -66,12 +66,13 @@ export const buildHomeHeadLinks = (
       style: eagerStylesheetText,
       props: {
         'data-home-eager-style': 'true'
-      }
+      } as unknown as NonNullable<HomeHeadStyle['props']>
     })
   } else {
     links.unshift({
       rel: 'stylesheet',
-      href: homeStaticEagerStylesheetHref
+      href: homeStaticEagerStylesheetHref,
+      'data-fragment-css': 'home-static-eager'
     })
   }
 

@@ -7,6 +7,7 @@ import {
   markInitialTasksComplete,
   resolveFragmentInitialTaskHost
 } from '../../fragment/ui/initial-settle'
+import { runAfterClientIntentIdle } from '../../shared/client-boot'
 import { useContactInvitesSeed } from '../../features/messaging/contact-invites-seed'
 import {
   emptyInviteGroups,
@@ -194,15 +195,21 @@ export const ContactInvites = component$<ContactInvitesProps>((props) => {
   useVisibleTask$((ctx) => {
     if (typeof window === 'undefined') return
     invitesState.value = hasSeed ? 'idle' : 'loading'
-    const cleanup = subscribeContactInvites((snapshot) => {
-      invites.value = snapshot.invites
-      invitesError.value = snapshot.error
-      invitesState.value = snapshot.status === 'error' ? 'error' : snapshot.status === 'connecting' ? 'loading' : 'idle'
-      if (!initialTaskSettled.value && snapshot.status !== 'connecting') {
-        void settleInitialTask()
-      }
+    let cleanup = () => {}
+    const cancelDeferredSubscription = runAfterClientIntentIdle(() => {
+      cleanup = subscribeContactInvites((snapshot) => {
+        invites.value = snapshot.invites
+        invitesError.value = snapshot.error
+        invitesState.value = snapshot.status === 'error' ? 'error' : snapshot.status === 'connecting' ? 'loading' : 'idle'
+        if (!initialTaskSettled.value && snapshot.status !== 'connecting') {
+          void settleInitialTask()
+        }
+      })
     })
-    ctx.cleanup(cleanup)
+    ctx.cleanup(() => {
+      cancelDeferredSubscription()
+      cleanup()
+    })
   })
 
   useVisibleTask$((ctx) => {

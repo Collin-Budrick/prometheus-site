@@ -32,6 +32,7 @@ import { STATIC_ISLAND_DATA_SCRIPT_ID } from '../../shell/core/constants'
 import { isStaticShellBuild } from '../../shell/core/build-mode'
 import { buildGlobalStylesheetLinks } from '../../shell/core/global-style-assets'
 import { buildStaticRouteTemplatePretextProps } from '../../shell/pretext/pretext-template'
+import { runAfterClientIntentIdle } from '../../shared/client-boot'
 
 type ProfileData = {
   user: {
@@ -187,15 +188,24 @@ export default component$(() => {
   const trimmedName = nameInput.value.trim()
   const canSave = !saving.value && trimmedName.length >= 2 && trimmedName !== savedName.value
 
-  useVisibleTask$(() => {
+  useVisibleTask$((ctx) => {
     if (typeof window === 'undefined') return
     if (localProfile) return
-    const stored = loadLocalProfile()
-    if (!stored) return
-    localBio.value = stored.bio ?? ''
-    localAvatar.value = stored.avatar ?? null
-    localColor.value = stored.color ?? { ...DEFAULT_PROFILE_COLOR }
-    saveLocalProfile(stored)
+    let active = true
+    const cancelDeferredBoot = runAfterClientIntentIdle(() => {
+      if (!active) return
+      const stored = loadLocalProfile()
+      if (!stored) return
+      localBio.value = stored.bio ?? ''
+      localAvatar.value = stored.avatar ?? null
+      localColor.value = stored.color ?? { ...DEFAULT_PROFILE_COLOR }
+      saveLocalProfile(stored)
+    })
+
+    ctx.cleanup(() => {
+      active = false
+      cancelDeferredBoot()
+    })
   })
 
   const handleNameInput = $((event: Event) => {

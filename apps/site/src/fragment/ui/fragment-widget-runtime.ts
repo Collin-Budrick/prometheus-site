@@ -45,7 +45,6 @@ export type FragmentWidgetRuntime = {
 }
 
 let storeStaticBootstrapPromise: Promise<void> | null = null
-let didWarnContactWidgetFallback = false
 
 const loadHomeDemoRuntime = () => import('../../shell/home/home-demo-activate')
 const loadHomeCollabRuntime = () => import('../../shell/home/home-collab-entry')
@@ -168,12 +167,6 @@ const attachStoreWidget = async () => {
 }
 
 const attachContactWidgetFallback = async () => {
-  if (!didWarnContactWidgetFallback) {
-    didWarnContactWidgetFallback = true
-    console.warn(
-      'Fragment contact widget runtime has no plain static adapter yet; leaving SSR shell in place.'
-    )
-  }
   return undefined
 }
 

@@ -1,4 +1,6 @@
-export const HOME_FIRST_LCP_TIMEOUT_MS = 2500
+import { markStaticShellUserTiming } from './static-shell-performance'
+
+export const HOME_FIRST_LCP_TIMEOUT_MS = 600
 
 type HomeLcpEntryList = Pick<PerformanceObserverEntryList, 'getEntries'>
 
@@ -35,10 +37,7 @@ const createResolvedGate = (): HomeFirstLcpGate => ({
 })
 
 const markHomeLcpRelease = () => {
-  if (typeof performance === 'undefined' || typeof performance.mark !== 'function') {
-    return
-  }
-  performance.mark('prom:home:lcp-release')
+  markStaticShellUserTiming('prom:home:lcp-release')
 }
 
 export const createHomeFirstLcpGate = ({

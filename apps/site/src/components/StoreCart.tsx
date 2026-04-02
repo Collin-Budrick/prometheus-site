@@ -1,5 +1,6 @@
 import { $, component$, useComputed$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { getFragmentTextCopy } from '../lang/client'
+import { runAfterClientIntentIdle } from '../shared/client-boot'
 import { markInitialTasksComplete, resolveFragmentInitialTaskHost } from '../fragment/ui/initial-settle'
 import { useSharedLangSignal } from '../shared/lang-bridge'
 import { useStoreSeed } from '../features/store/store-seed'
@@ -29,19 +30,6 @@ type CartLine = StoreCartItem & { qty: number }
 const formatPrice = (value: number) => `$${value.toFixed(2)}`
 
 const cartLayoutCache = new WeakMap<HTMLElement, Map<number, DOMRect>>()
-
-const scheduleIdleTask = (callback: () => void, timeoutMs = 1200) => {
-  if (typeof window === 'undefined') {
-    callback()
-    return () => {}
-  }
-  if (typeof window.requestIdleCallback === 'function') {
-    const handle = window.requestIdleCallback(callback, { timeout: timeoutMs })
-    return () => window.cancelIdleCallback(handle)
-  }
-  const handle = window.setTimeout(callback, Math.min(timeoutMs, 250))
-  return () => window.clearTimeout(handle)
-}
 
 const shouldUseLocalCartFallback = (status: number | undefined) =>
   typeof status !== 'number' || status === 0 || status === 401 || status === 403 || status >= 500
@@ -201,7 +189,7 @@ export const StoreCart = component$<StoreCartProps>(
         if (typeof window === 'undefined') return
         ctx.track(() => cartItems.value.map((item) => `${item.id}:${item.qty}`).join(','))
         const snapshot = [...cartItems.value]
-        const cancelPersist = scheduleIdleTask(() => {
+        const cancelPersist = runAfterClientIntentIdle(() => {
           void persistStoreCartSnapshot(snapshot)
         })
         ctx.cleanup(() => cancelPersist())

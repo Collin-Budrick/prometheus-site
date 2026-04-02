@@ -157,8 +157,6 @@ describe('installHomeStaticEntry', () => {
     let deferredRuntimeInstalls = 0
     let resumeCalls = 0
     let globalStyleCallCount = 0
-    let warmupCallCount = 0
-    let warmupDoc: unknown = null
 
     const cleanup = installHomeStaticEntry({
       win: win as never,
@@ -184,10 +182,6 @@ describe('installHomeStaticEntry', () => {
       ensureDeferredGlobalStylesheet: async ({ doc: liveDoc }) => {
         globalStyleCallCount += 1
         expect(liveDoc).toBe(doc)
-      },
-      warmDemoAssets: async ({ doc: liveDoc }) => {
-        warmupCallCount += 1
-        warmupDoc = liveDoc
       }
     })
 
@@ -197,7 +191,6 @@ describe('installHomeStaticEntry', () => {
     expect(deferredRuntimeLoads).toBe(0)
     expect(deferredRuntimeInstalls).toBe(0)
     expect(globalStyleCallCount).toBe(0)
-    expect(warmupCallCount).toBe(0)
     expect(win.listeners.has('pointerdown')).toBe(true)
     expect(win.listeners.has('keydown')).toBe(true)
     expect(win.listeners.has('touchstart')).toBe(true)
@@ -215,11 +208,6 @@ describe('installHomeStaticEntry', () => {
         preferIdle: true,
         waitForPaint: true,
         timeoutMs: 1500
-      }),
-      expect.objectContaining({
-        preferIdle: true,
-        waitForPaint: true,
-        timeoutMs: 2000
       })
     ])
 
@@ -227,8 +215,6 @@ describe('installHomeStaticEntry', () => {
     await flushMicrotasks()
 
     expect(globalStyleCallCount).toBe(1)
-    expect(warmupCallCount).toBe(1)
-    expect(warmupDoc).toBe(doc)
     expect(deferredRuntimeLoads).toBe(1)
     expect(deferredRuntimeInstalls).toBe(1)
 
@@ -239,23 +225,26 @@ describe('installHomeStaticEntry', () => {
     expect(win.__PROM_STATIC_HOME_ENTRY__).toBe(false)
   })
 
-  it('cancels deferred demo warmup when the page becomes hidden before idle work runs', async () => {
+  it('cancels deferred static work when the page becomes hidden before idle work runs', async () => {
     const win = new MockWindow()
     const doc = new MockDocument()
     const taskQueue = createTaskQueue()
-    let warmupCallCount = 0
+    let globalStyleCallCount = 0
+    let deferredRuntimeLoads = 0
 
     const cleanup = installHomeStaticEntry({
       win: win as never,
       doc: doc as never,
       scheduleTask: taskQueue.schedule as never,
-      loadDeferredRuntime: async () => ({
-        installHomeBootstrapDeferredRuntime: async () => undefined
-      }) as never,
+      loadDeferredRuntime: async () => {
+        deferredRuntimeLoads += 1
+        return {
+          installHomeBootstrapDeferredRuntime: async () => undefined
+        } as never
+      },
       resumeDeferredHydration: () => true,
-      ensureDeferredGlobalStylesheet: async () => undefined,
-      warmDemoAssets: async () => {
-        warmupCallCount += 1
+      ensureDeferredGlobalStylesheet: async () => {
+        globalStyleCallCount += 1
       }
     })
 
@@ -265,7 +254,8 @@ describe('installHomeStaticEntry', () => {
     taskQueue.flush()
     await flushMicrotasks()
 
-    expect(warmupCallCount).toBe(0)
+    expect(globalStyleCallCount).toBe(0)
+    expect(deferredRuntimeLoads).toBe(1)
 
     cleanup()
   })
@@ -295,7 +285,6 @@ describe('installHomeStaticEntry', () => {
         installHomeBootstrapDeferredRuntime: async () => undefined
       }) as never,
       resumeDeferredHydration: () => true,
-      warmDemoAssets: async () => undefined,
       loadWidgetRuntime: async () => {
         loadWidgetRuntimeCalls += 1
         return {
@@ -347,7 +336,6 @@ describe('installHomeStaticEntry', () => {
         installHomeBootstrapDeferredRuntime: async () => undefined
       }) as never,
       resumeDeferredHydration: () => true,
-      warmDemoAssets: async () => undefined,
       loadWidgetRuntime: async () => {
         loadWidgetRuntimeCalls += 1
         return {
@@ -426,7 +414,6 @@ describe('installHomeStaticEntry', () => {
         installHomeBootstrapDeferredRuntime: async () => undefined
       }) as never,
       resumeDeferredHydration: () => true,
-      warmDemoAssets: async () => undefined,
       loadWidgetRuntime: async () => {
         loadWidgetRuntimeCalls += 1
         return {

@@ -1,5 +1,8 @@
+use async_compression::tokio::bufread::GzipDecoder;
+use async_compression::tokio::bufread::ZstdDecoder;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::io::Cursor;
 
 use axum::body::Body;
 use http::header::SET_COOKIE;
@@ -9,6 +12,7 @@ use prometheus_platform_rs::app;
 use prometheus_platform_rs::config::{AppConfig, AuthConfig, FeatureFlags};
 use prometheus_platform_rs::shared::AppState;
 use serde_json::Value;
+use tokio::io::{AsyncReadExt, BufReader};
 use tower::util::ServiceExt;
 
 fn test_config() -> AppConfig {
@@ -48,6 +52,26 @@ fn test_config() -> AppConfig {
 async fn response_json(response: axum::response::Response) -> Value {
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
     serde_json::from_slice(&bytes).unwrap()
+}
+
+async fn response_bytes(response: axum::response::Response) -> Vec<u8> {
+    response.into_body().collect().await.unwrap().to_bytes().to_vec()
+}
+
+async fn gunzip_body(bytes: Vec<u8>) -> Vec<u8> {
+    let reader = BufReader::new(Cursor::new(bytes));
+    let mut decoder = GzipDecoder::new(reader);
+    let mut output = Vec::new();
+    decoder.read_to_end(&mut output).await.unwrap();
+    output
+}
+
+async fn zstd_body(bytes: Vec<u8>) -> Vec<u8> {
+    let reader = BufReader::new(Cursor::new(bytes));
+    let mut decoder = ZstdDecoder::new(reader);
+    let mut output = Vec::new();
+    decoder.read_to_end(&mut output).await.unwrap();
+    output
 }
 
 fn response_cookie(response: &axum::response::Response) -> String {
@@ -432,6 +456,298 @@ async fn fragments_plan_uses_etag_for_conditional_requests() {
         .await
         .unwrap();
     assert_eq!(second.status(), StatusCode::NOT_MODIFIED);
+}
+
+#[tokio::test]
+async fn fragments_batch_supports_opt_in_gzip_compression() {
+    let state = AppState::new(test_config()).await.unwrap();
+    let router = app::build_router(state);
+    let uri = "/fragments/batch?protocol=2";
+    let body = serde_json::json!([
+        {
+            "id": "fragment://page/store/stream@v5",
+            "lang": "en"
+        }
+    ])
+    .to_string();
+
+    let compressed = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(uri)
+                .header("content-type", "application/json")
+                .header("x-fragment-accept-encoding", "gzip")
+                .body(Body::from(body.clone()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(compressed.status(), StatusCode::OK);
+    assert_eq!(
+        compressed
+            .headers()
+            .get("x-fragment-content-encoding")
+            .and_then(|value| value.to_str().ok()),
+        Some("gzip")
+    );
+    assert_eq!(
+        compressed
+            .headers()
+            .get("vary")
+            .and_then(|value| value.to_str().ok()),
+        Some("x-fragment-accept-encoding")
+    );
+    let compressed_bytes = response_bytes(compressed).await;
+
+    let plain = router
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(uri)
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(plain.status(), StatusCode::OK);
+    let plain_bytes = response_bytes(plain).await;
+
+    assert_eq!(gunzip_body(compressed_bytes).await, plain_bytes);
+}
+
+#[tokio::test]
+async fn fragments_batch_supports_opt_in_zstd_compression() {
+    let state = AppState::new(test_config()).await.unwrap();
+    let router = app::build_router(state);
+    let uri = "/fragments/batch?protocol=2";
+    let body = serde_json::json!([
+        {
+            "id": "fragment://page/store/stream@v5",
+            "lang": "en"
+        }
+    ])
+    .to_string();
+
+    let compressed = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(uri)
+                .header("content-type", "application/json")
+                .header("x-fragment-accept-encoding", "zstd")
+                .body(Body::from(body.clone()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(compressed.status(), StatusCode::OK);
+    assert_eq!(
+        compressed
+            .headers()
+            .get("x-fragment-content-encoding")
+            .and_then(|value| value.to_str().ok()),
+        Some("zstd")
+    );
+    let compressed_bytes = response_bytes(compressed).await;
+
+    let plain = router
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(uri)
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(plain.status(), StatusCode::OK);
+    let plain_bytes = response_bytes(plain).await;
+
+    assert_eq!(zstd_body(compressed_bytes).await, plain_bytes);
+}
+
+#[tokio::test]
+async fn fragments_bootstrap_supports_opt_in_gzip_compression() {
+    let state = AppState::new(test_config()).await.unwrap();
+    let router = app::build_router(state);
+    let uri = "/fragments/bootstrap?path=%2Fstore&lang=en&protocol=2";
+
+    let compressed = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(uri)
+                .header("x-fragment-accept-encoding", "gzip")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(compressed.status(), StatusCode::OK);
+    assert_eq!(
+        compressed
+            .headers()
+            .get("x-fragment-content-encoding")
+            .and_then(|value| value.to_str().ok()),
+        Some("gzip")
+    );
+    let compressed_bytes = response_bytes(compressed).await;
+
+    let plain = router
+        .oneshot(
+            Request::builder()
+                .uri(uri)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(plain.status(), StatusCode::OK);
+    let plain_bytes = response_bytes(plain).await;
+
+    assert_eq!(gunzip_body(compressed_bytes).await, plain_bytes);
+}
+
+#[tokio::test]
+async fn fragments_bootstrap_supports_opt_in_zstd_compression() {
+    let state = AppState::new(test_config()).await.unwrap();
+    let router = app::build_router(state);
+    let uri = "/fragments/bootstrap?path=%2Fstore&lang=en&protocol=2";
+
+    let compressed = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(uri)
+                .header("x-fragment-accept-encoding", "zstd")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(compressed.status(), StatusCode::OK);
+    assert_eq!(
+        compressed
+            .headers()
+            .get("x-fragment-content-encoding")
+            .and_then(|value| value.to_str().ok()),
+        Some("zstd")
+    );
+    let compressed_bytes = response_bytes(compressed).await;
+
+    let plain = router
+        .oneshot(
+            Request::builder()
+                .uri(uri)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(plain.status(), StatusCode::OK);
+    let plain_bytes = response_bytes(plain).await;
+
+    assert_eq!(zstd_body(compressed_bytes).await, plain_bytes);
+}
+
+#[tokio::test]
+async fn fragments_stream_supports_opt_in_gzip_compression_without_touching_transport_proxy() {
+    let state = AppState::new(test_config()).await.unwrap();
+    let router = app::build_router(state);
+    let stream_uri = "/fragments/stream?path=%2Fstore&lang=en&protocol=2";
+
+    let compressed = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(stream_uri)
+                .header("x-fragment-accept-encoding", "gzip")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(compressed.status(), StatusCode::OK);
+    assert_eq!(
+        compressed
+            .headers()
+            .get("x-fragment-content-encoding")
+            .and_then(|value| value.to_str().ok()),
+        Some("gzip")
+    );
+
+    let transport = router
+        .oneshot(
+            Request::builder()
+                .uri("/fragments/transport?path=%2Fstore&lang=en&protocol=2")
+                .header("x-fragment-accept-encoding", "gzip")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(transport.status(), StatusCode::OK);
+    assert!(transport.headers().get("x-fragment-content-encoding").is_none());
+}
+
+#[tokio::test]
+async fn fragments_stream_supports_opt_in_zstd_compression_without_touching_transport_proxy() {
+    let state = AppState::new(test_config()).await.unwrap();
+    let router = app::build_router(state);
+    let stream_uri = "/fragments/stream?path=%2Fstore&lang=en&protocol=2&live=0";
+
+    let compressed = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(stream_uri)
+                .header("x-fragment-accept-encoding", "zstd")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(compressed.status(), StatusCode::OK);
+    assert_eq!(
+        compressed
+            .headers()
+            .get("x-fragment-content-encoding")
+            .and_then(|value| value.to_str().ok()),
+        Some("zstd")
+    );
+    let compressed_bytes = response_bytes(compressed).await;
+
+    let plain = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(stream_uri)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(plain.status(), StatusCode::OK);
+    let plain_bytes = response_bytes(plain).await;
+    assert_eq!(zstd_body(compressed_bytes).await, plain_bytes);
+
+    let transport = router
+        .oneshot(
+            Request::builder()
+                .uri("/fragments/transport?path=%2Fstore&lang=en&protocol=2&live=0")
+                .header("x-fragment-accept-encoding", "zstd")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(transport.status(), StatusCode::OK);
+    assert!(transport.headers().get("x-fragment-content-encoding").is_none());
 }
 
 #[tokio::test]

@@ -214,11 +214,72 @@ const decodeWorkerHref = ${JSON.stringify(decodeWorkerHref)};
 const trustedTypesRuntimeScriptPolicyName = ${JSON.stringify(
   TRUSTED_TYPES_RUNTIME_SCRIPT_POLICY_NAME,
 )};
+const promPerfDebugKey = "__PROM_PERF_DEBUG__";
+const promPerfDebugFlag = "__PROM_STATIC_SHELL_DEBUG_PERF__";
+const workerPrewarmMark = "prom:perf:worker-prewarm";
+const maxAnchorEntryAttempts = 4;
+const anchorEntryRetryBaseDelayMs = 250;
 const importModule = (href) => import(/* @vite-ignore */ href);
+const getPromPerfNow = () =>
+  typeof performance !== "undefined" && typeof performance.now === "function"
+    ? performance.now()
+    : Date.now();
+const ensurePromPerfDebug = () => {
+  if (!win[promPerfDebugFlag]) {
+    return null;
+  }
+  const current = win[promPerfDebugKey];
+  if (current && typeof current === "object") {
+    return current;
+  }
+  const next = {
+    staticShellBootstrapAt: null,
+    workerPrewarmAt: null,
+    firstFragmentCommitAt: null,
+    firstActionableControlAt: null,
+    routeTransitions: [],
+  };
+  win[promPerfDebugKey] = next;
+  return next;
+};
+const recordPromPerfTimestamp = (field, markName) => {
+  const state = ensurePromPerfDebug();
+  if (!state || state[field] !== null) {
+    return state ? state[field] : null;
+  }
+  const at = getPromPerfNow();
+  state[field] = at;
+  if (typeof performance !== "undefined" && typeof performance.mark === "function") {
+    performance.mark(markName);
+  }
+  return at;
+};
+let anchorEntryLoaded = false;
+let anchorEntryAttemptCount = 0;
+const scheduleAnchorEntryRetry = () => {
+  if (anchorEntryLoaded || anchorEntryAttemptCount >= maxAnchorEntryAttempts) {
+    return false;
+  }
+  const delayMs = anchorEntryRetryBaseDelayMs * anchorEntryAttemptCount;
+  win.setTimeout(importAnchorEntry, delayMs);
+  return true;
+};
 const importAnchorEntry = () => {
-  void importModule(anchorEntryHref).catch((error) => {
-    console.error("Static home anchor entry failed:", error);
-  });
+  if (anchorEntryLoaded) {
+    return;
+  }
+  anchorEntryAttemptCount += 1;
+  void importModule(anchorEntryHref)
+    .then(() => {
+      anchorEntryLoaded = true;
+    })
+    .catch((error) => {
+      if (scheduleAnchorEntryRetry()) {
+        console.warn("Static home anchor entry import failed; retrying.", error);
+        return;
+      }
+      console.error("Static home anchor entry failed:", error);
+    });
 };
 const parseJsonScript = (scriptId) => {
   const element = doc.getElementById(scriptId);
@@ -233,11 +294,20 @@ const parseJsonScript = (scriptId) => {
   }
 };
 const scheduleAnchorEntry = () => {
+  const run = () => {
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(() => {
+        win.setTimeout(importAnchorEntry, 0);
+      });
+      return;
+    }
+    win.setTimeout(importAnchorEntry, 0);
+  };
   if (doc.readyState === "loading") {
-    doc.addEventListener("DOMContentLoaded", importAnchorEntry, { once: true });
+    doc.addEventListener("DOMContentLoaded", run, { once: true });
     return;
   }
-  importAnchorEntry();
+  run();
 };
 const decodeBase64Bytes = (value) => {
   if (typeof value !== "string" || value.length === 0 || typeof win.atob !== "function") {
@@ -312,8 +382,17 @@ const createClientId = () => {
   }
   return "home-inline:" + Date.now().toString(36) + ":" + Math.random().toString(36).slice(2);
 };
-try {
-  const data = parseJsonScript(dataScriptId);
+const prewarmWorker = () => {
+  let data;
+  try {
+    data = parseJsonScript(dataScriptId);
+  } catch (error) {
+    console.error("Static home worker bootstrap failed:", error);
+    return true;
+  }
+  if (!data) {
+    return false;
+  }
   const anchorBootstrapHref =
     data && typeof data.runtimeAnchorBootstrapHref === "string"
       ? data.runtimeAnchorBootstrapHref
@@ -344,6 +423,7 @@ try {
       type: "module",
       name: "fragment-runtime",
     });
+    recordPromPerfTimestamp("workerPrewarmAt", workerPrewarmMark);
     if (typeof performance !== "undefined" && typeof performance.mark === "function") {
       performance.mark("prom:home:worker-instantiated");
     }
@@ -384,8 +464,25 @@ try {
       }, [bootstrapBytes.buffer]);
     }
   }
-} catch (error) {
-  console.error("Static home worker bootstrap failed:", error);
+  return true;
+};
+if (!prewarmWorker()) {
+  const retryPrewarm = () => {
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(() => {
+        win.setTimeout(prewarmWorker, 0);
+      });
+      return;
+    }
+    win.setTimeout(prewarmWorker, 0);
+  };
+  if (doc.readyState === "loading") {
+    doc.addEventListener("DOMContentLoaded", retryPrewarm, { once: true });
+  } else if (typeof queueMicrotask === "function") {
+    queueMicrotask(retryPrewarm);
+  } else {
+    setTimeout(retryPrewarm, 0);
+  }
 }
 scheduleAnchorEntry();
 })();</script>`;
@@ -492,6 +589,33 @@ const buildStaticBootstrapPreloadTag = (path: string, publicBase: string) => {
   return `<link rel="modulepreload" href="${href}">`;
 };
 
+const buildStaticBootstrapPerfTag = (nonceAttr: string) =>
+  `<script${nonceAttr}>(() => {
+const win = window;
+if (!win || !win.__PROM_STATIC_SHELL_DEBUG_PERF__) return;
+const now = () =>
+  typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now();
+const mark = (name) => {
+  if (typeof performance !== 'undefined' && typeof performance.mark === 'function') {
+    performance.mark(name);
+  }
+};
+const state = win.__PROM_PERF_DEBUG__ ?? (win.__PROM_PERF_DEBUG__ = {
+  staticShellBootstrapAt: null,
+  workerPrewarmAt: null,
+  firstFragmentCommitAt: null,
+  firstActionableControlAt: null,
+  routeTransitions: []
+});
+mark('prom:perf:static-shell-bootstrap-start');
+if (state.staticShellBootstrapAt === null) {
+  state.staticShellBootstrapAt = now();
+}
+mark('prom:perf:static-shell-bootstrap-end');
+})();</script>`;
+
 export const injectStaticBootstrap = (
   html: string,
   publicBase: string,
@@ -518,6 +642,7 @@ export const injectStaticBootstrap = (
     .join("");
   const stylePreloadTags = "";
   const nonceAttr = nonce ? ` nonce="${escapeHtmlAttr(nonce)}"` : "";
+  const perfScriptTag = buildStaticBootstrapPerfTag(nonceAttr)
   const deferredHomeGlobalStyleMetaTag = deferredHomeGlobalStylesheetHref
     ? `<meta name="${HOME_DEFERRED_GLOBAL_STYLE_META_NAME}" content="${escapeHtmlAttr(
         deferredHomeGlobalStylesheetHref,
@@ -535,13 +660,13 @@ export const injectStaticBootstrap = (
   if (resolveStaticBootstrapMode(pathname) === "home-static") {
     return html.replace(
       "</head>",
-      `${preloadTags}${stylePreloadTags}${deferredHomeGlobalStyleMetaTag}${scriptTag}</head>`,
+      `${preloadTags}${stylePreloadTags}${deferredHomeGlobalStyleMetaTag}${perfScriptTag}${scriptTag}</head>`,
     );
   }
 
   return html
     .replace("</head>", `${preloadTags}${stylePreloadTags}</head>`)
-    .replace("</body>", `${scriptTag}</body>`);
+    .replace("</body>", `${perfScriptTag}${scriptTag}</body>`);
 };
 
 const hasStaticOnlyMarker = (html: string) =>

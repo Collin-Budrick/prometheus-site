@@ -17,6 +17,10 @@ import { useSharedLangSignal } from '../../shared/lang-bridge'
 import { runLangViewTransition } from '../../shared/view-transitions'
 import { appConfig } from '../../site-config'
 import { getPublicFragmentApiBase } from '../../shared/public-fragment-config'
+import {
+  PROM_PERF_DEBUG_MARK_NAMES,
+  recordPromPerfTimestamp
+} from '../../shell/home/static-shell-performance'
 import { clearFragmentPlanCache } from '../plan-cache'
 import { clearFragmentShellCache } from './shell-cache'
 import { resolveFragments, resolvePlan } from './utils'
@@ -252,6 +256,12 @@ export const FragmentStreamController = component$(
             acc[normalized.id] = normalized
             return acc
           }, {})
+          if (Object.keys(fragments.value).length > 0) {
+            recordPromPerfTimestamp(
+              'firstFragmentCommitAt',
+              PROM_PERF_DEBUG_MARK_NAMES.firstFragmentCommit
+            )
+          }
         }
 
         if (isPaused) {
@@ -268,7 +278,29 @@ export const FragmentStreamController = component$(
         const dynamicCriticalSeed = dynamicCriticalIds?.value ?? []
         const dynamicCriticalSet = new Set<string>()
         const isCriticalId = (id: string) => staticCriticalIds.has(id) || dynamicCriticalSet.has(id)
+        const hasActionableCriticalState = (payloads: FragmentPayloadMap) =>
+          Array.from(staticCriticalIds).every((id) => Boolean(payloads[id])) &&
+          Array.from(dynamicCriticalSet).every((id) => Boolean(payloads[id]))
         const hasMissingCriticalFragments = criticalIds.some((id) => !fragments.value[id])
+        const deferredVisibleRequestIds = new Set<string>()
+        let actionableUnlocked = hasActionableCriticalState(fragments.value)
+        const releaseDeferredVisibleRequests = () => {
+          if (!active || !actionableUnlocked || !deferredVisibleRequestIds.size) return
+          const ids = Array.from(deferredVisibleRequestIds).filter((id) => !isCriticalId(id))
+          deferredVisibleRequestIds.clear()
+          if (ids.length) {
+            requestFragments(ids, 'visible')
+          }
+        }
+        const recordFirstActionableControl = () => {
+          actionableUnlocked = true
+          const timestamp = recordPromPerfTimestamp(
+            'firstActionableControlAt',
+            PROM_PERF_DEBUG_MARK_NAMES.firstActionableControl
+          )
+          releaseDeferredVisibleRequests()
+          return timestamp
+        }
         let hiddenFlushReleased = !canObserve
 
         if (!canObserve) {
@@ -361,6 +393,10 @@ export const FragmentStreamController = component$(
 
           if (next) {
             const nextValue = next
+            recordPromPerfTimestamp(
+              'firstFragmentCommitAt',
+              PROM_PERF_DEBUG_MARK_NAMES.firstFragmentCommit
+            )
             if (shouldAnimateLangSwap && hasLangRefresh && hasVisibleRefresh && !langTransitionInFlight) {
               langTransitionInFlight = true
               void runLangViewTransition(
@@ -368,6 +404,9 @@ export const FragmentStreamController = component$(
                   fragments.value = nextValue
                   if (layoutTick) {
                     layoutTick.value += 1
+                  }
+                  if (hasActionableCriticalState(nextValue)) {
+                    recordFirstActionableControl()
                   }
                 },
                 {
@@ -382,6 +421,9 @@ export const FragmentStreamController = component$(
               fragments.value = nextValue
               if (layoutTick) {
                 layoutTick.value += 1
+              }
+              if (hasActionableCriticalState(nextValue)) {
+                recordFirstActionableControl()
               }
             }
           }
@@ -590,6 +632,7 @@ export const FragmentStreamController = component$(
           if (!newlyCritical.length) return
           newlyCritical.forEach((id) => {
             dynamicCriticalSet.add(id)
+            deferredVisibleRequestIds.delete(id)
             const payload = fragments.value[id]
             if (payload) {
               applyFragmentEffects(payload)
@@ -607,6 +650,7 @@ export const FragmentStreamController = component$(
           observer = new IntersectionObserver(
             (entries) => {
               const ready: string[] = []
+              const deferredReady: string[] = []
               let visibilityChanged = false
               entries.forEach((entry) => {
                 const target = entry.target as HTMLElement
@@ -622,13 +666,22 @@ export const FragmentStreamController = component$(
                   if (existing && !isCriticalId(id)) {
                     applyFragmentEffects(existing)
                   }
-                  ready.push(id)
+                  if (isCriticalId(id) || actionableUnlocked) {
+                    ready.push(id)
+                  } else {
+                    deferredVisibleRequestIds.add(id)
+                    deferredReady.push(id)
+                  }
                 } else {
                   visibilityChanged = visibleIds.delete(id) || visibilityChanged
+                  deferredVisibleRequestIds.delete(id)
                 }
               })
               if (ready.length) {
                 requestFragments(ready, 'visible')
+              }
+              if (deferredReady.length && actionableUnlocked) {
+                releaseDeferredVisibleRequests()
               }
               if (visibilityChanged) {
                 bridge.setVisibleIds(Array.from(visibleIds))
@@ -648,8 +701,16 @@ export const FragmentStreamController = component$(
         }
 
         if (!canObserve) {
-          requestFragments(allIds, 'visible')
+          if (actionableUnlocked) {
+            requestFragments(allIds, 'visible')
+          } else {
+            allIds.filter((id) => !isCriticalId(id)).forEach((id) => deferredVisibleRequestIds.add(id))
+          }
           bridge.setVisibleIds(allIds)
+        }
+
+        if (hasActionableCriticalState(fragments.value)) {
+          recordFirstActionableControl()
         }
 
         ctx.cleanup(() => {
@@ -660,6 +721,7 @@ export const FragmentStreamController = component$(
           resizeObserver?.disconnect()
           pending.clear()
           visibleIds.clear()
+          deferredVisibleRequestIds.clear()
           queued.clear()
           requestedIds.clear()
           elementsById.clear()

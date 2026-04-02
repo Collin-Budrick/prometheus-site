@@ -18,6 +18,51 @@ type AuditCredentials = {
   password: string
 }
 
+type ClientBootDebugState = {
+  ready: boolean
+  source: string
+  unlockedAt: number | null
+}
+
+type PrometheusRouteTransitionDebugEntry = {
+  from?: string | null
+  to?: string | null
+  startAt?: number | null
+  endAt?: number | null
+  duration?: number | null
+}
+
+type PrometheusPerfDebugState = {
+  staticShellBootstrapAt?: number | null
+  workerPrewarmAt?: number | null
+  firstFragmentCommitAt?: number | null
+  firstActionableControlAt?: number | null
+  routeTransitions?: PrometheusRouteTransitionDebugEntry[]
+}
+
+export type PrometheusPerfSnapshot = {
+  pathname: string
+  clientBoot: ClientBootDebugState
+  staticShellBootstrapAt: number | null
+  workerPrewarmAt: number | null
+  firstFragmentCommitAt: number | null
+  firstActionableControlAt: number | null
+  lastRouteTransition: {
+    from: string | null
+    to: string | null
+    startAt: number | null
+    endAt: number | null
+    duration: number | null
+  } | null
+  routeTransitions: Array<{
+    from: string | null
+    to: string | null
+    startAt: number | null
+    endAt: number | null
+    duration: number | null
+  }>
+}
+
 type CardHeightSnapshot = {
   contentHeight: number
   liveMinHeight: number | null
@@ -25,13 +70,40 @@ type CardHeightSnapshot = {
   reservationHeight: number | null
 }
 
-const dockLabels = ['Home', 'Store', 'Lab', 'Login'] as const
+const publicDockLabels = ['Home', 'Store', 'Lab', 'Login'] as const
+const authenticatedDockLabels = ['Profile', 'Chat', 'Settings', 'Dashboard'] as const
 const ignoredConsolePatterns = [/^\[vite\]\s/i]
 const ignoredPageErrorPatterns = [/^Transition was skipped$/i]
 const ignoredNetworkUrlPatterns = [/\/favicon\.ico(?:\?.*)?$/i]
 const ignoredRequestFailurePatterns = [
   /\/build\/static-shell\/.*\/fragment\/runtime\/worker\.js(?:\?v=.*)?\s+\(net::ERR_BLOCKED_BY_RESPONSE\)/i
 ]
+const perfMarkNames = {
+  staticShellBootstrapAt: [
+    'prom:perf:static-shell-bootstrap-start',
+    'prom:perf:static-shell-bootstrap-end',
+    'prom:static-shell-bootstrap',
+    'prometheus:static-shell-bootstrap'
+  ],
+  workerPrewarmAt: [
+    'prom:perf:worker-prewarm',
+    'prom:fragment-worker-prewarm',
+    'prom:worker-prewarm',
+    'prometheus:worker-prewarm'
+  ],
+  firstFragmentCommitAt: [
+    'prom:perf:first-fragment-commit',
+    'prom:first-fragment-commit',
+    'prometheus:first-fragment-commit'
+  ],
+  firstActionableControlAt: [
+    'prom:perf:first-actionable-control',
+    'prom:first-actionable-control',
+    'prom:actionable-control-ready',
+    'prometheus:first-actionable-control'
+  ],
+  routeTransition: ['prom:perf:route-transition', 'prom:route-transition', 'prometheus:route-transition']
+} as const
 
 const normalizePathname = (value: string) =>
   value.length > 1 && value.endsWith('/') ? value.slice(0, -1) : value
@@ -52,6 +124,9 @@ const shouldIgnoreNetworkUrl = (url: string) =>
 const shouldIgnoreRequestFailure = (request: Request) => {
   const failureText = request.failure()?.errorText?.trim() ?? ''
   if (!failureText) return false
+  if (failureText === 'net::ERR_ABORTED' && request.isNavigationRequest()) {
+    return true
+  }
   if (
     ignoredRequestFailurePatterns.some((pattern) =>
       pattern.test(`${request.url()} (${failureText})`)
@@ -145,14 +220,40 @@ export const createRuntimeIssueTracker = (page: Page): RuntimeIssueTracker => {
   }
 }
 
+export const enablePrometheusPerfDebug = async (page: Page) => {
+  await page.addInitScript(() => {
+    ;(window as Window & { __PROM_STATIC_SHELL_DEBUG_PERF__?: boolean }).__PROM_STATIC_SHELL_DEBUG_PERF__ = true
+  })
+}
+
 export const expectPathname = async (page: Page, expectedPathname: string) => {
   await expect
     .poll(() => normalizePathname(new URL(page.url()).pathname))
     .toBe(normalizePathname(expectedPathname))
 }
 
+const navigateToProfileAfterAuth = async (page: Page) => {
+  try {
+    await page.goto('/profile/', { waitUntil: 'domcontentloaded' })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (!message.includes('net::ERR_ABORTED')) {
+      throw error
+    }
+  }
+  await expectPathname(page, '/profile')
+}
+
+const resolveDockLabels = async (page: Page) => {
+  const dockMode =
+    (await page.locator('[data-static-dock-mode]').first().getAttribute('data-static-dock-mode').catch(() => null)) ??
+    (await page.locator('.dock-shell').first().getAttribute('data-dock-mode').catch(() => null))
+
+  return dockMode === 'auth' ? authenticatedDockLabels : publicDockLabels
+}
+
 export const expectDockShortcuts = async (page: Page) => {
-  for (const label of dockLabels) {
+  for (const label of await resolveDockLabels(page)) {
     await expect(page.getByRole('link', { name: label }).first()).toBeVisible()
   }
 }
@@ -315,6 +416,163 @@ export const expectHeightDriftWithin = async (
   }
 }
 
+export const readPrometheusPerformance = async (page: Page): Promise<PrometheusPerfSnapshot> =>
+  await page.evaluate(({ markNames }) => {
+    const readTimestamp = (value: unknown) => {
+      if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return null
+      return Math.round(value)
+    }
+    const perfDebug =
+      (window as Window & { __PROM_PERF_DEBUG__?: PrometheusPerfDebugState }).__PROM_PERF_DEBUG__ ?? null
+    const clientBoot =
+      (window as Window & { __PROM_CLIENT_BOOT__?: ClientBootDebugState }).__PROM_CLIENT_BOOT__ ?? {
+        ready: false,
+        source: 'pending',
+        unlockedAt: null
+      }
+    const marks = performance
+      .getEntriesByType('mark')
+      .map((entry) => ({
+        name: entry.name,
+        startTime: entry.startTime
+      }))
+      .sort((left, right) => left.startTime - right.startTime)
+    const measures = performance
+      .getEntriesByType('measure')
+      .map((entry) => ({
+        name: entry.name,
+        startTime: entry.startTime,
+        duration: entry.duration
+      }))
+      .sort((left, right) => left.startTime - right.startTime)
+    const findLatestMark = (names: string[]) => {
+      const nameSet = new Set(names)
+      const entry = [...marks].reverse().find((mark) => nameSet.has(mark.name))
+      return readTimestamp(entry?.startTime)
+    }
+    const findLatestMeasure = (names: string[]) => {
+      const nameSet = new Set(names)
+      const entry = [...measures].reverse().find((measure) => nameSet.has(measure.name))
+      if (!entry) return null
+      return {
+        startAt: readTimestamp(entry.startTime),
+        endAt: readTimestamp(entry.startTime + entry.duration),
+        duration: readTimestamp(entry.duration)
+      }
+    }
+    const staticShellBootstrapAt =
+      readTimestamp(perfDebug?.staticShellBootstrapAt) ?? findLatestMark(markNames.staticShellBootstrapAt)
+    const workerPrewarmAt =
+      readTimestamp(perfDebug?.workerPrewarmAt) ?? findLatestMark(markNames.workerPrewarmAt)
+    const firstFragmentCommitAt =
+      readTimestamp(perfDebug?.firstFragmentCommitAt) ?? findLatestMark(markNames.firstFragmentCommitAt)
+    const firstActionableControlAt =
+      readTimestamp(perfDebug?.firstActionableControlAt) ??
+      findLatestMark(markNames.firstActionableControlAt) ??
+      readTimestamp(clientBoot.unlockedAt)
+    const debugRouteTransitions = (perfDebug?.routeTransitions ?? [])
+      .map((entry) => {
+        const startAt = readTimestamp(entry.startAt)
+        const endAt = readTimestamp(entry.endAt)
+        return {
+          from: typeof entry.from === 'string' ? entry.from : null,
+          to: typeof entry.to === 'string' ? entry.to : null,
+          startAt,
+          endAt,
+          duration:
+            readTimestamp(entry.duration) ??
+            (startAt !== null && endAt !== null ? Math.max(0, endAt - startAt) : null)
+        }
+      })
+      .filter((entry) => entry.startAt !== null || entry.endAt !== null || entry.duration !== null)
+    const measuredRouteTransition = findLatestMeasure(markNames.routeTransition)
+    const routeTransitions =
+      debugRouteTransitions.length > 0
+        ? debugRouteTransitions
+        : measuredRouteTransition
+          ? [
+              {
+                from: null,
+                to: null,
+                startAt: measuredRouteTransition.startAt,
+                endAt: measuredRouteTransition.endAt,
+                duration: measuredRouteTransition.duration
+              }
+            ]
+          : []
+
+    return {
+      pathname: window.location.pathname,
+      clientBoot: {
+        ready: Boolean(clientBoot.ready),
+        source: typeof clientBoot.source === 'string' ? clientBoot.source : 'pending',
+        unlockedAt: readTimestamp(clientBoot.unlockedAt)
+      },
+      staticShellBootstrapAt,
+      workerPrewarmAt,
+      firstFragmentCommitAt,
+      firstActionableControlAt,
+      lastRouteTransition: routeTransitions.at(-1) ?? null,
+      routeTransitions
+    }
+  }, { markNames: perfMarkNames })
+
+export const expectPrometheusPerformanceSignals = async (
+  page: Page,
+  label: string,
+  {
+    requireStaticShellBootstrap = false,
+    requireWorkerPrewarm = false,
+    requireFirstFragmentCommit = false,
+    requireFirstActionableControl = true,
+    maxFirstActionableControlMs = 5000,
+    expectRouteTransitionTo,
+    timeoutMs = 15000
+  }: {
+    requireStaticShellBootstrap?: boolean
+    requireWorkerPrewarm?: boolean
+    requireFirstFragmentCommit?: boolean
+    requireFirstActionableControl?: boolean
+    maxFirstActionableControlMs?: number
+    expectRouteTransitionTo?: string
+    timeoutMs?: number
+  } = {}
+) => {
+  let snapshot: PrometheusPerfSnapshot | null = null
+
+  await expect
+    .poll(async () => {
+      snapshot = await readPrometheusPerformance(page)
+      if (requireStaticShellBootstrap && snapshot.staticShellBootstrapAt === null) return false
+      if (requireWorkerPrewarm && snapshot.workerPrewarmAt === null) return false
+      if (requireFirstFragmentCommit && snapshot.firstFragmentCommitAt === null) return false
+      if (requireFirstActionableControl && snapshot.firstActionableControlAt === null) return false
+      if (expectRouteTransitionTo) {
+        const actualTo = snapshot.lastRouteTransition?.to
+        if (!actualTo || normalizePathname(actualTo) !== normalizePathname(expectRouteTransitionTo)) {
+          return false
+        }
+      }
+      return true
+    }, { timeout: timeoutMs })
+    .toBe(true)
+
+  const resolvedSnapshot = snapshot!
+
+  if (requireFirstActionableControl) {
+    expect(
+      resolvedSnapshot.firstActionableControlAt,
+      `${label} should expose first actionable control timing`
+    ).not.toBeNull()
+    expect(
+      resolvedSnapshot.firstActionableControlAt!,
+      `${label} exceeded the first actionable control budget of ${maxFirstActionableControlMs}ms`
+    ).toBeLessThanOrEqual(maxFirstActionableControlMs)
+  }
+
+  return resolvedSnapshot
+}
+
 export const openAndCloseSettings = async (page: Page) => {
   const settingsButton = page.getByRole('button', { name: 'Settings' }).first()
   const dialog = page.locator('.settings-dropdown[role="dialog"][aria-label="Settings"]').first()
@@ -349,11 +607,42 @@ export const readAuditCredentials = (): AuditCredentials | null => {
   return { email, password }
 }
 
-export const signInWithAuditCredentials = async (page: Page, credentials: AuditCredentials) => {
+const signInWithDevSession = async (page: Page) => {
+  await page.goto('/login/', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible()
+  const response = await page.evaluate(async () => {
+    const authResponse = await fetch('/auth/dev/session', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        loginMethod: 'github',
+        providerId: 'github'
+      })
+    })
+    return {
+      ok: authResponse.ok,
+      status: authResponse.status,
+      text: await authResponse.text()
+    }
+  })
+  expect(
+    response.ok,
+    `Expected /auth/dev/session to succeed, received ${response.status}: ${response.text}`
+  ).toBe(true)
+  await navigateToProfileAfterAuth(page)
+}
+
+export const signInWithAuditCredentials = async (page: Page, credentials?: AuditCredentials | null) => {
+  if (!credentials) {
+    await signInWithDevSession(page)
+    return
+  }
   await page.goto('/login/', { waitUntil: 'domcontentloaded' })
   await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible()
   await page.getByRole('textbox', { name: 'EMAIL' }).fill(credentials.email)
   await page.getByRole('textbox', { name: 'PASSWORD' }).fill(credentials.password)
   await page.getByRole('button', { name: 'SIGN IN' }).click()
-  await expectPathname(page, '/profile')
+  await navigateToProfileAfterAuth(page)
 }

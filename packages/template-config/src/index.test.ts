@@ -6,7 +6,7 @@ import {
   resolveTemplateFeatures,
   templatePresetDescriptors,
   templatePresetIds
-} from './index.ts'
+} from './index'
 
 describe('template preset descriptors', () => {
   it('includes the expanded starter presets', () => {

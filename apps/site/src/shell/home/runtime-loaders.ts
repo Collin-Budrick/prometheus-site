@@ -59,7 +59,7 @@ export type HomeBootstrapDeferredRuntimeModule = {
 }
 
 export type HomeControllerRuntimeModule = {
-  destroyHomeController: typeof import('./home-bootstrap-controller-runtime').destroyHomeController
+  destroyHomeController: typeof import('./home-controller-runtime').destroyHomeController
 }
 
 export type HomeBootstrapPostLcpRuntimeModule = {

@@ -1,5 +1,13 @@
 import type { FragmentPayload, FragmentPlan, HeadOp } from './types'
 import { decodeFragmentPayload } from './binary'
+import {
+  buildFragmentDecompressionReader,
+  decompressFragmentBytesWithNativeStream,
+  getFragmentResponseEncoding,
+  getSupportedNativeFragmentDecompressionEncodings,
+  type FragmentCompressionEncoding,
+  type NativeFragmentCompressionEncoding
+} from './compression'
 import { isFragmentHeartbeatFrame, parseFragmentFrames } from './frames'
 import { encodeFragmentKnownVersions, type FragmentKnownVersions } from './known-versions'
 import { createFragmentPlanCache, type FragmentPlanCache } from './plan-cache'
@@ -142,8 +150,6 @@ type FragmentNetworkDebugEntry = {
   source: 'single' | 'batch' | 'fetch-stream' | 'webtransport-stream' | 'webtransport-datagram'
 }
 
-const supportedEncodings = ['br', 'gzip', 'deflate'] as const
-type CompressionEncoding = (typeof supportedEncodings)[number]
 const WEBTRANSPORT_FAILURE_COOLDOWN_MS = 60_000
 
 const appliedCss = new Map<string, HTMLStyleElement | HTMLLinkElement>()
@@ -399,14 +405,23 @@ export const createFragmentClient = (
     if (options.lang) {
       params.set('lang', options.lang)
     }
+    const acceptedEncodings =
+      isFragmentCompressionPreferred() ? getSupportedNativeFragmentDecompressionEncodings() : []
     const response = await fetch(`${api}/fragments?${params.toString()}`, {
       cache: options.refresh ? 'no-store' : 'default',
-      signal: options.signal
+      signal: options.signal,
+      headers: acceptedEncodings.length
+        ? { 'x-fragment-accept-encoding': acceptedEncodings.join(',') }
+        : undefined
     })
     if (!response.ok) {
       throw new Error(`Fragment fetch failed: ${response.status}`)
     }
-    const bytes = new Uint8Array(await response.arrayBuffer())
+    const bytes = await decompressResponseBytes(
+      new Uint8Array(await response.arrayBuffer()),
+      getFragmentResponseEncoding(response.headers),
+      acceptedEncodings
+    )
     recordFragmentNetworkDebug({ id, bytes: bytes.byteLength, source: 'single' })
     const cacheUpdatedAt = parseCacheUpdatedAt(response.headers)
     const decodeFragmentPayload = await loadDecoder(isDecodeWorkerPreferred())
@@ -449,9 +464,16 @@ export const createFragmentClient = (
     appendProtocol(params)
     appendKnownVersions(params, options.knownVersions)
     const batchUrl = params.size ? `${api}/fragments/batch?${params.toString()}` : `${api}/fragments/batch`
+    const acceptedEncodings =
+      isFragmentCompressionPreferred() ? getSupportedNativeFragmentDecompressionEncodings() : []
     const response = await fetch(batchUrl, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        ...(acceptedEncodings.length
+          ? { 'x-fragment-accept-encoding': acceptedEncodings.join(',') }
+          : {})
+      },
       body: JSON.stringify(
         entries.map((entry) => ({
           id: entry.id,
@@ -468,11 +490,17 @@ export const createFragmentClient = (
     }
 
     const decodeFragmentPayload = await loadDecoder(isDecodeWorkerPreferred())
+    const encodedBytes = new Uint8Array(await response.arrayBuffer())
+    const responseBytes = await decompressResponseBytes(
+      encodedBytes,
+      getFragmentResponseEncoding(response.headers),
+      acceptedEncodings
+    )
 
     const entriesWithPayload =
       getFragmentProtocol() === 2
         ? await Promise.all(
-            parseFragmentFrames(new Uint8Array(await response.arrayBuffer()))
+            parseFragmentFrames(responseBytes)
               .filter((frame) => !isFragmentHeartbeatFrame(frame))
               .map(async (frame) => {
                 recordFragmentNetworkDebug({
@@ -484,7 +512,9 @@ export const createFragmentClient = (
               })
           )
         : await Promise.all(
-            Object.entries((await response.json()) as Record<string, string>).map(async ([id, base64]) => {
+            Object.entries(
+              JSON.parse(new TextDecoder().decode(responseBytes)) as Record<string, string>
+            ).map(async ([id, base64]) => {
               const bytes =
                 typeof Buffer !== 'undefined'
                   ? new Uint8Array(Buffer.from(base64, 'base64'))
@@ -502,33 +532,6 @@ export const createFragmentClient = (
 
   const getWebTransportCtor = () =>
     (globalThis as typeof globalThis & { WebTransport?: WebTransportConstructor }).WebTransport ?? null
-
-  const getDecompressionStreamCtor = () =>
-    (globalThis as typeof globalThis & {
-      DecompressionStream?: new (format: CompressionEncoding) => TransformStream<Uint8Array, Uint8Array>
-    }).DecompressionStream ?? null
-
-  let cachedDecompressionEncodings: CompressionEncoding[] | null = null
-
-  const getSupportedDecompressionEncodings = () => {
-    if (cachedDecompressionEncodings) return cachedDecompressionEncodings
-    const ctor = getDecompressionStreamCtor()
-    if (!ctor) {
-      cachedDecompressionEncodings = []
-      return cachedDecompressionEncodings
-    }
-    const supported: CompressionEncoding[] = []
-    for (const encoding of supportedEncodings) {
-      try {
-        new ctor(encoding)
-        supported.push(encoding)
-      } catch {
-        // unsupported encoding
-      }
-    }
-    cachedDecompressionEncodings = supported
-    return supported
-  }
 
   const toAbsoluteApiBase = (apiBase: string) => {
     if (!apiBase) return ''
@@ -707,32 +710,18 @@ export const createFragmentClient = (
     }
   }
 
-  const getResponseEncoding = (headers: Headers): CompressionEncoding | null => {
-    const raw =
-      headers.get('x-fragment-content-encoding')?.trim().toLowerCase() ??
-      headers.get('content-encoding')?.trim().toLowerCase()
-    if (!raw) return null
-    return supportedEncodings.find((encoding) => raw.includes(encoding)) ?? null
-  }
-
-  const buildStreamReader = (
-    stream: ReadableStream<Uint8Array>,
-    encoding: CompressionEncoding | null,
-    enableDecompression: boolean
+  const decompressResponseBytes = async (
+    bytes: Uint8Array,
+    encoding: FragmentCompressionEncoding | null,
+    acceptedEncodings: NativeFragmentCompressionEncoding[]
   ) => {
-    if (!encoding || !enableDecompression) {
-      return stream.getReader()
+    if (!encoding) return bytes
+    if (encoding === 'zstd' || !acceptedEncodings.includes(encoding)) {
+      throw new Error(`Fragment response encoding '${encoding}' is not supported by the client`)
     }
-    const ctor = getDecompressionStreamCtor()
-    if (!ctor) {
-      return stream.getReader()
-    }
-    try {
-      const transform = new ctor(encoding) as unknown as TransformStream<Uint8Array, Uint8Array>
-      return stream.pipeThrough(transform).getReader()
-    } catch {
-      return stream.getReader()
-    }
+    const decoded = await decompressFragmentBytesWithNativeStream(bytes, encoding)
+    if (decoded) return decoded
+    throw new Error(`Fragment response ${encoding} decompression failed`)
   }
 
   const streamFragmentsWithFetch = async (
@@ -743,7 +732,7 @@ export const createFragmentClient = (
   ) => {
     const api = getApiBase()
     const preferCompression = isFragmentCompressionPreferred()
-    const acceptedEncodings = preferCompression ? getSupportedDecompressionEncodings() : []
+    const acceptedEncodings = preferCompression ? getSupportedNativeFragmentDecompressionEncodings() : []
     const headers: HeadersInit | undefined = acceptedEncodings.length
       ? { 'x-fragment-accept-encoding': acceptedEncodings.join(',') }
       : undefined
@@ -765,9 +754,13 @@ export const createFragmentClient = (
       throw new Error(`Fragment stream failed: ${response.status}`)
     }
 
-    const encoding = getResponseEncoding(response.headers)
-    const canDecompress = Boolean(encoding && acceptedEncodings.includes(encoding))
-    const reader = buildStreamReader(response.body, encoding, canDecompress)
+    const encoding = getFragmentResponseEncoding(response.headers)
+    if (encoding && !acceptedEncodings.includes(encoding as NativeFragmentCompressionEncoding)) {
+      logStreamMetrics('fetch', metrics, 'error')
+      throw new Error(`Fragment stream encoding '${encoding}' is not supported for streaming`)
+    }
+    const canDecompress = Boolean(encoding && acceptedEncodings.includes(encoding as NativeFragmentCompressionEncoding))
+    const reader = buildFragmentDecompressionReader(response.body, encoding, canDecompress)
     const decodePayload = await loadDecoder(isDecodeWorkerPreferred())
 
     try {

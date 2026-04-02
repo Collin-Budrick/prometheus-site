@@ -14,6 +14,7 @@ type StorybookGlobalTarget = typeof globalThis & {
 
 const storybookAppConfig: PublicAppConfig = {
   apiBase: '/api',
+  authSocialProviders: [],
   webTransportBase: '',
   preferWebTransport: false,
   preferWebTransportDatagrams: false,

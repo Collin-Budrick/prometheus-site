@@ -1,4 +1,11 @@
 import { decodeFragmentPayload } from '../../../../../packages/core/src/fragment/binary'
+import {
+  buildFragmentDecompressionReader,
+  decompressFragmentBytesWithNativeStream,
+  getFragmentResponseEncoding,
+  getSupportedNativeFragmentDecompressionEncodings,
+  type NativeFragmentCompressionEncoding
+} from '@core/fragment/compression'
 import { isFragmentHeartbeatFrame, parseFragmentFrames } from '../../../../../packages/core/src/fragment/frames'
 import { encodeFragmentKnownVersions, type FragmentKnownVersions } from '../../../../../packages/core/src/fragment/known-versions'
 import type { FragmentPayload, HeadOp } from '../../../../../packages/core/src/fragment/types'
@@ -280,6 +287,32 @@ const appendFragmentIds = (params: URLSearchParams, ids: string[] | undefined) =
   params.set('ids', normalized.join(','))
 }
 
+const buildHomeFragmentRequestHeaders = () => {
+  const acceptedEncodings = getSupportedNativeFragmentDecompressionEncodings()
+  if (!acceptedEncodings.length) {
+    return undefined
+  }
+  return {
+    'x-fragment-accept-encoding': acceptedEncodings.join(',')
+  }
+}
+
+const decompressHomeFragmentBytes = async (
+  bytes: Uint8Array,
+  encoding: ReturnType<typeof getFragmentResponseEncoding>,
+  acceptedEncodings: NativeFragmentCompressionEncoding[]
+) => {
+  if (!encoding) return bytes
+  if (encoding === 'zstd' || !acceptedEncodings.includes(encoding)) {
+    throw new Error(`Home fragment response encoding '${encoding}' is not supported by the client`)
+  }
+  const decoded = await decompressFragmentBytesWithNativeStream(bytes, encoding)
+  if (decoded) {
+    return decoded
+  }
+  throw new Error(`Home fragment response ${encoding} decompression failed`)
+}
+
 const resolveHomeFragmentBootstrapSelectionHref = ({
   ids,
   lang,
@@ -365,7 +398,10 @@ export const fetchHomeFragmentBatch = async (
 
   const response = await fetch(`${getPublicFragmentApiBase()}/fragments/batch?${params.toString()}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      ...(buildHomeFragmentRequestHeaders() ?? {})
+    },
     body: JSON.stringify(
       ids.map((id) => ({
         id,
@@ -381,7 +417,15 @@ export const fetchHomeFragmentBatch = async (
     throw new Error(`Home fragment batch fetch failed: ${response.status}`)
   }
 
-  return parseFragmentFrames(new Uint8Array(await response.arrayBuffer()))
+  const acceptedEncodings = getSupportedNativeFragmentDecompressionEncodings()
+  const encoding = getFragmentResponseEncoding(response.headers)
+  const bytes = await decompressHomeFragmentBytes(
+    new Uint8Array(await response.arrayBuffer()),
+    encoding,
+    acceptedEncodings
+  )
+
+  return parseFragmentFrames(bytes)
     .filter((frame) => !isFragmentHeartbeatFrame(frame))
     .reduce<Record<string, FragmentPayload>>((acc, frame) => {
       acc[frame.id] = decodeFragment(frame.id, frame.payloadBytes)
@@ -415,7 +459,8 @@ export const streamHomeFragmentFrames = async (
   appendFragmentIds(params, options.ids)
 
   const response = await fetch(`${getPublicFragmentApiBase()}/fragments/stream?${params.toString()}`, {
-    signal: options.signal
+    signal: options.signal,
+    headers: buildHomeFragmentRequestHeaders()
   })
 
   if (!response.ok || !response.body) {
@@ -425,7 +470,19 @@ export const streamHomeFragmentFrames = async (
     })
   }
 
-  const reader = response.body.getReader()
+  const acceptedEncodings = getSupportedNativeFragmentDecompressionEncodings()
+  const encoding = getFragmentResponseEncoding(response.headers)
+  if (encoding && (encoding === 'zstd' || !acceptedEncodings.includes(encoding))) {
+    throw new FragmentStreamError(`Fragment stream encoding '${encoding}' is not supported for streaming`, {
+      retryable: false
+    })
+  }
+
+  const reader = buildFragmentDecompressionReader(
+    response.body,
+    encoding,
+    Boolean(encoding && acceptedEncodings.includes(encoding))
+  )
   const frameBuffer = new FragmentFrameBuffer()
 
   try {

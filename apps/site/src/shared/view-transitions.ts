@@ -1,3 +1,10 @@
+import {
+  PROM_PERF_DEBUG_MARK_NAMES,
+  finishPromPerfRouteTransition,
+  measureStaticShellPerformance,
+  startPromPerfRouteTransition
+} from '../shell/home/static-shell-performance'
+
 export type DocumentWithViewTransition = Document & {
   startViewTransition?: (callback: () => void | Promise<void>) => { finished: Promise<void> }
 }
@@ -149,11 +156,25 @@ export const runRouteViewTransition = (
   update: () => void | Promise<void>,
   options: RouteViewTransitionOptions
 ) => {
+  const currentPath = typeof window !== 'undefined' ? window.location.pathname : ''
+  const perfTransition = startPromPerfRouteTransition(currentPath, currentPath)
+  const finalizePerfTransition = () => {
+    if (perfTransition) {
+      perfTransition.to = typeof window !== 'undefined' ? window.location.pathname : perfTransition.to
+    }
+    finishPromPerfRouteTransition(perfTransition)
+    measureStaticShellPerformance(
+      'prom:perf:route-transition',
+      PROM_PERF_DEBUG_MARK_NAMES.routeTransitionStart,
+      PROM_PERF_DEBUG_MARK_NAMES.routeTransitionEnd
+    )
+  }
+
   if (!supportsViewTransitions() || activeRouteTransitions > 0) {
     if (typeof document !== 'undefined') {
       document.documentElement.dataset.navDirection = options.direction
     }
-    return Promise.resolve(update())
+    return Promise.resolve(update()).finally(finalizePerfTransition)
   }
 
   const root = document.documentElement
@@ -173,10 +194,12 @@ export const runRouteViewTransition = (
       await mutation
     })
     const finalize = () => {
+      finalizePerfTransition()
       activeRouteTransitions = Math.max(0, activeRouteTransitions - 1)
     }
     return settleTransition(transition.finished, finalize)
   } catch {
+    finalizePerfTransition()
     activeRouteTransitions = Math.max(0, activeRouteTransitions - 1)
     return Promise.resolve(update())
   }

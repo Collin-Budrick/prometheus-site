@@ -60,9 +60,17 @@ import {
   expandStaticShellPreloadPaths
 } from '../shell/core/build-manifest.server'
 import {
+  createRouteWarmupController,
   createDockRouteDescriptors,
   createRouteWarmupDescriptors,
+  getIdleWarmupDescriptors,
+  isRouteWarmupConstrained,
+  resolveComparableRouteKey,
   resolveDockOwner,
+  resolveRouteSafetyMode,
+  resolveWarmableAnchor,
+  resolveWarmableRouteUrl,
+  shouldWarmRouteOnTrigger,
 } from '../shared/route-navigation'
 import {
   buildRouteShellBootstrapScript,
@@ -1248,6 +1256,86 @@ const InteractiveShellLayout = component$(() => {
         ? copy.value.fragmentStatusStalled
         : copy.value.fragmentStatusIdle
   const hasMultipleLangs = supportedLangs.length > 1
+
+  useVisibleTask$(
+    (ctx) => {
+      if (typeof window === 'undefined') return
+      const pathName = ctx.track(() => location.url.pathname)
+      const pathSearch = ctx.track(() => location.url.search)
+      const currentLang = ctx.track(() => langSignal.value)
+      const authenticated = ctx.track(() => authSession.value.status === 'authenticated')
+      if (!appConfig.enablePrefetch) return
+
+      const warmupDescriptors = createRouteWarmupDescriptors(TOPBAR_NAV_ITEMS, AUTH_NAV_ITEMS).map((descriptor) => ({
+        href: withLangParam(descriptor.href, currentLang),
+        safety: descriptor.safety,
+        warmupAudience: descriptor.warmupAudience
+      }))
+      const controller = createRouteWarmupController({
+        documentRef: document,
+        nonce
+      })
+      const idleApi = window as Window & {
+        requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number
+        cancelIdleCallback?: (handle: number) => void
+      }
+      const constrained = isRouteWarmupConstrained()
+      const currentComparableKey = resolveComparableRouteKey(`${pathName}${pathSearch || ''}`, window.location.origin)
+      let idleHandle: number | null = null
+      let timeoutHandle: number | null = null
+
+      const setIdleWarmups = () => {
+        controller.setIdlePrefetchUrls(
+          getIdleWarmupDescriptors(pathName, warmupDescriptors, authenticated).map((descriptor) => descriptor.href)
+        )
+      }
+
+      const warmFromEvent = (target: EventTarget | null, trigger: 'pointer' | 'focus') => {
+        const anchor = resolveWarmableAnchor(target)
+        if (!anchor) return
+        const url = resolveWarmableRouteUrl(anchor, window.location.origin)
+        if (!url) return
+        if (resolveComparableRouteKey(url, window.location.origin) === currentComparableKey) {
+          return
+        }
+        if (!shouldWarmRouteOnTrigger(url.pathname, authenticated, trigger, constrained)) {
+          return
+        }
+        controller.warmTarget(url.toString(), resolveRouteSafetyMode(url.pathname) === 'prerender-ok')
+      }
+
+      const handlePointerWarmup = (event: Event) => {
+        warmFromEvent(event.target, 'pointer')
+      }
+      const handleFocusWarmup = (event: Event) => {
+        warmFromEvent(event.target, 'focus')
+      }
+
+      if (!constrained) {
+        if (typeof idleApi.requestIdleCallback === 'function') {
+          idleHandle = idleApi.requestIdleCallback(setIdleWarmups, { timeout: 1600 })
+        } else {
+          timeoutHandle = window.setTimeout(setIdleWarmups, 220)
+        }
+      }
+
+      document.addEventListener('pointerover', handlePointerWarmup, true)
+      document.addEventListener('focusin', handleFocusWarmup, true)
+
+      ctx.cleanup(() => {
+        document.removeEventListener('pointerover', handlePointerWarmup, true)
+        document.removeEventListener('focusin', handleFocusWarmup, true)
+        if (idleHandle !== null) {
+          idleApi.cancelIdleCallback?.(idleHandle)
+        }
+        if (timeoutHandle !== null) {
+          window.clearTimeout(timeoutHandle)
+        }
+        controller.dispose()
+      })
+    },
+    { strategy: 'document-idle' }
+  )
 
   useVisibleTask$(
     (ctx) => {

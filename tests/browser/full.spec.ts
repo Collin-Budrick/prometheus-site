@@ -1,12 +1,14 @@
 import { expect, test, type Page } from '@playwright/test'
 import {
   createRuntimeIssueTracker,
+  enablePrometheusPerfDebug,
   expectCardShrinksBelowInitialReservation,
   expectCardSettlesToContentHeight,
   expectDockShortcuts,
   expectHeightDriftWithin,
   expectMeasuredCard,
   expectPathname,
+  expectPrometheusPerformanceSignals,
   openAndCloseSettings,
   readAuditCredentials,
   signInWithAuditCredentials,
@@ -157,6 +159,57 @@ test.describe('full preset live route audit', () => {
 
       expect(page.url()).toBe(currentUrl)
       await expectPathname(page, '/')
+    })
+  })
+
+  test('performance marks cover cold loads and representative interactions on public routes', async ({
+    page
+  }) => {
+    test.slow()
+
+    await runWithRuntimeTracking(page, 'public route performance audit', async () => {
+      await enablePrometheusPerfDebug(page)
+      await page.goto('/', { waitUntil: 'domcontentloaded' })
+      await expect(page.getByRole('heading', { name: 'Field brief' })).toBeVisible()
+
+      const homePerf = await expectPrometheusPerformanceSignals(page, 'home cold load', {
+        requireStaticShellBootstrap: true,
+        requireWorkerPrewarm: true,
+        requireFirstFragmentCommit: true
+      })
+
+      await page.getByRole('button', { name: /run plan/i }).click()
+      await expectPrometheusPerformanceSignals(page, 'home interaction', {
+        requireStaticShellBootstrap: true,
+        requireWorkerPrewarm: true,
+        requireFirstFragmentCommit: true
+      })
+
+      await page.locator('.dock-link[aria-label="Store"]').click()
+      await expectPathname(page, '/store/')
+      await waitForStoreRuntimeReady(page)
+      const storePerf = await expectPrometheusPerformanceSignals(page, 'store route transition', {
+        requireFirstActionableControl: false
+      })
+      expect(storePerf.routeTransitions.length, 'store route transition should be recorded').toBeGreaterThan(0)
+
+      const search = page.getByRole('searchbox', { name: 'Search the store...' })
+      await search.fill('Item 15')
+      await expect(search).toHaveValue('Item 15')
+      await expect(page.locator('.store-stream-meta')).toContainText('1 results')
+      await expectPrometheusPerformanceSignals(page, 'store interaction')
+
+      await page.goto('/login/', { waitUntil: 'domcontentloaded' })
+      await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible()
+      await expectPrometheusPerformanceSignals(page, 'login cold load', {
+        requireStaticShellBootstrap: true
+      })
+
+      await page.getByRole('tab', { name: 'CREATE ACCOUNT' }).click()
+      await expect(page.getByRole('textbox', { name: 'NAME' })).toBeVisible()
+      await expectPrometheusPerformanceSignals(page, 'login interaction', {
+        requireStaticShellBootstrap: true
+      })
     })
   })
 
@@ -466,25 +519,54 @@ test.describe('full preset live route audit', () => {
 
   test('authenticated routes load when audit credentials are provided', async ({ page }) => {
     const credentials = readAuditCredentials()
-    test.skip(!credentials, 'Set PROMETHEUS_E2E_EMAIL and PROMETHEUS_E2E_PASSWORD to audit authenticated routes.')
     test.slow()
 
     await runWithRuntimeTracking(page, 'authenticated routes', async () => {
-      await signInWithAuditCredentials(page, credentials!)
+      await signInWithAuditCredentials(page, credentials)
 
       const authenticatedRoutes = [
-        { path: '/dashboard/', title: 'Dashboard | Prometheus', heading: 'Dashboard' },
-        { path: '/profile/', title: 'Profile | Prometheus', heading: 'Profile' },
-        { path: '/settings/', title: 'Settings | Prometheus', heading: 'Settings' },
-        { path: '/chat/', title: 'Chat | Prometheus', heading: 'Chat' }
+        { path: '/dashboard/', title: 'Dashboard | Prometheus', locator: () => page.getByRole('heading', { name: 'Dashboard' }).first() },
+        { path: '/profile/', title: 'Profile | Prometheus', locator: () => page.getByRole('heading', { name: 'Profile' }).first() },
+        { path: '/settings/', title: 'Settings | Prometheus', locator: () => page.getByRole('heading', { name: 'Settings' }).first() },
+        {
+          path: '/chat/',
+          title: 'Chat | Prometheus',
+          locator: () =>
+            page
+              .locator('[data-fragment-id="fragment://page/chat/contacts@v1"]')
+              .filter({ has: page.getByText('Contact invites').first() })
+              .first()
+        }
       ] as const
 
       for (const route of authenticatedRoutes) {
         await page.goto(route.path, { waitUntil: 'domcontentloaded' })
         await expect(page).toHaveTitle(route.title)
-        await expect(page.getByRole('heading', { name: route.heading }).first()).toBeVisible()
+        await expect(route.locator()).toBeVisible()
         await expectDockShortcuts(page)
       }
+    })
+  })
+
+  test('authenticated route performance marks survive cold load and interaction', async ({ page }) => {
+    const credentials = readAuditCredentials()
+    test.slow()
+
+    await runWithRuntimeTracking(page, 'authenticated route performance audit', async () => {
+      await enablePrometheusPerfDebug(page)
+      await signInWithAuditCredentials(page, credentials)
+
+      await page.goto('/chat/', { waitUntil: 'domcontentloaded' })
+      await expect(
+        page
+          .locator('[data-fragment-id="fragment://page/chat/contacts@v1"]')
+          .filter({ has: page.getByText('Contact invites').first() })
+          .first()
+      ).toBeVisible()
+      await expectPrometheusPerformanceSignals(page, 'chat cold load')
+
+      await openAndCloseSettings(page)
+      await expectPrometheusPerformanceSignals(page, 'chat interaction')
     })
   })
 })

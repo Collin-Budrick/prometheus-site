@@ -1,5 +1,11 @@
 import { getPublicFragmentApiBase } from '../../shared/public-fragment-config'
 import { HOME_FRAGMENT_BOOTSTRAP_IDS } from './home-fragment-bootstrap-ids'
+import {
+  decompressFragmentBytesWithNativeStream,
+  getFragmentResponseEncoding,
+  getSupportedNativeFragmentDecompressionEncodings,
+  type NativeFragmentCompressionEncoding
+} from '@core/fragment/compression'
 
 export const HOME_FRAGMENT_BOOTSTRAP_STATE_KEY = '__PROM_STATIC_HOME_FRAGMENT_BOOTSTRAP__'
 const HOME_FRAGMENT_BOOTSTRAP_ID_SET = new Set<string>(HOME_FRAGMENT_BOOTSTRAP_IDS)
@@ -21,6 +27,32 @@ export type HomeFragmentBootstrapPreloadLink = {
   href: string
   crossorigin: 'anonymous'
   'data-home-fragment-bootstrap': 'true'
+}
+
+const buildBootstrapRequestHeaders = () => {
+  const supportedEncodings = getSupportedNativeFragmentDecompressionEncodings()
+  if (!supportedEncodings.length) {
+    return undefined
+  }
+  return {
+    'x-fragment-accept-encoding': supportedEncodings.join(',')
+  }
+}
+
+const decompressBootstrapBytes = async (
+  bytes: Uint8Array,
+  encoding: ReturnType<typeof getFragmentResponseEncoding>,
+  acceptedEncodings: NativeFragmentCompressionEncoding[]
+) => {
+  if (!encoding) return bytes
+  if (encoding === 'zstd' || !acceptedEncodings.includes(encoding)) {
+    throw new Error(`Home fragment bootstrap encoding '${encoding}' is not supported by the client`)
+  }
+  const decoded = await decompressFragmentBytesWithNativeStream(bytes, encoding)
+  if (decoded) {
+    return decoded
+  }
+  throw new Error(`Home fragment bootstrap ${encoding} decompression failed`)
 }
 
 const dedupeFragmentIds = (ids: readonly string[]) => {
@@ -97,16 +129,20 @@ export const fetchHomeFragmentBootstrapBytes = async ({
   cache?: RequestCache
   signal?: AbortSignal
 }) => {
+  const acceptedEncodings = getSupportedNativeFragmentDecompressionEncodings()
   const response = await fetcher(href, {
     cache,
     credentials: 'same-origin',
     mode: 'cors',
-    signal
+    signal,
+    headers: buildBootstrapRequestHeaders()
   })
   if (!response.ok) {
     throw new Error(`Home fragment bootstrap fetch failed: ${response.status}`)
   }
-  return new Uint8Array(await response.arrayBuffer())
+  const encoding = getFragmentResponseEncoding(response.headers)
+  const encodedBytes = new Uint8Array(await response.arrayBuffer())
+  return await decompressBootstrapBytes(encodedBytes, encoding, acceptedEncodings)
 }
 
 export const isHomeFragmentBootstrapSubset = (ids: readonly string[]) => {
@@ -153,7 +189,7 @@ export const buildPrimeHomeFragmentBootstrapScript = (href: string) => {
   const escapedHref = JSON.stringify(href)
   const escapedKey = JSON.stringify(HOME_FRAGMENT_BOOTSTRAP_STATE_KEY)
 
-  return `(function(){var win=window;if(!win)return;var href=${escapedHref};var key=${escapedKey};var existing=win[key];if(existing&&existing.href===href)return;var bytesPromise=fetch(href,{cache:"default",credentials:"same-origin",mode:"cors"}).then(function(response){if(!response.ok)throw new Error("Home fragment bootstrap fetch failed: "+response.status);return response.arrayBuffer();}).then(function(buffer){return new Uint8Array(buffer);}).catch(function(error){if(win[key]&&win[key].href===href){delete win[key];}throw error;});win[key]={href:href,bytesPromise:bytesPromise};})();`
+  return `(function(){var win=window;if(!win)return;var href=${escapedHref};var key=${escapedKey};var existing=win[key];if(existing&&existing.href===href)return;var supportedEncodings=[];if(typeof DecompressionStream==="function"){["br","gzip","deflate"].forEach(function(encoding){try{new DecompressionStream(encoding);supportedEncodings.push(encoding);}catch(error){}});}var readBytes=function(stream){var reader=stream.getReader();var chunks=[];var total=0;return reader.read().then(function pump(result){if(result.done){var output=new Uint8Array(total);var offset=0;chunks.forEach(function(chunk){output.set(chunk,offset);offset+=chunk.byteLength;});return output;}if(result.value&&result.value.byteLength){chunks.push(result.value);total+=result.value.byteLength;}return reader.read().then(pump);});};var decompressBytes=function(bytes,encoding){try{var source=new ReadableStream({start:function(controller){controller.enqueue(bytes);controller.close();}});return readBytes(source.pipeThrough(new DecompressionStream(encoding)));}catch(error){return Promise.reject(error);}};var headers=supportedEncodings.length?{"x-fragment-accept-encoding":supportedEncodings.join(",")}:undefined;var bytesPromise=fetch(href,{cache:"default",credentials:"same-origin",mode:"cors",headers:headers}).then(function(response){if(!response.ok)throw new Error("Home fragment bootstrap fetch failed: "+response.status);var encoding=((response.headers.get("x-fragment-content-encoding")||response.headers.get("content-encoding")||"").trim().toLowerCase());return response.arrayBuffer().then(function(buffer){var bytes=new Uint8Array(buffer);if(!encoding)return bytes;if(supportedEncodings.indexOf(encoding)===-1)throw new Error("Home fragment bootstrap encoding '"+encoding+"' is not supported by the client");return decompressBytes(bytes,encoding);});}).catch(function(error){if(win[key]&&win[key].href===href){delete win[key];}throw error;});win[key]={href:href,bytesPromise:bytesPromise};})();`
 }
 
 export const primeHomeFragmentBootstrapBytes = ({

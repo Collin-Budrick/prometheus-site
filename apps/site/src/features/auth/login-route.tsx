@@ -1,6 +1,7 @@
 import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { FragmentCard } from '@prometheus/ui'
 import { appConfig } from '@site/site-config'
+import { runAfterClientIntentIdle } from '@site/shared/client-boot'
 import type { AuthFormState } from './auth-form-state'
 import authModuleStyles from './auth.module.css'
 import { loadClientAuthSession } from '@site/features/auth/auth-session-client'
@@ -127,7 +128,7 @@ export const LoginRoute = component$<{
   const layoutTick = useSignal(0)
   const cardId = 'auth:access'
 
-  useVisibleTask$(async () => {
+  useVisibleTask$(async (ctx) => {
     if (typeof window === 'undefined') return
     nextPath.value = resolveNextPath(window.location.href)
 
@@ -138,23 +139,32 @@ export const LoginRoute = component$<{
     }
 
     configured.value = isSpacetimeAuthConfigured()
+    ready.value = true
 
     if (configured.value) {
-      try {
-        const restored = await ensureSpacetimeAuthSession(apiBase)
-        if (restored) {
-          window.location.assign(nextPath.value)
-          return
-        }
-      } catch {
-        // Keep the login launcher available when refresh or cookie sync fails.
-      }
-    } else {
+      let active = true
+      const cancelRestore = runAfterClientIntentIdle(() => {
+        void (async () => {
+          try {
+            const restored = await ensureSpacetimeAuthSession(apiBase)
+            if (!active || !restored) return
+            window.location.assign(nextPath.value)
+          } catch {
+            // Keep the login launcher available when refresh or cookie sync fails.
+          }
+        })()
+      })
+      ctx.cleanup(() => {
+        active = false
+        cancelRestore()
+      })
+      return
+    }
+
+    if (!configured.value) {
       statusTone.value = 'error'
       statusMessage.value = resolvedCopy.notConfiguredStatus
     }
-
-    ready.value = true
   })
 
   const handleLogin = $(async (method: SpacetimeAuthMethod) => {

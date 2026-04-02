@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'bun:test'
+import { gunzipSync, gzipSync } from 'node:zlib'
 import { buildFragmentFrame } from '@core/fragment/frames'
 import {
   type HomeFragmentBootstrapWindow,
@@ -15,7 +16,48 @@ const ATTR_SIZE = 8
 
 const encoder = new TextEncoder()
 const originalFetch = globalThis.fetch
-const originalWindow = (globalThis as typeof globalThis & { window?: HomeFragmentBootstrapWindow }).window
+const mutableGlobals = globalThis as typeof globalThis & {
+  window?: HomeFragmentBootstrapWindow
+  DecompressionStream?: typeof DecompressionStream
+}
+const originalWindow = mutableGlobals.window
+const originalDecompressionStream = mutableGlobals.DecompressionStream
+
+const asAbsoluteRequest = (input: string | URL | Request, init?: RequestInit) => {
+  if (input instanceof Request) {
+    return input
+  }
+  const value = input instanceof URL ? input.toString() : String(input)
+  const href = value.startsWith('http://') || value.startsWith('https://')
+    ? value
+    : `https://prometheus.test${value.startsWith('/') ? value : `/${value}`}`
+  return new Request(href, init)
+}
+
+class MockGzipDecompressionStream {
+  readonly readable: ReadableStream<Uint8Array>
+  readonly writable: WritableStream<Uint8Array>
+
+  constructor(format: string) {
+    if (format !== 'gzip') {
+      throw new Error(`Unsupported mock format: ${format}`)
+    }
+
+    const chunks: Uint8Array[] = []
+    const transform = new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk) {
+        chunks.push(chunk)
+      },
+      flush(controller) {
+        const input = Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)))
+        controller.enqueue(new Uint8Array(gunzipSync(input)))
+      }
+    })
+
+    this.readable = transform.readable
+    this.writable = transform.writable
+  }
+}
 
 type NodeRecord = {
   type: number
@@ -169,10 +211,11 @@ const buildBootstrapPayload = (...ids: string[]) =>
 
 afterEach(() => {
   globalThis.fetch = originalFetch
+  mutableGlobals.DecompressionStream = originalDecompressionStream
   if (originalWindow) {
-    ;(globalThis as typeof globalThis & { window?: HomeFragmentBootstrapWindow }).window = originalWindow
+    mutableGlobals.window = originalWindow
   } else {
-    delete (globalThis as typeof globalThis & { window?: HomeFragmentBootstrapWindow }).window
+    delete mutableGlobals.window
   }
   resetHomeFragmentBatchCacheForTests()
   resetHomeFragmentBootstrapStateForTests()
@@ -351,5 +394,52 @@ describe('fetchHomeFragmentBatch', () => {
 
     expect(requestCount).toBe(1)
     expect(Object.keys(plannerPayloads)).toEqual(['fragment://page/home/planner@v1'])
+  })
+
+  it('decompresses gzip-compressed batch payloads when native decompression is available', async () => {
+    let acceptEncoding = ''
+
+    mutableGlobals.DecompressionStream = MockGzipDecompressionStream as unknown as typeof DecompressionStream
+    globalThis.fetch = (async (input, init) => {
+      const request = asAbsoluteRequest(input, init)
+      acceptEncoding = request.headers.get('x-fragment-accept-encoding') ?? ''
+      return new Response(gzipSync(buildBootstrapPayload('fragment://page/home/planner@v1')), {
+        headers: {
+          'content-type': 'application/octet-stream',
+          'x-fragment-content-encoding': 'gzip'
+        }
+      })
+    }) as typeof fetch
+
+    const payloads = await fetchHomeFragmentBatch(['fragment://page/home/planner@v1'], {
+      lang: 'en',
+      refresh: true
+    })
+
+    expect(acceptEncoding).toContain('gzip')
+    expect(Object.keys(payloads)).toEqual(['fragment://page/home/planner@v1'])
+  })
+
+  it('does not advertise batch compression without native decompression support', async () => {
+    let acceptEncoding = ''
+
+    mutableGlobals.DecompressionStream = undefined
+    globalThis.fetch = (async (input, init) => {
+      const request = asAbsoluteRequest(input, init)
+      acceptEncoding = request.headers.get('x-fragment-accept-encoding') ?? ''
+      return new Response(buildBootstrapPayload('fragment://page/home/planner@v1'), {
+        headers: {
+          'content-type': 'application/octet-stream'
+        }
+      })
+    }) as typeof fetch
+
+    const payloads = await fetchHomeFragmentBatch(['fragment://page/home/planner@v1'], {
+      lang: 'en',
+      refresh: true
+    })
+
+    expect(acceptEncoding).toBe('')
+    expect(Object.keys(payloads)).toEqual(['fragment://page/home/planner@v1'])
   })
 })

@@ -4,6 +4,7 @@ import { getCspNonce } from '../security/client'
 export type RouteMotionDirection = 'forward' | 'back' | 'neutral' | 'none'
 export type RouteSafetyMode = 'prerender-ok' | 'prefetch-only' | 'no-warmup'
 export type RouteWarmupAudience = 'public' | 'auth'
+export type RouteWarmupTrigger = 'pointer' | 'focus' | 'idle'
 
 export type DockRouteDescriptor = {
   href: string
@@ -184,6 +185,23 @@ export const getIdleWarmupDescriptors = (
     if (!isAuthenticated && descriptor.warmupAudience === 'auth') return false
     return true
   })
+}
+
+export const shouldWarmRouteOnTrigger = (
+  pathname: string,
+  isAuthenticated: boolean,
+  trigger: RouteWarmupTrigger,
+  isConstrained: boolean
+) => {
+  const safetyMode = resolveRouteSafetyMode(pathname)
+  if (safetyMode === 'no-warmup') return false
+
+  const warmupAudience = resolveRouteWarmupAudience(pathname)
+  if (warmupAudience === 'auth' && !isAuthenticated) return false
+
+  if (trigger === 'idle' && isConstrained) return false
+
+  return true
 }
 
 export const isRouteWarmupConstrained = (

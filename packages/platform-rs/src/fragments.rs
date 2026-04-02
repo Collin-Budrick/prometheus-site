@@ -1,10 +1,15 @@
 use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use async_compression::tokio::bufread::{
+    BrotliEncoder as BrotliStreamEncoder, DeflateEncoder as DeflateStreamEncoder,
+    GzipEncoder as GzipStreamEncoder, ZstdEncoder as ZstdStreamEncoder,
+};
 use axum::body::Body;
 use axum::extract::{Path as AxumPath, Query, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
@@ -17,8 +22,10 @@ use base64::Engine as _;
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use tokio::io::{AsyncReadExt, BufReader};
 use tokio::sync::{mpsc, RwLock};
-use tokio_stream::wrappers::ReceiverStream;
+use tokio_stream::{wrappers::ReceiverStream, StreamExt};
+use tokio_util::io::{ReaderStream, StreamReader};
 
 use crate::config::FeatureFlags;
 use crate::shared::AppState;
@@ -46,6 +53,35 @@ const STORE_STREAM_ID: &str = "fragment://page/store/stream@v5";
 const STORE_CART_ID: &str = "fragment://page/store/cart@v1";
 const STORE_CREATE_ID: &str = "fragment://page/store/create@v1";
 const CHAT_CONTACTS_ID: &str = "fragment://page/chat/contacts@v1";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FragmentCompressionEncoding {
+    Brotli,
+    Gzip,
+    Deflate,
+    Zstd,
+}
+
+impl FragmentCompressionEncoding {
+    fn header_value(self) -> &'static str {
+        match self {
+            Self::Brotli => "br",
+            Self::Gzip => "gzip",
+            Self::Deflate => "deflate",
+            Self::Zstd => "zstd",
+        }
+    }
+
+    fn parse(token: &str) -> Option<Self> {
+        match token.trim().to_ascii_lowercase().as_str() {
+            "br" => Some(Self::Brotli),
+            "gzip" => Some(Self::Gzip),
+            "deflate" => Some(Self::Deflate),
+            "zstd" => Some(Self::Zstd),
+            _ => None,
+        }
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RenderNode {
@@ -311,6 +347,8 @@ impl FragmentService {
 
         let fetch_groups = if normalized_path == "/" {
             Some(home_fetch_groups(&fragments))
+        } else if normalized_path == "/store" {
+            Some(store_fetch_groups(&fragments))
         } else if fragments.is_empty() {
             Some(Vec::new())
         } else {
@@ -819,9 +857,11 @@ pub fn router() -> Router<AppState> {
 
 async fn batch(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(query): Query<FragmentBundleQuery>,
     Json(body): Json<Vec<BatchRequest>>,
 ) -> Response {
+    let compression = select_fragment_compression(&headers);
     let protocol = parse_protocol(query.protocol.as_deref());
     let known = decode_known_versions(query.known.as_deref());
     if protocol == 2 {
@@ -843,7 +883,7 @@ async fn batch(
                 ));
             }
         }
-        binary_response(concat_bytes(&frames))
+        compressed_binary_response(concat_bytes(&frames), compression).await
     } else {
         let mut payload = HashMap::<String, String>::new();
         for request in body {
@@ -860,7 +900,7 @@ async fn batch(
                 );
             }
         }
-        Json(payload).into_response()
+        compressed_json_response(payload, compression).await
     }
 }
 
@@ -935,8 +975,10 @@ async fn plan(
 
 async fn bootstrap(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(query): Query<FragmentBundleQuery>,
 ) -> Response {
+    let compression = select_fragment_compression(&headers);
     let path = normalize_plan_path(query.path.as_deref().unwrap_or("/"));
     let lang = normalize_lang(query.lang.as_deref().unwrap_or("en"));
     let protocol = parse_protocol(query.protocol.as_deref());
@@ -949,13 +991,15 @@ async fn bootstrap(
         explicit_ids
     };
     let payload = build_fragment_bundle(&state, &ids, &lang, protocol, &known, &plan, false).await;
-    binary_response(payload)
+    compressed_binary_response(payload, compression).await
 }
 
 async fn stream_route(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(query): Query<FragmentBundleQuery>,
 ) -> Response {
+    let compression = select_fragment_compression(&headers);
     let path = normalize_plan_path(query.path.as_deref().unwrap_or("/"));
     let lang = normalize_lang(query.lang.as_deref().unwrap_or("en"));
     let protocol = parse_protocol(query.protocol.as_deref());
@@ -974,6 +1018,7 @@ async fn stream_route(
         live,
         known,
         explicit_ids,
+        compression,
         false,
     )
     .await
@@ -1005,7 +1050,18 @@ async fn transport_route(
     let known = decode_known_versions(query.known.as_deref());
     let explicit_ids = parse_ids(query.ids.as_deref());
     let mut response =
-        stream_response(state, path, lang, protocol, live, known, explicit_ids, true).await;
+        stream_response(
+            state,
+            path,
+            lang,
+            protocol,
+            live,
+            known,
+            explicit_ids,
+            None,
+            true,
+        )
+        .await;
     response.headers_mut().insert(
         "x-fragment-transport",
         HeaderValue::from_static("webtransport-proxy"),
@@ -1059,6 +1115,7 @@ async fn stream_response(
     live: bool,
     known: HashMap<String, u64>,
     explicit_ids: Vec<String>,
+    compression: Option<FragmentCompressionEncoding>,
     webtransport: bool,
 ) -> Response {
     let (tx, rx) = mpsc::channel::<Result<Bytes, Infallible>>(16);
@@ -1094,9 +1151,11 @@ async fn stream_response(
     if !webtransport {
         builder = builder.header("vary", "x-fragment-accept-encoding");
     }
-    builder
-        .body(Body::from_stream(ReceiverStream::new(rx)))
-        .unwrap()
+    if let Some(encoding) = compression.filter(|_| !webtransport) {
+        builder = builder.header("x-fragment-content-encoding", encoding.header_value());
+        return builder.body(compressed_stream_body(rx, encoding)).unwrap();
+    }
+    builder.body(Body::from_stream(ReceiverStream::new(rx))).unwrap()
 }
 
 pub(crate) async fn build_fragment_bundle(
@@ -1301,12 +1360,138 @@ fn matches_if_none_match(etag: &str, value: Option<&HeaderValue>) -> bool {
         })
 }
 
+fn select_fragment_compression(headers: &HeaderMap) -> Option<FragmentCompressionEncoding> {
+    headers
+        .get("x-fragment-accept-encoding")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| {
+            value
+                .split(',')
+                .filter_map(|candidate| candidate.split(';').next())
+                .find_map(FragmentCompressionEncoding::parse)
+        })
+}
+
+fn into_io_result(result: Result<Bytes, Infallible>) -> Result<Bytes, io::Error> {
+    match result {
+        Ok(bytes) => Ok(bytes),
+        Err(never) => match never {},
+    }
+}
+
+async fn maybe_compress_fragment_bytes(
+    bytes: Vec<u8>,
+    compression: Option<FragmentCompressionEncoding>,
+) -> (Vec<u8>, Option<FragmentCompressionEncoding>) {
+    let Some(encoding) = compression.filter(|_| !bytes.is_empty()) else {
+        return (bytes, None);
+    };
+    match compress_fragment_bytes(&bytes, encoding).await {
+        Ok(compressed) => (compressed, Some(encoding)),
+        Err(error) => {
+            tracing::warn!(
+                ?error,
+                encoding = encoding.header_value(),
+                "failed to compress fragment response"
+            );
+            (bytes, None)
+        }
+    }
+}
+
+fn compressed_stream_body(
+    rx: mpsc::Receiver<Result<Bytes, Infallible>>,
+    encoding: FragmentCompressionEncoding,
+) -> Body {
+    let stream = ReceiverStream::new(rx).map(into_io_result);
+    let reader = BufReader::new(StreamReader::new(stream));
+    match encoding {
+        FragmentCompressionEncoding::Brotli => {
+            Body::from_stream(ReaderStream::new(BrotliStreamEncoder::new(reader)))
+        }
+        FragmentCompressionEncoding::Gzip => {
+            Body::from_stream(ReaderStream::new(GzipStreamEncoder::new(reader)))
+        }
+        FragmentCompressionEncoding::Deflate => {
+            Body::from_stream(ReaderStream::new(DeflateStreamEncoder::new(reader)))
+        }
+        FragmentCompressionEncoding::Zstd => {
+            Body::from_stream(ReaderStream::new(ZstdStreamEncoder::new(reader)))
+        }
+    }
+}
+
+async fn compress_fragment_bytes(
+    bytes: &[u8],
+    encoding: FragmentCompressionEncoding,
+) -> io::Result<Vec<u8>> {
+    let mut output = Vec::new();
+    match encoding {
+        FragmentCompressionEncoding::Brotli => {
+            let stream = tokio_stream::once(Ok::<Bytes, io::Error>(Bytes::copy_from_slice(bytes)));
+            let reader = BufReader::new(StreamReader::new(stream));
+            let mut encoder = BrotliStreamEncoder::new(reader);
+            encoder.read_to_end(&mut output).await?;
+        }
+        FragmentCompressionEncoding::Gzip => {
+            let stream = tokio_stream::once(Ok::<Bytes, io::Error>(Bytes::copy_from_slice(bytes)));
+            let reader = BufReader::new(StreamReader::new(stream));
+            let mut encoder = GzipStreamEncoder::new(reader);
+            encoder.read_to_end(&mut output).await?;
+        }
+        FragmentCompressionEncoding::Deflate => {
+            let stream = tokio_stream::once(Ok::<Bytes, io::Error>(Bytes::copy_from_slice(bytes)));
+            let reader = BufReader::new(StreamReader::new(stream));
+            let mut encoder = DeflateStreamEncoder::new(reader);
+            encoder.read_to_end(&mut output).await?;
+        }
+        FragmentCompressionEncoding::Zstd => {
+            let stream = tokio_stream::once(Ok::<Bytes, io::Error>(Bytes::copy_from_slice(bytes)));
+            let reader = BufReader::new(StreamReader::new(stream));
+            let mut encoder = ZstdStreamEncoder::new(reader);
+            encoder.read_to_end(&mut output).await?;
+        }
+    }
+    Ok(output)
+}
+
 fn binary_response(bytes: Vec<u8>) -> Response {
     Response::builder()
         .status(StatusCode::OK)
         .header("content-type", "application/octet-stream")
         .body(Body::from(bytes))
         .unwrap()
+}
+
+async fn compressed_binary_response(
+    bytes: Vec<u8>,
+    compression: Option<FragmentCompressionEncoding>,
+) -> Response {
+    compressed_bytes_response("application/octet-stream", bytes, compression).await
+}
+
+async fn compressed_json_response<T>(payload: T, compression: Option<FragmentCompressionEncoding>) -> Response
+where
+    T: Serialize,
+{
+    let bytes = serde_json::to_vec(&payload).unwrap_or_else(|_| b"{}".to_vec());
+    compressed_bytes_response("application/json", bytes, compression).await
+}
+
+async fn compressed_bytes_response(
+    content_type: &'static str,
+    bytes: Vec<u8>,
+    compression: Option<FragmentCompressionEncoding>,
+) -> Response {
+    let (body, applied_encoding) = maybe_compress_fragment_bytes(bytes, compression).await;
+    let mut builder = Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", content_type)
+        .header("vary", "x-fragment-accept-encoding");
+    if let Some(encoding) = applied_encoding {
+        builder = builder.header("x-fragment-content-encoding", encoding.header_value());
+    }
+    builder.body(Body::from(body)).unwrap()
 }
 
 fn concat_bytes(chunks: &[Vec<u8>]) -> Vec<u8> {
@@ -1687,6 +1872,27 @@ fn home_fetch_groups(entries: &[FragmentPlanEntry]) -> Vec<Vec<String>> {
     groups
 }
 
+fn store_fetch_groups(entries: &[FragmentPlanEntry]) -> Vec<Vec<String>> {
+    let critical = entries
+        .iter()
+        .filter(|entry| entry.critical)
+        .map(|entry| entry.id.clone())
+        .collect::<Vec<_>>();
+    let deferred = entries
+        .iter()
+        .filter(|entry| !entry.critical)
+        .map(|entry| entry.id.clone())
+        .collect::<Vec<_>>();
+    let mut groups = Vec::new();
+    if !critical.is_empty() {
+        groups.push(critical);
+    }
+    if !deferred.is_empty() {
+        groups.push(deferred);
+    }
+    groups
+}
+
 fn home_entry(
     id: &str,
     critical: bool,
@@ -1885,6 +2091,19 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(columns, vec!["span 12", "span 6", "span 6"]);
+    }
+
+    #[test]
+    fn store_fetch_groups_split_critical_and_deferred_cards() {
+        let groups = store_fetch_groups(&store_plan_entries());
+
+        assert_eq!(
+            groups,
+            vec![
+                vec![STORE_STREAM_ID.to_string(), STORE_CART_ID.to_string()],
+                vec![STORE_CREATE_ID.to_string()]
+            ]
+        );
     }
 }
 

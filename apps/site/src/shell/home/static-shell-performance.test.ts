@@ -838,15 +838,16 @@ describe("static shell performance invariants", () => {
     expect(homePostAnchorCoreSource).toContain("loadHomeSettingsInteractionRuntime");
     expect(homePostAnchorCoreSource).toContain("ensureHomeDeferredGlobalStylesheet");
     expect(homePostAnchorCoreSource).toContain("resumeDeferredHomeHydration");
-    expect(homePostAnchorCoreSource).toContain("loadHomeStaticEntryDemoWarmup");
     expect(homePostAnchorCoreSource).toContain("HOME_BOOTSTRAP_INTENT_EVENTS");
     expect(homePostAnchorCoreSource).toContain("loadFragmentWidgetRuntime");
-    expect(homePostAnchorCoreSource).toContain("scheduleHomeDemoWarmup");
     expect(homePostAnchorCoreSource).toContain("scheduleDeferredGlobalStylesheet");
     expect(homePostAnchorCoreSource).toContain("scheduleDeferredRuntime");
     expect(homePostAnchorCoreSource).toContain("prom:home:lifecycle-runtime-requested");
     expect(homePostAnchorCoreSource).toContain("prom:home:lifecycle-runtime-ready");
     expect(homePostAnchorCoreSource).toContain("preferIdle: true");
+    expect(homePostAnchorCoreSource).not.toContain("loadHomeStaticEntryDemoWarmup");
+    expect(homePostAnchorCoreSource).not.toContain("scheduleHomeDemoWarmup");
+    expect(homePostAnchorCoreSource).not.toContain("prom:home:demo-warm-start");
     expect(homePostAnchorCoreSource).not.toContain("scheduleDeferredWidgetRuntime");
     expect(homePostAnchorCoreSource).not.toContain("scheduleDeferredBootstrap");
     expect(homePostAnchorCoreSource).not.toContain("primeHomeFragmentBootstrapBytes");
