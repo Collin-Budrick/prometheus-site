@@ -28,7 +28,7 @@
     "arktype": "2.2.0",
     "drizzle-orm": "1.0.0-beta.9-e89174b",
     "elysia": "1.4.28",
-    "highlight.run": "9.28.0",
+    "highlight.run": "10.0.0",
     "jose": "6.2.2",
     "loro-crdt": "1.10.8",
     "react": "19.3.0-canary-fd524fe0-20251121",
@@ -38,9 +38,9 @@
   "devDependencies": {
     "@types/node": "25.5.0",
     "@types/react": "19.2.14",
-    "bun-types": "1.3.11-canary.20260329T141421",
-    "oxfmt": "0.42.0",
-    "oxlint": "1.57.0",
+    "bun-types": "1.3.11-canary.20260402T143150",
+    "oxfmt": "0.43.0",
+    "oxlint": "1.58.0",
     "typescript": "6.0.2"
   },
   "optionalDependencies": {
