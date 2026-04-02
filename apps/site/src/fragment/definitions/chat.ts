@@ -1229,8 +1229,8 @@ html[data-chat-dm-open='true'] .fragment-card {
 }
 `
 
-const contactInvites: FragmentDefinition = {
-  id: 'fragment://page/chat/contacts@v1',
+const contactInviteSearch: FragmentDefinition = {
+  id: 'fragment://page/chat/search@v1',
   tags: ['chat', 'contacts', 'invites'],
   head: [],
   css: chatInvitesCss,
@@ -1238,6 +1238,7 @@ const contactInvites: FragmentDefinition = {
   render: ({ t }) =>
     h('contact-invites', {
       class: 'chat-invites',
+      'data-variant': 'shell',
       'data-title': t('Contact invites'),
       'data-helper': t('Search by user ID to connect.'),
       'data-search-label': t('Search by user ID'),
@@ -1254,10 +1255,45 @@ const contactInvites: FragmentDefinition = {
     })
 }
 
+const contactInviteDetails: FragmentDefinition = {
+  id: 'fragment://page/chat/activity@v1',
+  tags: ['chat', 'contacts', 'invites'],
+  head: [],
+  css: chatInvitesCss,
+  ...baseMeta,
+  render: ({ t }) =>
+    h('contact-invites', {
+      class: 'chat-invites',
+      'data-variant': 'details',
+      'data-title': t('Invite activity'),
+      'data-helper': t('Pending invites and saved contacts appear after the search shell is ready.'),
+      'data-accept-action': t('Accept'),
+      'data-decline-action': t('Decline'),
+      'data-remove-action': t('Remove'),
+      'data-incoming-label': t('Incoming'),
+      'data-outgoing-label': t('Outgoing'),
+      'data-contacts-label': t('Contacts'),
+      'data-empty-label': t('No invites yet.')
+    })
+}
+
 export const chatFragments: FragmentPlanEntry[] = [
   {
-    id: contactInvites.id,
+    id: contactInviteSearch.id,
     critical: true,
+    layout: {
+      column: 'span 12',
+      size: 'small',
+      minHeight: 372,
+      heightHint: {
+        desktop: 372,
+        mobile: 372
+      }
+    }
+  },
+  {
+    id: contactInviteDetails.id,
+    critical: false,
     layout: {
       column: 'span 12',
       size: 'small',
@@ -1271,7 +1307,7 @@ export const chatFragments: FragmentPlanEntry[] = [
 ]
 
 export const registerChatFragmentDefinitions = () => {
-  registerFragmentDefinitions([contactInvites])
+  registerFragmentDefinitions([contactInviteSearch, contactInviteDetails])
 
   registerFragmentPlanOverride((plan) => {
     if (plan.path !== '/chat') return plan

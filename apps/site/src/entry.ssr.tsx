@@ -665,8 +665,8 @@ export const injectStaticBootstrap = (
   }
 
   return html
-    .replace("</head>", `${preloadTags}${stylePreloadTags}</head>`)
-    .replace("</body>", `${perfScriptTag}${scriptTag}</body>`);
+    .replace("</head>", `${preloadTags}${stylePreloadTags}${perfScriptTag}</head>`)
+    .replace("</body>", `${scriptTag}</body>`);
 };
 
 const hasStaticOnlyMarker = (html: string) =>

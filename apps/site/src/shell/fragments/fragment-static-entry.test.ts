@@ -98,6 +98,12 @@ class MockWindow {
   emit(type: string) {
     ;(this.listeners.get(type) ?? new Set()).forEach((listener) => listener())
   }
+
+  flushTimeouts() {
+    const callbacks = Array.from(this.timeouts.values())
+    this.timeouts.clear()
+    callbacks.forEach((callback) => callback())
+  }
 }
 
 class MockDocument {
@@ -147,7 +153,7 @@ afterEach(() => {
 })
 
 describe('installFragmentStaticEntry', () => {
-  it('waits until window load before prewarming the runtime and observing the root', async () => {
+  it('waits until window load before prewarming the runtime and arming interaction listeners', async () => {
     globalThis.IntersectionObserver = MockIntersectionObserver as never
 
     const win = new MockWindow()
@@ -177,12 +183,13 @@ describe('installFragmentStaticEntry', () => {
 
     expect(loadRuntimeCount).toBe(1)
     expect(bootstrapCount).toBe(0)
-    expect(MockIntersectionObserver.instances.length).toBe(1)
+    expect(MockIntersectionObserver.instances.length).toBe(0)
+    expect(win.listeners.has('pointerdown')).toBe(true)
 
     cleanup()
   })
 
-  it('starts bootstrap when the static fragment root intersects the viewport', async () => {
+  it('does not start bootstrap when the static fragment root only intersects the viewport', async () => {
     globalThis.IntersectionObserver = MockIntersectionObserver as never
 
     const win = new MockWindow()
@@ -207,14 +214,6 @@ describe('installFragmentStaticEntry', () => {
 
     expect(loadRuntimeCount).toBe(1)
     expect(bootstrapCount).toBe(0)
-
-    MockIntersectionObserver.instances[0]?.emit(doc.root as object, {
-      isIntersecting: true,
-      intersectionRatio: 1
-    })
-    await flushMicrotasks()
-
-    expect(bootstrapCount).toBe(1)
 
     cleanup()
   })
@@ -249,7 +248,7 @@ describe('installFragmentStaticEntry', () => {
     cleanup()
   })
 
-  it('starts the fragment runtime when the root becomes visible', async () => {
+  it('keeps the fragment runtime idle until a user interaction requests bootstrap', async () => {
     globalThis.IntersectionObserver = MockIntersectionObserver as never
 
     const win = new MockWindow()
@@ -268,13 +267,7 @@ describe('installFragmentStaticEntry', () => {
 
     await flushMicrotasks()
 
-    MockIntersectionObserver.instances[0]?.emit(doc.root as object, {
-      isIntersecting: true,
-      intersectionRatio: 1
-    })
-    await flushMicrotasks()
-
-    expect(fragmentBootstrapCount).toBe(1)
+    expect(fragmentBootstrapCount).toBe(0)
 
     cleanup()
   })
@@ -298,16 +291,9 @@ describe('installFragmentStaticEntry', () => {
 
     await flushMicrotasks()
 
-    MockIntersectionObserver.instances[0]?.emit(doc.root as object, {
-      isIntersecting: true,
-      intersectionRatio: 1
-    })
-    await flushMicrotasks()
-
-    expect(fragmentBootstrapCount).toBe(1)
-    expect(doc.listeners.has('click')).toBe(false)
-    expect(win.listeners.has('pointerdown')).toBe(false)
-    expect(win.listeners.has('focusin')).toBe(false)
+    expect(fragmentBootstrapCount).toBe(0)
+    expect(doc.listeners.has('click')).toBe(true)
+    expect(win.listeners.has('pointerdown')).toBe(true)
 
     cleanup()
   })
@@ -319,6 +305,7 @@ describe('installFragmentStaticEntry', () => {
     const doc = new MockDocument('/lab')
     let releaseCount = 0
     let bootstrapCount = 0
+    let widgetRuntimeLoads = 0
 
     const cleanup = installFragmentStaticEntry({
       win: win as never,
@@ -328,6 +315,15 @@ describe('installFragmentStaticEntry', () => {
           bootstrapCount += 1
         }
       }),
+      loadWidgetRuntime: async () => {
+        widgetRuntimeLoads += 1
+        return {
+          createFragmentWidgetRuntime: () => ({
+            handleInteraction() {},
+            destroy() {}
+          })
+        } as never
+      },
       schedulePaintReady: (({ root, readyAttr, onReady }) => {
         ;(root as { setAttribute?: (name: string, value: string) => void } | null)?.setAttribute?.(readyAttr, 'ready')
         onReady?.()
@@ -342,6 +338,52 @@ describe('installFragmentStaticEntry', () => {
 
     expect(doc.root?.getAttribute('data-static-fragment-paint')).toBe('ready')
     expect(releaseCount).toBe(1)
+    expect(bootstrapCount).toBe(0)
+    expect(widgetRuntimeLoads).toBe(0)
+
+    cleanup()
+  })
+
+  it('auto-starts the lightweight widget runtime on /store without bootstrapping the fragment shell', async () => {
+    const win = new MockWindow()
+    const doc = new MockDocument('/store')
+    let bootstrapCount = 0
+    let widgetRuntimeLoads = 0
+    let widgetRuntimeStarts = 0
+
+    const cleanup = installFragmentStaticEntry({
+      win: win as never,
+      doc: doc as never,
+      loadRuntime: async () => ({
+        bootstrapStaticFragmentShell: async () => {
+          bootstrapCount += 1
+        }
+      }),
+      loadWidgetRuntime: async () => {
+        widgetRuntimeLoads += 1
+        return {
+          createFragmentWidgetRuntime: () => {
+            widgetRuntimeStarts += 1
+            return {
+              handleInteraction() {
+                return false
+              },
+              destroy() {}
+            }
+          }
+        } as never
+      }
+    })
+
+    await flushMicrotasks()
+    expect(widgetRuntimeLoads).toBe(0)
+    expect(widgetRuntimeStarts).toBe(0)
+
+    win.flushTimeouts()
+    await flushMicrotasks()
+
+    expect(widgetRuntimeLoads).toBe(1)
+    expect(widgetRuntimeStarts).toBe(1)
     expect(bootstrapCount).toBe(0)
 
     cleanup()

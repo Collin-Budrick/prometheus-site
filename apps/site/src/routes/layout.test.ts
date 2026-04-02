@@ -15,4 +15,12 @@ describe('layout static bootstrap early hints', () => {
     expect(source).not.toContain('STATIC_BOOTSTRAP_ROUTE_DEMO_WARM_HINT_PATHS')
     expect(source).not.toContain('STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS')
   })
+
+  it('keeps selective route warmup active without relying on the global prefetch flag', async () => {
+    const source = await readSource()
+
+    expect(source).toContain('const controller = createRouteWarmupController({')
+    expect(source).toContain('const fragmentWarmupManager = createRouteFragmentWarmupManager({')
+    expect(source).not.toContain('if (!appConfig.enablePrefetch) return')
+  })
 })

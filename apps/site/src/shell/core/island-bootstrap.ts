@@ -6,8 +6,8 @@ import {
   STATIC_ISLAND_DATA_SCRIPT_ID
 } from './constants'
 import { createStaticIslandRouteData } from './island-static-data'
-import { loadClientAuthSession, redirectProtectedStaticRouteToLogin } from '../auth/auth-client'
 import { scheduleStaticShellTask } from './scheduler'
+import { runAfterClientIntentIdle } from '../../shared/client-boot'
 import {
   staticDockRootNeedsSync,
   readStaticShellSeed,
@@ -28,6 +28,8 @@ import {
 } from './settings-overlay-dom'
 import { acquirePretextDomController } from '../pretext/pretext-dom'
 
+const loadStaticAuthClient = () => import('../auth/auth-client')
+
 type Theme = 'light' | 'dark'
 
 type StaticIslandController = {
@@ -40,6 +42,7 @@ type StaticIslandController = {
   islandCleanup: { cleanup: () => void } | null
   destroyed: boolean
   routeData: StaticIslandRouteData
+  resolvedUser: { id?: string; name?: string; email?: string }
 }
 
 const STATIC_THEME_STORAGE_KEY = 'prometheus-theme'
@@ -138,6 +141,7 @@ const syncStaticIslandDockIfNeeded = async (
 }
 
 const refreshStaticIslandDockAuthIfNeeded = async (controller: StaticIslandController) => {
+  const { loadClientAuthSession } = await loadStaticAuthClient()
   const session = await loadClientAuthSession()
   if (controller.destroyed) return
   const isAuthenticated = session.status === 'authenticated'
@@ -365,14 +369,16 @@ export const disposeStaticIslandShell = async () => {
 }
 
 const scheduleProtectedAuthUpgrade = (controller: StaticIslandController) => {
-  void (async () => {
+  const runAuthUpgrade = async () => {
     try {
+      const { loadClientAuthSession, redirectProtectedStaticRouteToLogin } = await loadStaticAuthClient()
       const session = await loadClientAuthSession()
       if (controller.destroyed) return
       if (session.status !== 'authenticated') {
         redirectProtectedStaticRouteToLogin(controller.lang)
         return
       }
+      controller.resolvedUser = session.user
       if (!controller.isAuthenticated) {
         controller.isAuthenticated = true
         writeStaticShellSeed({ isAuthenticated: true })
@@ -384,7 +390,25 @@ const scheduleProtectedAuthUpgrade = (controller: StaticIslandController) => {
         console.error('Protected static island auth upgrade failed:', error)
       }
     }
-  })()
+  }
+
+  let cancelDeferredIntent: () => void = () => undefined
+  const cancelScheduledStart = scheduleStaticShellTask(
+    () => {
+      cancelDeferredIntent = runAfterClientIntentIdle(() => {
+        void runAuthUpgrade()
+      })
+    },
+    {
+      priority: 'background',
+      timeoutMs: 900,
+      waitForPaint: true
+    }
+  )
+  return () => {
+    cancelScheduledStart()
+    cancelDeferredIntent()
+  }
 }
 
 export const bootstrapStaticIslandShell = async () => {
@@ -433,7 +457,8 @@ export const bootstrapStaticIslandShell = async () => {
     cleanupFns: [],
     islandCleanup: null,
     destroyed: false,
-    routeData
+    routeData,
+    resolvedUser: {}
   }
   activeController = controller
   const pretextController = acquirePretextDomController({
@@ -478,12 +503,15 @@ export const bootstrapStaticIslandShell = async () => {
   controller.cleanupFns.push(() => window.removeEventListener('pageshow', handlePageShow))
 
   if (controller.authPolicy === 'protected') {
-    scheduleProtectedAuthUpgrade(controller)
+    if (controller.routeData.island === 'profile' || controller.routeData.island === 'settings') {
+      await activateIslandController(controller, controller.resolvedUser)
+    }
+    controller.cleanupFns.push(scheduleProtectedAuthUpgrade(controller))
     return
   }
 
   if (controller.routeData.island === 'login') {
-    await activateIslandController(controller, {})
+    await activateIslandController(controller, controller.resolvedUser)
     return
   }
 

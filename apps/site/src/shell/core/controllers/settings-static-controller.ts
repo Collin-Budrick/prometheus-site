@@ -1,23 +1,6 @@
 import type { Lang } from '../../../lang'
 import { getUiCopy } from '../../../lang/client'
-import { ensureFriendCode, rotateFriendCode } from '../../../components/contact-invites/friend-code'
-import { writeServiceWorkerOptOutCookie } from '../../../shared/service-worker-seed'
-import {
-  defaultChatSettings,
-  loadChatSettings,
-  saveChatSettings,
-  type ChatSettings
-} from '../../../features/messaging/chat-settings'
-import { getPrivacyScreenAlwaysOn, setPrivacyScreenAlwaysOn } from '../../../native/privacy-screen-policy'
-import { applyTextZoom, getStoredTextZoom } from '../../../native/text-zoom'
-import { clearNativeAuthCredentials } from '../../../native/native-auth'
-import { isNativeShellRuntime } from '../../../native/runtime'
-import {
-  getSpacetimeAuthMode,
-  isHostedPasskeySupported,
-  registerHostedPasskey,
-  signOutSpacetimeAuth
-} from '../../../features/auth/spacetime-auth'
+import { runAfterClientIntentIdle } from '../../../shared/client-boot'
 
 type SettingsUser = {
   id?: string
@@ -30,6 +13,11 @@ type MountStaticSettingsControllerOptions = {
   user?: SettingsUser
 }
 
+type ChatSettings = {
+  readReceipts: boolean
+  typingIndicators: boolean
+}
+
 type FriendCodeUser = {
   id: string
   email?: string | null
@@ -37,6 +25,19 @@ type FriendCodeUser = {
 }
 
 const SETTINGS_CONTROLLER_BOUND_ATTR = 'data-static-settings-controller-bound'
+const defaultChatSettings: ChatSettings = {
+  readReceipts: true,
+  typingIndicators: true
+}
+
+const loadFriendCodeRuntime = () => import('../../../components/contact-invites/friend-code')
+const loadServiceWorkerSeedRuntime = () => import('../../../shared/service-worker-seed')
+const loadChatSettingsRuntime = () => import('../../../features/messaging/chat-settings')
+const loadPrivacyScreenRuntime = () => import('../../../native/privacy-screen-policy')
+const loadTextZoomRuntime = () => import('../../../native/text-zoom')
+const loadNativeAuthRuntime = () => import('../../../native/native-auth')
+const loadNativeRuntime = () => import('../../../native/runtime')
+const loadSpacetimeAuthRuntime = () => import('../../../features/auth/spacetime-auth')
 
 const readBootstrapUser = () => {
   try {
@@ -113,6 +114,16 @@ const updateToggleButton = (button: HTMLButtonElement | null, value: boolean) =>
   button.setAttribute('aria-checked', value ? 'true' : 'false')
 }
 
+const readToggleButtonState = (
+  button: HTMLButtonElement | null,
+  fallback: boolean
+) => {
+  const value = button?.getAttribute('aria-checked')
+  if (value === 'true') return true
+  if (value === 'false') return false
+  return fallback
+}
+
 export const mountStaticSettingsController = ({ lang, user }: MountStaticSettingsControllerOptions) => {
   const root = document.querySelector<HTMLElement>('[data-static-settings-root]')
   if (!root) {
@@ -140,44 +151,66 @@ export const mountStaticSettingsController = ({ lang, user }: MountStaticSetting
   const rotateFriendCodeButton = root.querySelector<HTMLButtonElement>('[data-static-settings-action="rotate-friend-code"]')
   const friendCodeField = root.querySelector<HTMLTextAreaElement>('[data-static-settings-friend-code]')
   const textZoomInput = root.querySelector<HTMLInputElement>('[data-static-settings-text-zoom]')
-  const nativeRuntime = isNativeShellRuntime()
 
   let logoutBusy = false
   let passkeyBusy = false
-  let chatSettings: ChatSettings = user?.id ? loadChatSettings(user.id) : { ...defaultChatSettings }
-  let swOptOut = false
-  const passkeySupported = getSpacetimeAuthMode() === 'hosted' && isHostedPasskeySupported()
+  let chatSettings: ChatSettings = {
+    readReceipts: readToggleButtonState(readReceiptsButton, defaultChatSettings.readReceipts),
+    typingIndicators: readToggleButtonState(typingIndicatorsButton, defaultChatSettings.typingIndicators)
+  }
+  let swOptOut = !readToggleButtonState(offlineCacheButton, true)
+  let nativeRuntimePromise: Promise<boolean> | null = null
+  let passkeySupportPromise: Promise<boolean> | null = null
 
-  try {
-    swOptOut = window.localStorage.getItem('fragment:sw-opt-out') === '1'
-  } catch {
-    swOptOut = false
+  const resolveNativeRuntime = () => {
+    if (!nativeRuntimePromise) {
+      nativeRuntimePromise = loadNativeRuntime()
+        .then(({ isNativeShellRuntime }) => isNativeShellRuntime())
+        .catch(() => false)
+    }
+    return nativeRuntimePromise
+  }
+
+  const resolvePasskeySupported = () => {
+    if (!passkeySupportPromise) {
+      passkeySupportPromise = loadSpacetimeAuthRuntime()
+        .then(
+          ({ getSpacetimeAuthMode, isHostedPasskeySupported }) =>
+            getSpacetimeAuthMode() === 'hosted' && isHostedPasskeySupported()
+        )
+        .catch(() => false)
+    }
+    return passkeySupportPromise
   }
 
   updateToggleButton(readReceiptsButton, chatSettings.readReceipts)
   updateToggleButton(typingIndicatorsButton, chatSettings.typingIndicators)
   updateToggleButton(offlineCacheButton, !swOptOut)
-  updateToggleButton(privacyAlwaysOnButton, getPrivacyScreenAlwaysOn())
   if (passkeyRow) {
-    passkeyRow.hidden = !passkeySupported
+    passkeyRow.hidden = true
   }
   if (passkeyButton) {
-    passkeyButton.disabled = !passkeySupported
-  }
-
-  if (textZoomInput) {
-    const zoom = getStoredTextZoom()
-    textZoomInput.value = String(zoom)
-    textZoomInput.setAttribute('aria-valuenow', String(zoom))
-  }
-
-  const friendUser = resolveFriendCodeUser(user)
-  if (friendCodeField) {
-    friendCodeField.value = friendUser ? ensureFriendCode(friendUser) : ''
+    passkeyButton.disabled = true
   }
 
   const saveSettings = () => {
-    saveChatSettings(user?.id, chatSettings)
+    void loadChatSettingsRuntime()
+      .then(({ saveChatSettings }) => {
+        saveChatSettings(user?.id, chatSettings)
+      })
+      .catch(() => undefined)
+  }
+
+  const ensureFriendCodeValue = async () => {
+    if (!friendCodeField) return ''
+    const currentValue = friendCodeField.value.trim()
+    if (currentValue) return currentValue
+    const friendUser = resolveFriendCodeUser(user)
+    if (!friendUser) return ''
+    const { ensureFriendCode } = await loadFriendCodeRuntime()
+    const nextValue = ensureFriendCode(friendUser)
+    friendCodeField.value = nextValue
+    return nextValue
   }
 
   const toggleReadReceipts = () => {
@@ -192,8 +225,8 @@ export const mountStaticSettingsController = ({ lang, user }: MountStaticSetting
     saveSettings()
   }
 
-  const toggleOfflineCache = () => {
-    if (nativeRuntime) return
+  const toggleOfflineCache = async () => {
+    if (await resolveNativeRuntime()) return
     swOptOut = !swOptOut
     updateToggleButton(offlineCacheButton, !swOptOut)
     try {
@@ -202,6 +235,7 @@ export const mountStaticSettingsController = ({ lang, user }: MountStaticSetting
       setStatus(root, '[data-static-settings-sw-status]', 'error', copy.settingsOfflineStorageError)
       return
     }
+    const { writeServiceWorkerOptOutCookie } = await loadServiceWorkerSeedRuntime()
     writeServiceWorkerOptOutCookie(swOptOut)
     window.dispatchEvent(new CustomEvent('prom:sw-toggle-cache', { detail: { optOut: swOptOut } }))
     setStatus(
@@ -212,20 +246,20 @@ export const mountStaticSettingsController = ({ lang, user }: MountStaticSetting
     )
   }
 
-  const handleOfflineRefresh = () => {
-    if (nativeRuntime) return
+  const handleOfflineRefresh = async () => {
+    if (await resolveNativeRuntime()) return
     window.dispatchEvent(new CustomEvent('prom:sw-refresh-cache'))
     setStatus(root, '[data-static-settings-sw-status]', 'info', copy.settingsOfflineRefreshPending)
   }
 
-  const handleOfflineCleanup = () => {
-    if (nativeRuntime) return
+  const handleOfflineCleanup = async () => {
+    if (await resolveNativeRuntime()) return
     window.dispatchEvent(new CustomEvent('prom:sw-clear-cache'))
     setStatus(root, '[data-static-settings-sw-status]', 'info', copy.settingsOfflineCleanupPending)
   }
 
   const handleCopyFriendCode = async () => {
-    const value = friendCodeField?.value?.trim() ?? ''
+    const value = await ensureFriendCodeValue()
     if (!value || !navigator.clipboard?.writeText) {
       setStatus(root, '[data-static-settings-friend-status]', 'error', copy.settingsInviteUnavailable)
       return
@@ -238,12 +272,13 @@ export const mountStaticSettingsController = ({ lang, user }: MountStaticSetting
     }
   }
 
-  const handleRotateFriendCode = () => {
+  const handleRotateFriendCode = async () => {
     const value = resolveFriendCodeUser(user)
     if (!value || !friendCodeField) {
       setStatus(root, '[data-static-settings-friend-status]', 'error', copy.settingsInviteUnavailable)
       return
     }
+    const { rotateFriendCode } = await loadFriendCodeRuntime()
     friendCodeField.value = rotateFriendCode(value)
     setStatus(root, '[data-static-settings-friend-status]', 'success', copy.settingsInviteRotated)
   }
@@ -252,6 +287,7 @@ export const mountStaticSettingsController = ({ lang, user }: MountStaticSetting
     void (async () => {
       const next = privacyAlwaysOnButton?.getAttribute('aria-checked') !== 'true'
       updateToggleButton(privacyAlwaysOnButton, next)
+      const { setPrivacyScreenAlwaysOn } = await loadPrivacyScreenRuntime()
       await setPrivacyScreenAlwaysOn(next)
     })()
   }
@@ -262,6 +298,7 @@ export const mountStaticSettingsController = ({ lang, user }: MountStaticSetting
       const value = Number(textZoomInput.value)
       if (!Number.isFinite(value)) return
       textZoomInput.setAttribute('aria-valuenow', String(value))
+      const { applyTextZoom } = await loadTextZoomRuntime()
       await applyTextZoom(value)
     })()
   }
@@ -275,6 +312,10 @@ export const mountStaticSettingsController = ({ lang, user }: MountStaticSetting
       }
       setStatus(root, '[data-static-settings-logout-status]', 'error', null)
       try {
+        const [{ signOutSpacetimeAuth }, { clearNativeAuthCredentials }] = await Promise.all([
+          loadSpacetimeAuthRuntime(),
+          loadNativeAuthRuntime()
+        ])
         const logoutUrl = await signOutSpacetimeAuth()
         await clearNativeAuthCredentials()
         window.location.assign(logoutUrl)
@@ -297,7 +338,11 @@ export const mountStaticSettingsController = ({ lang, user }: MountStaticSetting
   const handleAddPasskey = () => {
     void (async () => {
       if (passkeyBusy) return
+      const passkeySupported = await resolvePasskeySupported()
       if (!passkeySupported) {
+        if (passkeyRow) {
+          passkeyRow.hidden = true
+        }
         setStatus(root, '[data-static-settings-passkey-status]', 'error', copy.settingsPasskeyUnavailable)
         return
       }
@@ -307,6 +352,7 @@ export const mountStaticSettingsController = ({ lang, user }: MountStaticSetting
       }
       setStatus(root, '[data-static-settings-passkey-status]', 'error', null)
       try {
+        const { registerHostedPasskey } = await loadSpacetimeAuthRuntime()
         await registerHostedPasskey({
           name: user?.name || user?.email || 'Prometheus'
         })
@@ -343,6 +389,22 @@ export const mountStaticSettingsController = ({ lang, user }: MountStaticSetting
     void handleCopyFriendCode()
   }
 
+  const handleRotateFriendCodeClick = () => {
+    void handleRotateFriendCode()
+  }
+
+  const handleOfflineCacheToggle = () => {
+    void toggleOfflineCache()
+  }
+
+  const handleOfflineRefreshClick = () => {
+    void handleOfflineRefresh()
+  }
+
+  const handleOfflineCleanupClick = () => {
+    void handleOfflineCleanup()
+  }
+
   if (logoutButton) {
     logoutButton.addEventListener('click', handleLogout)
     cleanupFns.push(() => logoutButton.removeEventListener('click', handleLogout))
@@ -360,24 +422,24 @@ export const mountStaticSettingsController = ({ lang, user }: MountStaticSetting
     cleanupFns.push(() => typingIndicatorsButton.removeEventListener('click', toggleTypingIndicators))
   }
   if (offlineCacheButton) {
-    offlineCacheButton.addEventListener('click', toggleOfflineCache)
-    cleanupFns.push(() => offlineCacheButton.removeEventListener('click', toggleOfflineCache))
+    offlineCacheButton.addEventListener('click', handleOfflineCacheToggle)
+    cleanupFns.push(() => offlineCacheButton.removeEventListener('click', handleOfflineCacheToggle))
   }
   if (offlineRefreshButton) {
-    offlineRefreshButton.addEventListener('click', handleOfflineRefresh)
-    cleanupFns.push(() => offlineRefreshButton.removeEventListener('click', handleOfflineRefresh))
+    offlineRefreshButton.addEventListener('click', handleOfflineRefreshClick)
+    cleanupFns.push(() => offlineRefreshButton.removeEventListener('click', handleOfflineRefreshClick))
   }
   if (offlineCleanupButton) {
-    offlineCleanupButton.addEventListener('click', handleOfflineCleanup)
-    cleanupFns.push(() => offlineCleanupButton.removeEventListener('click', handleOfflineCleanup))
+    offlineCleanupButton.addEventListener('click', handleOfflineCleanupClick)
+    cleanupFns.push(() => offlineCleanupButton.removeEventListener('click', handleOfflineCleanupClick))
   }
   if (copyFriendCodeButton) {
     copyFriendCodeButton.addEventListener('click', handleCopyFriendCodeClick)
     cleanupFns.push(() => copyFriendCodeButton.removeEventListener('click', handleCopyFriendCodeClick))
   }
   if (rotateFriendCodeButton) {
-    rotateFriendCodeButton.addEventListener('click', handleRotateFriendCode)
-    cleanupFns.push(() => rotateFriendCodeButton.removeEventListener('click', handleRotateFriendCode))
+    rotateFriendCodeButton.addEventListener('click', handleRotateFriendCodeClick)
+    cleanupFns.push(() => rotateFriendCodeButton.removeEventListener('click', handleRotateFriendCodeClick))
   }
   if (privacyAlwaysOnButton) {
     privacyAlwaysOnButton.addEventListener('click', handlePrivacyAlwaysOnClick)
@@ -388,12 +450,62 @@ export const mountStaticSettingsController = ({ lang, user }: MountStaticSetting
     cleanupFns.push(() => textZoomInput.removeEventListener('input', handleTextZoomInput))
   }
 
-  window.addEventListener('prom:sw-cache-refreshed', handleCacheRefreshed)
-  window.addEventListener('prom:sw-cache-cleared', handleCacheCleared)
-  window.addEventListener('prom:sw-sync-requested', handleSyncRequested)
-  cleanupFns.push(() => window.removeEventListener('prom:sw-cache-refreshed', handleCacheRefreshed))
-  cleanupFns.push(() => window.removeEventListener('prom:sw-cache-cleared', handleCacheCleared))
-  cleanupFns.push(() => window.removeEventListener('prom:sw-sync-requested', handleSyncRequested))
+  let deferredEnhancementActive = true
+  let removeServiceWorkerListeners = () => {}
+  const cancelDeferredEnhancement = runAfterClientIntentIdle(() => {
+    void (async () => {
+      if (!deferredEnhancementActive || !document.body.contains(root)) {
+        return
+      }
+
+      const supported = await resolvePasskeySupported()
+      if (!deferredEnhancementActive || !document.body.contains(root)) {
+        return
+      }
+      if (passkeyRow) {
+        passkeyRow.hidden = !supported
+      }
+      if (passkeyButton) {
+        passkeyButton.disabled = !supported
+      }
+
+      const [{ getPrivacyScreenAlwaysOn }, { getStoredTextZoom }] = await Promise.all([
+        loadPrivacyScreenRuntime(),
+        loadTextZoomRuntime()
+      ])
+      if (!deferredEnhancementActive || !document.body.contains(root)) {
+        return
+      }
+      updateToggleButton(privacyAlwaysOnButton, getPrivacyScreenAlwaysOn())
+      if (textZoomInput) {
+        const zoom = getStoredTextZoom()
+        textZoomInput.value = String(zoom)
+        textZoomInput.setAttribute('aria-valuenow', String(zoom))
+      }
+
+      if (friendCodeField) {
+        await ensureFriendCodeValue()
+      }
+
+      if (await resolveNativeRuntime()) {
+        return
+      }
+
+      window.addEventListener('prom:sw-cache-refreshed', handleCacheRefreshed)
+      window.addEventListener('prom:sw-cache-cleared', handleCacheCleared)
+      window.addEventListener('prom:sw-sync-requested', handleSyncRequested)
+      removeServiceWorkerListeners = () => {
+        window.removeEventListener('prom:sw-cache-refreshed', handleCacheRefreshed)
+        window.removeEventListener('prom:sw-cache-cleared', handleCacheCleared)
+        window.removeEventListener('prom:sw-sync-requested', handleSyncRequested)
+      }
+    })().catch(() => undefined)
+  })
+  cleanupFns.push(() => {
+    deferredEnhancementActive = false
+    cancelDeferredEnhancement()
+    removeServiceWorkerListeners()
+  })
 
   return {
     cleanup() {

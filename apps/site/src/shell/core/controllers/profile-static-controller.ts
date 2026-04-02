@@ -1,16 +1,7 @@
 import type { Lang } from '../../../lang'
 import { getUiCopy } from '../../../lang/client'
-import {
-  buildLocalProfilePayload,
-  clampChannel,
-  DEFAULT_PROFILE_COLOR,
-  emitProfileUpdate,
-  loadLocalProfile,
-  PROFILE_AVATAR_MAX_BYTES,
-  saveLocalProfile,
-  type ProfileColor
-} from '../../../features/auth/profile-storage'
 import { buildPublicSiteAuthUrl } from '../../../shared/public-api-url'
+import { runAfterClientIntentIdle } from '../../../shared/client-boot'
 
 type ProfileUser = {
   id?: string
@@ -23,6 +14,12 @@ type MountStaticProfileControllerOptions = {
   user?: ProfileUser
 }
 
+type ProfileColor = {
+  r: number
+  g: number
+  b: number
+}
+
 type ControllerState = {
   savedName: string
   currentName: string
@@ -31,6 +28,12 @@ type ControllerState = {
   color: ProfileColor
   saving: boolean
 }
+
+const DEFAULT_PROFILE_COLOR: ProfileColor = { r: 96, g: 156, b: 248 }
+const PROFILE_AVATAR_MAX_BYTES = 1_200_000
+const DEFERRED_PROFILE_RESTORE_DELAY_MS = 3200
+const clampChannel = (value: number) => Math.min(255, Math.max(0, Math.round(value)))
+const loadProfileStorageRuntime = () => import('../../../features/auth/profile-storage')
 
 const rgbToHex = (color: ProfileColor) => {
   const toHex = (value: number) => clampChannel(value).toString(16).padStart(2, '0').toUpperCase()
@@ -92,7 +95,8 @@ const setStatus = (
   element.hidden = !message
 }
 
-const persistLocalProfileState = (state: ControllerState) => {
+const persistLocalProfileState = async (state: ControllerState) => {
+  const { buildLocalProfilePayload, saveLocalProfile, emitProfileUpdate } = await loadProfileStorageRuntime()
   const payload = buildLocalProfilePayload(state.bio, state.avatar, state.color)
   const saved = saveLocalProfile(payload)
   if (saved) {
@@ -110,6 +114,19 @@ const replaceNodeChildren = (root: HTMLElement, nextChild: Node) => {
   root.textContent = ''
   root.append(nextChild)
 }
+
+const readInitialAvatar = (root: HTMLElement) => {
+  const image = root.querySelector<HTMLImageElement>('[data-static-profile-avatar] img')
+  const src = image?.getAttribute('src')?.trim()
+  return src ? src : null
+}
+
+const isDefaultProfileState = (state: ControllerState) =>
+  !state.bio.trim() &&
+  !state.avatar &&
+  state.color.r === DEFAULT_PROFILE_COLOR.r &&
+  state.color.g === DEFAULT_PROFILE_COLOR.g &&
+  state.color.b === DEFAULT_PROFILE_COLOR.b
 
 export const syncAvatarPreview = (
   avatarRoot: HTMLElement,
@@ -223,14 +240,14 @@ export const mountStaticProfileController = ({ lang, user }: MountStaticProfileC
   const avatarRemove = root.querySelector<HTMLButtonElement>('[data-static-profile-avatar-remove]')
   const colorPicker = root.querySelector<HTMLInputElement>('[data-static-profile-color-picker]')
   const actionButton = document.querySelector<HTMLButtonElement>('[data-static-route-action]')
-  const storedProfile = loadLocalProfile()
   const initialName = user?.name ?? nameInput?.value?.trim() ?? ''
+  const initialColor = colorPicker?.value ? parseHexColor(colorPicker.value) : null
   const state: ControllerState = {
     savedName: initialName,
     currentName: initialName,
-    bio: storedProfile?.bio ?? bioInput?.value ?? '',
-    avatar: storedProfile?.avatar ?? null,
-    color: storedProfile?.color ? { ...storedProfile.color } : { ...DEFAULT_PROFILE_COLOR },
+    bio: bioInput?.value ?? '',
+    avatar: readInitialAvatar(root),
+    color: initialColor ?? { ...DEFAULT_PROFILE_COLOR },
     saving: false
   }
 
@@ -244,6 +261,39 @@ export const mountStaticProfileController = ({ lang, user }: MountStaticProfileC
   updateProfileCard(root, state, copy, user)
   syncSaveButton(actionButton, state)
 
+  let deferredRestoreActive = true
+  let cancelDeferredRestore: () => void = () => undefined
+  const deferredRestoreTimeout = window.setTimeout(() => {
+    cancelDeferredRestore = runAfterClientIntentIdle(() => {
+      if (!deferredRestoreActive || !document.body.contains(root) || !isDefaultProfileState(state)) {
+        return
+      }
+
+      void loadProfileStorageRuntime()
+        .then(({ loadLocalProfile }) => {
+          if (!deferredRestoreActive || !document.body.contains(root) || !isDefaultProfileState(state)) {
+            return
+          }
+          const storedProfile = loadLocalProfile()
+          if (!storedProfile) {
+            return
+          }
+
+          state.bio = storedProfile.bio ?? ''
+          state.avatar = storedProfile.avatar ?? null
+          state.color = storedProfile.color ? { ...storedProfile.color } : { ...DEFAULT_PROFILE_COLOR }
+          updateProfileCard(root, state, copy, user)
+          syncSaveButton(actionButton, state)
+        })
+        .catch(() => undefined)
+    })
+  }, DEFERRED_PROFILE_RESTORE_DELAY_MS)
+  cleanupFns.push(() => {
+    deferredRestoreActive = false
+    window.clearTimeout(deferredRestoreTimeout)
+    cancelDeferredRestore()
+  })
+
   const handleNameInput = () => {
     state.currentName = nameInput?.value ?? ''
     setStatus(root, '[data-static-profile-status]', 'success', null)
@@ -251,14 +301,19 @@ export const mountStaticProfileController = ({ lang, user }: MountStaticProfileC
   }
 
   const persistLocalState = () => {
-    const saved = persistLocalProfileState(state)
-    setStatus(
-      root,
-      '[data-static-profile-local-status]',
-      saved ? 'success' : 'error',
-      saved ? copy.profileSavedLocal : copy.profileSaveLocalFailed
-    )
     updateProfileCard(root, state, copy, user)
+    void persistLocalProfileState(state)
+      .then((saved) => {
+        setStatus(
+          root,
+          '[data-static-profile-local-status]',
+          saved ? 'success' : 'error',
+          saved ? copy.profileSavedLocal : copy.profileSaveLocalFailed
+        )
+      })
+      .catch(() => {
+        setStatus(root, '[data-static-profile-local-status]', 'error', copy.profileSaveLocalFailed)
+      })
   }
 
   const handleBioInput = () => {

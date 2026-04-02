@@ -124,6 +124,18 @@ describe("entry.ssr static bootstrap injection", () => {
     expect(source).toContain("return staticFragmentPrewarmPromise.then(() => renderStaticShell());");
   });
 
+  it("injects the static bootstrap perf tag in head for every static route mode", async () => {
+    const source = await readSource();
+
+    expect(source).toContain(
+      '`${preloadTags}${stylePreloadTags}${deferredHomeGlobalStyleMetaTag}${perfScriptTag}${scriptTag}</head>`',
+    );
+    expect(source).toContain(
+      '.replace("</head>", `${preloadTags}${stylePreloadTags}${perfScriptTag}</head>`)',
+    );
+    expect(source).toContain('.replace("</body>", `${scriptTag}</body>`);');
+  });
+
   it("guards against a missing client manifest during preview static-shell rendering", async () => {
     const source = await readSource();
 

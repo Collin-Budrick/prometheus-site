@@ -1,7 +1,6 @@
 import { component$ } from '@builder.io/qwik'
 import { FRAGMENT_PLAN_CACHE_PAYLOAD_ID } from '../plan-cache'
 import type { FragmentShellProps } from './fragment-shell-types'
-import { FragmentShellClientEffects } from './FragmentShellClientEffects'
 import { FragmentShellIslands } from './FragmentShellIslands'
 import { FragmentShellView } from './FragmentShellView'
 import { FragmentStreamController } from './FragmentStreamController'
@@ -56,12 +55,6 @@ export const FragmentShell = component$((props: FragmentShellProps) => {
           type="application/json"
           nonce={nonce || undefined}
           dangerouslySetInnerHTML={shell.planCachePayload}
-        />
-      ) : null}
-      {shell.clientReady.value ? (
-        <FragmentShellClientEffects
-          planValue={shell.planValue}
-          initialFragmentMap={shell.initialFragmentMap}
         />
       ) : null}
       <FragmentShellIslands gridRef={shell.gridRef} />

@@ -52,7 +52,8 @@ const HOME_DOCK_ID: &str = "fragment://page/home/dock@v2";
 const STORE_STREAM_ID: &str = "fragment://page/store/stream@v5";
 const STORE_CART_ID: &str = "fragment://page/store/cart@v1";
 const STORE_CREATE_ID: &str = "fragment://page/store/create@v1";
-const CHAT_CONTACTS_ID: &str = "fragment://page/chat/contacts@v1";
+const CHAT_SEARCH_ID: &str = "fragment://page/chat/search@v1";
+const CHAT_ACTIVITY_ID: &str = "fragment://page/chat/activity@v1";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum FragmentCompressionEncoding {
@@ -349,6 +350,8 @@ impl FragmentService {
             Some(home_fetch_groups(&fragments))
         } else if normalized_path == "/store" {
             Some(store_fetch_groups(&fragments))
+        } else if normalized_path == "/chat" {
+            Some(store_fetch_groups(&fragments))
         } else if fragments.is_empty() {
             Some(Vec::new())
         } else {
@@ -437,7 +440,8 @@ impl FragmentService {
             STORE_STREAM_ID => (self.render_store_stream(lang), vec!["store", "stream"]),
             STORE_CART_ID => (self.render_store_cart(lang), vec!["store", "cart"]),
             STORE_CREATE_ID => (self.render_store_create(lang), vec!["store", "create"]),
-            CHAT_CONTACTS_ID => (self.render_chat_contacts(lang), vec!["chat", "contacts"]),
+            CHAT_SEARCH_ID => (self.render_chat_search(lang), vec!["chat", "contacts", "search"]),
+            CHAT_ACTIVITY_ID => (self.render_chat_activity(lang), vec!["chat", "contacts", "activity"]),
             _ => return None,
         };
 
@@ -802,11 +806,12 @@ impl FragmentService {
         )
     }
 
-    fn render_chat_contacts(&self, lang: &str) -> RenderNode {
+    fn render_chat_search(&self, lang: &str) -> RenderNode {
         el(
             "contact-invites",
             map_attrs(vec![
                 ("class", "chat-invites"),
+                ("data-variant", "shell"),
                 ("data-title", &self.translate(lang, "Contact invites", &[])),
                 (
                     "data-helper",
@@ -819,6 +824,45 @@ impl FragmentService {
                 ("data-search-placeholder", "user-id"),
                 ("data-search-action", &self.translate(lang, "Search", &[])),
                 ("data-invite-action", &self.translate(lang, "Invite", &[])),
+                ("data-accept-action", &self.translate(lang, "Accept", &[])),
+                ("data-decline-action", &self.translate(lang, "Decline", &[])),
+                ("data-remove-action", &self.translate(lang, "Remove", &[])),
+                (
+                    "data-incoming-label",
+                    &self.translate(lang, "Incoming", &[]),
+                ),
+                (
+                    "data-outgoing-label",
+                    &self.translate(lang, "Outgoing", &[]),
+                ),
+                (
+                    "data-contacts-label",
+                    &self.translate(lang, "Contacts", &[]),
+                ),
+                (
+                    "data-empty-label",
+                    &self.translate(lang, "No invites yet.", &[]),
+                ),
+            ]),
+            vec![],
+        )
+    }
+
+    fn render_chat_activity(&self, lang: &str) -> RenderNode {
+        el(
+            "contact-invites",
+            map_attrs(vec![
+                ("class", "chat-invites"),
+                ("data-variant", "details"),
+                ("data-title", &self.translate(lang, "Invite activity", &[])),
+                (
+                    "data-helper",
+                    &self.translate(
+                        lang,
+                        "Pending invites and saved contacts appear after the search shell is ready.",
+                        &[],
+                    ),
+                ),
                 ("data-accept-action", &self.translate(lang, "Accept", &[])),
                 ("data-decline-action", &self.translate(lang, "Decline", &[])),
                 ("data-remove-action", &self.translate(lang, "Remove", &[])),
@@ -1519,7 +1563,11 @@ fn delivery_payload(
 fn has_css_asset(id: &str) -> bool {
     matches!(
         id,
-        STORE_STREAM_ID | STORE_CART_ID | STORE_CREATE_ID | CHAT_CONTACTS_ID
+        STORE_STREAM_ID
+            | STORE_CART_ID
+            | STORE_CREATE_ID
+            | CHAT_SEARCH_ID
+            | CHAT_ACTIVITY_ID
     )
 }
 
@@ -1829,7 +1877,8 @@ fn load_fragment_css_files() -> HashMap<String, String> {
     let store_css =
         fs::read_to_string(public_dir.join("fragment-bddbb00bca57.css")).unwrap_or_default();
     HashMap::from([
-        (CHAT_CONTACTS_ID.to_string(), chat_css),
+        (CHAT_SEARCH_ID.to_string(), chat_css.clone()),
+        (CHAT_ACTIVITY_ID.to_string(), chat_css),
         (STORE_STREAM_ID.to_string(), store_css.clone()),
         (STORE_CART_ID.to_string(), store_css.clone()),
         (STORE_CREATE_ID.to_string(), store_css),
@@ -1933,14 +1982,12 @@ fn store_plan_entries() -> Vec<FragmentPlanEntry> {
 }
 
 fn chat_plan_entries() -> Vec<FragmentPlanEntry> {
-    vec![home_entry(
-        CHAT_CONTACTS_ID,
-        true,
-        "span 12",
-        Some("small"),
-        489,
-        None,
-    )]
+    vec![
+        home_entry(CHAT_SEARCH_ID, true, "span 12", Some("small"), 372, None)
+            .with_render_html(false),
+        home_entry(CHAT_ACTIVITY_ID, false, "span 12", Some("small"), 489, None)
+            .with_render_html(false),
+    ]
 }
 
 trait FragmentPlanEntryExt {
@@ -2102,6 +2149,19 @@ mod tests {
             vec![
                 vec![STORE_STREAM_ID.to_string(), STORE_CART_ID.to_string()],
                 vec![STORE_CREATE_ID.to_string()]
+            ]
+        );
+    }
+
+    #[test]
+    fn chat_fetch_groups_split_search_and_activity_cards() {
+        let groups = store_fetch_groups(&chat_plan_entries());
+
+        assert_eq!(
+            groups,
+            vec![
+                vec![CHAT_SEARCH_ID.to_string()],
+                vec![CHAT_ACTIVITY_ID.to_string()]
             ]
         );
     }

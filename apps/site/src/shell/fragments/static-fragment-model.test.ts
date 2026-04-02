@@ -148,14 +148,19 @@ describe('static-fragment-model', () => {
     ])
   })
 
-  it('keeps a single desktop card full width in the static model and runtime plan', () => {
+  it('keeps the chat search shell critical while deferring activity in the runtime plan', () => {
     const plan = {
       path: '/chat',
       createdAt: 1,
       fragments: [
         {
-          id: 'fragment://page/chat/contacts@v1',
+          id: 'fragment://page/chat/search@v1',
           critical: true,
+          layout: { column: 'span 6', size: 'small' }
+        },
+        {
+          id: 'fragment://page/chat/activity@v1',
+          critical: false,
           layout: { column: 'span 6', size: 'small' }
         }
       ]
@@ -164,13 +169,27 @@ describe('static-fragment-model', () => {
     const model = buildStaticFragmentRouteModel({
       plan: plan as never,
       fragments: {
-        'fragment://page/chat/contacts@v1': {
-          id: 'fragment://page/chat/contacts@v1',
-          tree: h('section', null, [h('p', null, [t('contacts')])]),
+        'fragment://page/chat/search@v1': {
+          id: 'fragment://page/chat/search@v1',
+          tree: h('section', null, [h('p', null, [t('search')])]),
           head: [],
           css: '',
           meta: {
-            cacheKey: 'contacts:1',
+            cacheKey: 'search:1',
+            ttl: 30,
+            staleTtl: 60,
+            tags: [],
+            runtime: 'edge'
+          },
+          cacheUpdatedAt: 1
+        },
+        'fragment://page/chat/activity@v1': {
+          id: 'fragment://page/chat/activity@v1',
+          tree: h('section', null, [h('p', null, [t('activity')])]),
+          head: [],
+          css: '',
+          meta: {
+            cacheKey: 'activity:1',
             ttl: 30,
             staleTtl: 60,
             tags: [],
@@ -182,8 +201,14 @@ describe('static-fragment-model', () => {
       lang: 'en'
     })
 
-    expect(model.entries.map((entry) => entry.layout.column)).toEqual(['span 12'])
-    expect(model.routeData.runtimePlanEntries.map((entry) => entry.layout.column)).toEqual(['span 12'])
+    expect(model.entries.map((entry) => entry.id)).toEqual([
+      'fragment://page/chat/search@v1',
+      'fragment://page/chat/activity@v1'
+    ])
+    expect(model.routeData.runtimePlanEntries.map((entry) => ({ id: entry.id, critical: entry.critical }))).toEqual([
+      { id: 'fragment://page/chat/search@v1', critical: true },
+      { id: 'fragment://page/chat/activity@v1', critical: false }
+    ])
   })
 
   it('renders static fragment replacements from the provided fragment copy', () => {

@@ -1,4 +1,3 @@
-import { TRUSTED_TYPES_RUNTIME_SCRIPT_POLICY_NAME } from '../security/shared'
 import type { RouteSafetyMode, RouteWarmupAudience } from './route-navigation'
 
 export type RouteShellBootstrapNavigationDescriptor = {
@@ -26,7 +25,6 @@ const FIRST_ACTIONABLE_CONTROL_MARK = 'prom:perf:first-actionable-control'
 const ROUTE_TRANSITION_START_MARK = 'prom:perf:route-transition-start'
 const ROUTE_TRANSITION_END_MARK = 'prom:perf:route-transition-end'
 const ROUTE_TRANSITION_MEASURE = 'prom:perf:route-transition'
-const CSP_NONCE_ATTR = 'data-csp-nonce'
 const ROUTE_FALLBACK_ANIMATION_DURATION_MS = 420
 
 const serializeJson = (value: unknown) =>
@@ -341,17 +339,8 @@ export const buildRouteShellBootstrapScript = ({
   var warmupDescriptors = ${serializeJson(warmupDescriptors)};
   var isAuthenticated = ${serializeJson(isAuthenticated)};
   var stateKey = ${serializeJson(ROUTE_TRANSITION_STATE_KEY)};
-  var nonceAttr = ${serializeJson(CSP_NONCE_ATTR)};
-  var runtimeScriptPolicyName = ${serializeJson(TRUSTED_TYPES_RUNTIME_SCRIPT_POLICY_NAME)};
-  var speculationSelector = 'script[type="speculationrules"][data-route-speculation="shell"]';
-  var prefetchSelector = 'link[rel="prefetch"][data-route-prefetch="shell"]';
-  var supportsSpeculation = typeof HTMLScriptElement !== 'undefined' &&
-    typeof HTMLScriptElement.supports === 'function' &&
-    HTMLScriptElement.supports('speculationrules');
-  var idleScheduled = false;
-  var idlePrefetchUrls = [];
-  var idlePrerenderUrls = [];
-  var previousRenderState = '';
+  void warmupDescriptors;
+  void isAuthenticated;
 
   var normalizePath = function (value) {
     var trimmed = String(value || '').trim();
@@ -425,133 +414,6 @@ export const buildRouteShellBootstrapScript = ({
       return null;
     }
   };
-
-  var normalizeWarmupUrls = function (urls) {
-    var seen = new Set();
-    var normalized = [];
-    for (var index = 0; index < urls.length; index += 1) {
-      try {
-        var url = new URL(urls[index], location.origin);
-        if (url.origin !== location.origin || seen.has(url.href)) continue;
-        seen.add(url.href);
-        normalized.push(url.href);
-      } catch (error) {
-        // Ignore invalid warmup URLs.
-      }
-    }
-    return normalized;
-  };
-
-  var toTrustedScript = function (value) {
-    var target = window;
-    var cached = target.__PROM_TT_POLICIES__ && target.__PROM_TT_POLICIES__[runtimeScriptPolicyName];
-    if (cached && typeof cached.createScript === 'function') {
-      return cached.createScript(value);
-    }
-
-    var factory = target.trustedTypes;
-    if (!factory || typeof factory.createPolicy !== 'function') {
-      return value;
-    }
-
-    try {
-      var policy = factory.createPolicy(runtimeScriptPolicyName, {
-        createScript: function (input) { return input; },
-        createScriptURL: function (input) { return input; }
-      });
-      target.__PROM_TT_POLICIES__ = Object.assign({}, target.__PROM_TT_POLICIES__ || {}, {
-        [runtimeScriptPolicyName]: policy
-      });
-      return policy.createScript ? policy.createScript(value) : value;
-    } catch (error) {
-      var existing = target.__PROM_TT_POLICIES__ && target.__PROM_TT_POLICIES__[runtimeScriptPolicyName];
-      return existing && typeof existing.createScript === 'function'
-        ? existing.createScript(value)
-        : value;
-    }
-  };
-
-  var clearWarmupMarkup = function () {
-    Array.from(document.querySelectorAll(speculationSelector)).forEach(function (node) {
-      node.parentNode && node.parentNode.removeChild(node);
-    });
-    Array.from(document.querySelectorAll(prefetchSelector)).forEach(function (node) {
-      node.parentNode && node.parentNode.removeChild(node);
-    });
-  };
-
-  var renderWarmupMarkup = function () {
-    var prefetchUrls = normalizeWarmupUrls(idlePrefetchUrls);
-    var prerenderUrls = supportsSpeculation ? normalizeWarmupUrls(idlePrerenderUrls) : [];
-    var nextState = JSON.stringify({ prefetchUrls: prefetchUrls, prerenderUrls: prerenderUrls });
-
-    if (nextState === previousRenderState) return;
-    previousRenderState = nextState;
-    clearWarmupMarkup();
-
-    if (!prefetchUrls.length && !prerenderUrls.length) {
-      return;
-    }
-
-    if (supportsSpeculation) {
-      var script = document.createElement('script');
-      script.type = 'speculationrules';
-      script.setAttribute('data-route-speculation', 'shell');
-      var nonce = document.documentElement.getAttribute(nonceAttr);
-      if (nonce) {
-        script.nonce = nonce;
-      }
-      script.text = toTrustedScript(JSON.stringify({
-        prefetch: prefetchUrls.length ? [{ source: 'list', urls: prefetchUrls }] : [],
-        prerender: prerenderUrls.length ? [{ source: 'list', urls: prerenderUrls }] : []
-      }));
-      document.head.appendChild(script);
-      return;
-    }
-
-    normalizeWarmupUrls(prefetchUrls.concat(prerenderUrls)).forEach(function (href) {
-      var link = document.createElement('link');
-      link.rel = 'prefetch';
-      link.as = 'document';
-      link.href = href;
-      link.setAttribute('data-route-prefetch', 'shell');
-      document.head.appendChild(link);
-    });
-  };
-
-  var scheduleIdleWarmup = function () {
-    if (idleScheduled || isWarmupConstrained()) return;
-    idleScheduled = true;
-    var run = function () {
-      var currentKey = comparableKey(new URL(location.href));
-      idlePrefetchUrls = [];
-      idlePrerenderUrls = [];
-
-      warmupDescriptors.forEach(function (descriptor) {
-        if (descriptor.safety === 'no-warmup') return;
-        if (!isAuthenticated && descriptor.warmupAudience === 'auth') return;
-
-        var url = new URL(descriptor.href, location.origin);
-        if (comparableKey(url) === currentKey) return;
-
-        if (descriptor.safety === 'prerender-ok' && supportsSpeculation) {
-          idlePrerenderUrls.push(url.href);
-          return;
-        }
-
-        idlePrefetchUrls.push(url.href);
-      });
-      renderWarmupMarkup();
-    };
-
-    if (typeof window.requestIdleCallback === 'function') {
-      window.requestIdleCallback(run, { timeout: 1600 });
-      return;
-    }
-
-    window.setTimeout(run, 220);
-  };
-  scheduleIdleWarmup();
 
   document.addEventListener('click', function (event) {
     if (

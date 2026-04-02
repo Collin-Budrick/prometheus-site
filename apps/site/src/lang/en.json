@@ -207,11 +207,17 @@
       "title": "Create a new store item.",
       "description": "Write directly into SpaceTimeDB and watch the live inventory update without a REST round-trip."
     },
-    "fragment://page/chat/contacts@v1": {
+    "fragment://page/chat/search@v1": {
       "heading": "h2",
-      "metaLine": "contact invites",
-      "title": "Invite and manage contacts.",
-      "description": "Search by name or identity to send invites, accept or decline requests, and keep your contact list in sync."
+      "metaLine": "contact search",
+      "title": "Search and invite contacts.",
+      "description": "Search by user ID, send invites, and keep the first contact action ready before the rest of chat activity loads."
+    },
+    "fragment://page/chat/activity@v1": {
+      "heading": "h2",
+      "metaLine": "contact activity",
+      "title": "Review pending and active contacts.",
+      "description": "Incoming invites, outgoing requests, and saved contacts load after the search shell is already usable."
     },
     "fragment://page/store/stream@v5": {
       "heading": "h2",

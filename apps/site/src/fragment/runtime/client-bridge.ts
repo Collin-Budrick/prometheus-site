@@ -63,6 +63,7 @@ type FragmentRuntimeWindow = Window & {
 }
 
 const canUseWorkerRuntime = () => typeof window !== 'undefined' && typeof Worker === 'function'
+const connectedFragmentRuntimeBridges = new Set<FragmentRuntimeBridge>()
 
 export const FRAGMENT_RUNTIME_WORKER_ASSET_PATH = 'build/static-shell/apps/site/src/fragment/runtime/worker.js'
 export const FRAGMENT_RUNTIME_DECODE_WORKER_ASSET_PATH =
@@ -142,6 +143,21 @@ const clearPrewarmedFragmentRuntime = (worker: Worker | null) => {
   }
 
   delete liveWindow[PREWARMED_FRAGMENT_RUNTIME_STATE_KEY]
+}
+
+export const primeConnectedFragmentRuntimeBootstrap = async (
+  bytes: Uint8Array | ArrayBuffer,
+  href?: string
+) => {
+  if (!connectedFragmentRuntimeBridges.size) {
+    return
+  }
+
+  await Promise.allSettled(
+    Array.from(connectedFragmentRuntimeBridges).map(async (bridge) => {
+      await bridge.primeBootstrap(bytes, href)
+    })
+  )
 }
 
 export class FragmentRuntimeBridge {
@@ -267,6 +283,7 @@ export class FragmentRuntimeBridge {
       return false
     }
     this.worker.addEventListener('message', this.handleMessage as EventListener)
+    connectedFragmentRuntimeBridges.add(this)
 
     this.post({
       type: 'init',
@@ -446,6 +463,7 @@ export class FragmentRuntimeBridge {
 
   private disconnectPort() {
     const activeWorker = this.worker
+    connectedFragmentRuntimeBridges.delete(this)
     if (activeWorker && this.clientId) {
       this.post({
         type: 'dispose',

@@ -452,32 +452,68 @@ const renderContactInvitesNode = (attrs: Record<string, string> | undefined, con
   const incoming = groups.incoming.map(normalizeInvite).filter((invite): invite is StaticInvite => invite !== null)
   const outgoing = groups.outgoing.map(normalizeInvite).filter((invite): invite is StaticInvite => invite !== null)
   const contacts = groups.contacts.map(normalizeInvite).filter((invite): invite is StaticInvite => invite !== null)
+  const variant = attrs?.['data-variant'] === 'details' ? 'details' : 'shell'
   const title = attrs?.['data-title'] ?? 'Contact invites'
   const helper = attrs?.['data-helper'] ?? 'Search by user ID to connect.'
+  const searchLabel = attrs?.['data-search-label'] ?? 'Search'
+  const searchPlaceholder = attrs?.['data-search-placeholder'] ?? 'name or identity'
+  const searchActionLabel = attrs?.['data-search-action'] ?? 'Search'
   const incomingLabel = attrs?.['data-incoming-label'] ?? 'Incoming'
   const outgoingLabel = attrs?.['data-outgoing-label'] ?? 'Outgoing'
   const contactsLabel = attrs?.['data-contacts-label'] ?? 'Contacts'
   const emptyLabel = attrs?.['data-empty-label'] ?? 'No invites yet.'
-
-  const shell = h('div', { class: attrs?.class ?? 'chat-invites' }, [
-    h('div', { class: 'chat-invites-header' }, [
-      h('div', undefined, [
-        h('div', { class: 'chat-invites-title' }, [translateStaticText(context, title)]),
-        h('p', { class: 'chat-invites-helper' }, [translateStaticText(context, helper)])
-      ]),
-      h('div', { class: 'chat-invites-header-actions' }, [
-        h('span', { class: 'chat-invites-status-note', 'data-tone': 'neutral' }, [
-          translateStaticText(context, `${incoming.length + outgoing.length} ${translateStaticText(context, 'pending')}`)
+  const pendingLabel = `${incoming.length + outgoing.length} ${translateStaticText(context, 'pending')}`
+  const shell = variant === 'details'
+    ? h('div', { class: attrs?.class ?? 'chat-invites' }, [
+        h('div', { class: 'chat-invites-header' }, [
+          h('div', undefined, [
+            h('div', { class: 'chat-invites-title' }, [translateStaticText(context, title)]),
+            h('p', { class: 'chat-invites-helper' }, [translateStaticText(context, helper)])
+          ]),
+          h('div', { class: 'chat-invites-header-actions' }, [
+            h('span', { class: 'chat-invites-status-note', 'data-tone': 'neutral' }, [
+              translateStaticText(context, pendingLabel)
+            ])
+          ])
+        ]),
+        h('section', { class: 'chat-invites-results' }, [
+          h('div', { class: 'chat-invites-results-header' }, [h('span', undefined, [translateStaticText(context, title)])]),
+          renderInviteList(incomingLabel, incoming, emptyLabel, true, context),
+          renderInviteList(outgoingLabel, outgoing, emptyLabel, false, context),
+          renderInviteList(contactsLabel, contacts, emptyLabel, false, context)
         ])
       ])
-    ]),
-    h('section', { class: 'chat-invites-results' }, [
-      h('div', { class: 'chat-invites-results-header' }, [h('span', undefined, [translateStaticText(context, title)])]),
-      renderInviteList(incomingLabel, incoming, emptyLabel, true, context),
-      renderInviteList(outgoingLabel, outgoing, emptyLabel, false, context),
-      renderInviteList(contactsLabel, contacts, emptyLabel, false, context)
-    ])
-  ])
+    : h('div', { class: attrs?.class ?? 'chat-invites' }, [
+        h('div', { class: 'chat-invites-header' }, [
+          h('div', undefined, [
+            h('div', { class: 'chat-invites-title' }, [translateStaticText(context, title)]),
+            h('p', { class: 'chat-invites-helper' }, [translateStaticText(context, helper)])
+          ]),
+          h('div', { class: 'chat-invites-header-actions' }, [
+            h('span', { class: 'chat-invites-status-note', 'data-tone': 'neutral' }, [
+              translateStaticText(context, pendingLabel)
+            ])
+          ])
+        ]),
+        h('div', { class: 'chat-invites-search' }, [
+          h('label', { class: 'chat-invites-field' }, [
+            h('span', undefined, [translateStaticText(context, searchLabel)]),
+            h('input', {
+              type: 'text',
+              placeholder: translateStaticText(context, searchPlaceholder),
+              value: '',
+              'aria-label': translateStaticText(context, searchLabel)
+            })
+          ]),
+          h('button', { type: 'button', class: 'chat-invites-button' }, [translateStaticText(context, searchActionLabel)])
+        ]),
+        h('section', { class: 'chat-invites-results' }, [
+          h('div', { class: 'chat-invites-results-header' }, [h('span', undefined, [translateStaticText(context, 'Search results')])]),
+          h('div', { class: 'chat-invites-list' }, [
+            h('div', { class: 'chat-invites-empty' }, [translateStaticText(context, emptyLabel)])
+          ])
+        ])
+      ])
   return createFragmentWidgetMarkerNode({
     kind: 'contact-invites',
     id: resolveWidgetId(context, 'contact-invites', attrs?.['data-widget-key']),
@@ -487,6 +523,10 @@ const renderContactInvitesNode = (attrs: Record<string, string> | undefined, con
         class: attrs?.class ?? 'chat-invites',
         title,
         helper,
+        variant,
+        searchLabel,
+        searchPlaceholder,
+        searchActionLabel,
         incomingLabel,
         outgoingLabel,
         contactsLabel,

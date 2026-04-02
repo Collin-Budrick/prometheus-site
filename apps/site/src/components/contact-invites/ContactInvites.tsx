@@ -1,4 +1,4 @@
-import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
+import { $, component$, useSignal, useVisibleTask$, type QRL } from '@builder.io/qwik'
 import {
   beginInitialTask,
   failInitialTask,
@@ -16,12 +16,6 @@ import {
   type ContactSearchResult
 } from './data'
 import {
-  bindOverlayDismiss,
-  focusOverlayEntry,
-  restoreOverlayFocusBeforeHide,
-  setOverlaySurfaceState
-} from '../../shared/overlay-a11y'
-import {
   acceptContactInviteDirect,
   declineContactInviteDirect,
   removeContactInviteDirect,
@@ -29,6 +23,8 @@ import {
   sendContactInviteDirect,
   subscribeContactInvites
 } from '../../features/messaging/spacetime-contacts'
+
+type ContactInvitesVariant = 'shell' | 'details'
 
 type ContactInvitesProps = {
   class?: string
@@ -45,6 +41,7 @@ type ContactInvitesProps = {
   outgoingLabel?: string
   contactsLabel?: string
   emptyLabel?: string
+  variant?: ContactInvitesVariant
 }
 
 type StatusNote = {
@@ -72,13 +69,106 @@ const resolveAvatarText = (user: ContactInviteUser) => {
   return (letters[0] ?? '?') + (letters[1] ?? '')
 }
 
+const renderInviteList = ({
+  invites,
+  label,
+  emptyLabel,
+  tone = 'default',
+  actionLabel,
+  onAction$,
+  acceptActionLabel,
+  declineActionLabel,
+  removeActionLabel,
+  onInviteAction$
+}: {
+  invites: ContactInviteGroups['incoming'] | ContactInviteGroups['outgoing'] | ContactInviteGroups['contacts']
+  label: string
+  emptyLabel: string
+  tone?: 'default' | 'alert'
+  actionLabel?: string
+  onAction$?: QRL<(identity: string) => void>
+  acceptActionLabel?: string
+  declineActionLabel?: string
+  removeActionLabel?: string
+  onInviteAction$?: QRL<(inviteId: string, action: 'accept' | 'decline' | 'remove') => void>
+}) => (
+  <div class="chat-invites-subsection">
+    <div class="chat-invites-subheader">
+      <span>{label}</span>
+      <span class="chat-invites-subcount" data-alert={tone === 'alert' && invites.length > 0 ? 'true' : 'false'}>
+        {invites.length}
+      </span>
+    </div>
+    <div class="chat-invites-list">
+      {invites.length === 0 ? (
+        <div class="chat-invites-empty">{emptyLabel}</div>
+      ) : (
+        invites.map((invite, index) => (
+          <div class="chat-invites-item" style={{ '--stagger-index': index }}>
+            <div class="chat-invites-item-heading">
+              <div class="chat-invites-avatar">{resolveAvatarText(invite.user)}</div>
+              <div>
+                <div class="chat-invites-item-name">{resolveDisplayName(invite.user)}</div>
+                <div class="chat-invites-item-meta">{resolveMetaLine(invite.user)}</div>
+              </div>
+            </div>
+            <div class="chat-invites-actions">
+              {actionLabel && onAction$ ? (
+                <button
+                  type="button"
+                  class="chat-invites-action success"
+                  onClick$={() => onAction$(invite.user.id)}
+                >
+                  {actionLabel}
+                </button>
+              ) : null}
+              {acceptActionLabel && declineActionLabel && onInviteAction$ ? (
+                <>
+                  <button
+                    type="button"
+                    class="chat-invites-action success"
+                    onClick$={() => onInviteAction$(invite.id, 'accept')}
+                  >
+                    {acceptActionLabel}
+                  </button>
+                  <button
+                    type="button"
+                    class="chat-invites-action ghost"
+                    onClick$={() => onInviteAction$(invite.id, 'decline')}
+                  >
+                    {declineActionLabel}
+                  </button>
+                </>
+              ) : null}
+              {removeActionLabel && onInviteAction$ ? (
+                <button
+                  type="button"
+                  class="chat-invites-action ghost"
+                  onClick$={() => onInviteAction$(invite.id, 'remove')}
+                >
+                  {removeActionLabel}
+                </button>
+              ) : null}
+              {!actionLabel && !acceptActionLabel && !declineActionLabel && !removeActionLabel ? (
+                <span class={`chat-invites-pill${tone === 'alert' ? '' : ' accent'}`}>
+                  {tone === 'alert' ? 'Pending' : 'Contact'}
+                </span>
+              ) : null}
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  </div>
+)
+
 export const ContactInvites = component$<ContactInvitesProps>((props) => {
   const seed = useContactInvitesSeed()
   const hasSeed = seed !== null
+  const variant: ContactInvitesVariant = props.variant === 'details' ? 'details' : 'shell'
   const minimumSearchLength = 2
-  const popoverOpen = useSignal(false)
   const statusNote = useSignal<StatusNote | null>(null)
-  const invitesState = useSignal<'idle' | 'loading' | 'error'>('idle')
+  const invitesState = useSignal<'idle' | 'loading' | 'error'>(variant === 'details' && !hasSeed ? 'loading' : 'idle')
   const invites = useSignal<ContactInviteGroups>(seed?.invites ?? emptyInviteGroups)
   const invitesError = useSignal<string | null>(null)
   const searchQuery = useSignal('')
@@ -86,13 +176,9 @@ export const ContactInvites = component$<ContactInvitesProps>((props) => {
   const searchState = useSignal<'idle' | 'loading' | 'error'>('idle')
   const searchError = useSignal<string | null>(null)
   const rootRef = useSignal<HTMLElement>()
-  const popoverRootRef = useSignal<HTMLElement>()
-  const popoverTriggerRef = useSignal<HTMLButtonElement>()
-  const popoverRef = useSignal<HTMLDivElement>()
   const searchInputRef = useSignal<HTMLInputElement>()
-  const wasPopoverOpen = useSignal(false)
   const initialTaskKey = useSignal<string | null>(null)
-  const initialTaskSettled = useSignal(hasSeed)
+  const initialTaskSettled = useSignal(variant === 'shell' || hasSeed)
 
   const refreshSearch = $(async (query: string) => {
     const trimmed = query.trim()
@@ -115,6 +201,12 @@ export const ContactInvites = component$<ContactInvitesProps>((props) => {
 
   const handleSearch = $(async () => {
     await refreshSearch(searchQuery.value)
+  })
+
+  const handleSearchKeyDown = $((event: KeyboardEvent) => {
+    if (event.key !== 'Enter') return
+    event.preventDefault()
+    void handleSearch()
   })
 
   const handleInvite = $(async (identity: string) => {
@@ -154,12 +246,9 @@ export const ContactInvites = component$<ContactInvitesProps>((props) => {
     }
   })
 
-  const togglePopover = $(() => {
-    popoverOpen.value = !popoverOpen.value
-  })
-
   useVisibleTask$(
     (ctx) => {
+      if (variant !== 'details') return
       const root = rootRef.value
       ctx.track(() => rootRef.value)
       if (!root) return
@@ -193,7 +282,7 @@ export const ContactInvites = component$<ContactInvitesProps>((props) => {
   })
 
   useVisibleTask$((ctx) => {
-    if (typeof window === 'undefined') return
+    if (variant !== 'details' || typeof window === 'undefined') return
     invitesState.value = hasSeed ? 'idle' : 'loading'
     let cleanup = () => {}
     const cancelDeferredSubscription = runAfterClientIntentIdle(() => {
@@ -212,318 +301,183 @@ export const ContactInvites = component$<ContactInvitesProps>((props) => {
     })
   })
 
-  useVisibleTask$((ctx) => {
-    const open = ctx.track(() => popoverOpen.value)
-    const popover = popoverRef.value
-
-    if (open && !wasPopoverOpen.value) {
-      setOverlaySurfaceState(popover, true)
-      focusOverlayEntry(popover, searchInputRef.value)
-    } else if (!open && wasPopoverOpen.value) {
-      restoreOverlayFocusBeforeHide(popover, popoverTriggerRef.value)
-      setOverlaySurfaceState(popover, false)
-    } else {
-      setOverlaySurfaceState(popover, open)
-    }
-
-    wasPopoverOpen.value = open
-    if (!open) return
-
-    const cleanup = bindOverlayDismiss({
-      root: popoverRootRef.value,
-      onDismiss: () => {
-        popoverOpen.value = false
-      }
-    })
-
-    ctx.cleanup(cleanup)
-  })
-
   const incomingCount = invites.value.incoming.length
   const outgoingCount = invites.value.outgoing.length
   const contactsCount = invites.value.contacts.length
   const pendingCount = incomingCount + outgoingCount
-  const popoverLabel =
-    pendingCount > 0
-      ? `${props.title ?? 'Contact invites'}, ${pendingCount} pending`
-      : `Open ${props.title ?? 'contact invites'}`
+  const title = props.title ?? (variant === 'details' ? 'Invite activity' : 'Contact invites')
+  const helper =
+    props.helper ??
+    (variant === 'details'
+      ? 'Pending invites and saved contacts appear after the search shell is ready.'
+      : 'Search by user ID to connect.')
+
+  if (variant === 'details') {
+    return (
+      <div ref={rootRef} class={buildRootClass(props.class)}>
+        <div class="chat-invites-header">
+          <div>
+            <div class="chat-invites-title">{title}</div>
+            <p class="chat-invites-helper">{helper}</p>
+          </div>
+          <div class="chat-invites-header-actions">
+            <span class="chat-invites-status-note" data-tone={incomingCount > 0 ? 'success' : 'neutral'}>
+              {pendingCount} pending
+            </span>
+            {statusNote.value ? (
+              <span class="chat-invites-status-note" data-tone={statusNote.value.tone}>
+                {statusNote.value.message}
+              </span>
+            ) : null}
+          </div>
+        </div>
+        <section class="chat-invites-results">
+          <div class="chat-invites-results-header">
+            <span>{title}</span>
+            {invitesState.value === 'error' && invitesError.value ? (
+              <span class="chat-invites-error">{invitesError.value}</span>
+            ) : null}
+          </div>
+          {invitesState.value === 'loading' ? (
+            <div class="chat-invites-empty">Loading invites...</div>
+          ) : (
+            <>
+              {renderInviteList({
+                invites: invites.value.incoming,
+                label: props.incomingLabel ?? 'Incoming',
+                emptyLabel: props.emptyLabel ?? 'No invites yet.',
+                tone: 'alert',
+                acceptActionLabel: props.acceptActionLabel ?? 'Accept',
+                declineActionLabel: props.declineActionLabel ?? 'Decline',
+                onInviteAction$: handleInviteAction
+              })}
+              {renderInviteList({
+                invites: invites.value.outgoing,
+                label: props.outgoingLabel ?? 'Outgoing',
+                emptyLabel: props.emptyLabel ?? 'No invites yet.',
+                removeActionLabel: props.removeActionLabel ?? 'Remove',
+                onInviteAction$: handleInviteAction
+              })}
+              {renderInviteList({
+                invites: invites.value.contacts,
+                label: props.contactsLabel ?? 'Contacts',
+                emptyLabel: props.emptyLabel ?? 'No invites yet.'
+              })}
+            </>
+          )}
+        </section>
+      </div>
+    )
+  }
 
   return (
     <div ref={rootRef} class={buildRootClass(props.class)}>
       <div class="chat-invites-header">
         <div>
-          <div class="chat-invites-title">{props.title ?? 'Contact invites'}</div>
-          {props.helper ? <p class="chat-invites-helper">{props.helper}</p> : null}
+          <div class="chat-invites-title">{title}</div>
+          <p class="chat-invites-helper">{helper}</p>
         </div>
         <div class="chat-invites-header-actions">
+          <span class="chat-invites-status-note" data-tone={pendingCount > 0 ? 'success' : 'neutral'}>
+            {pendingCount} pending
+          </span>
           {statusNote.value ? (
             <span class="chat-invites-status-note" data-tone={statusNote.value.tone}>
               {statusNote.value.message}
             </span>
           ) : null}
-          <div ref={popoverRootRef} class="chat-invites-bell-wrap">
-            <button
-              ref={popoverTriggerRef}
-              type="button"
-              class="chat-invites-bell"
-              data-open={popoverOpen.value ? 'true' : 'false'}
-              data-alert={incomingCount > 0 ? 'true' : 'false'}
-              onClick$={togglePopover}
-              aria-haspopup="dialog"
-              aria-expanded={popoverOpen.value ? 'true' : 'false'}
-              aria-controls="chat-invites-popover"
-              aria-label={popoverLabel}
-            >
-              <svg class="chat-invites-bell-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path
-                  d="M12 5c-3 0-5.5 2.5-5.5 5.5v3.8l-1.6 2.7h14.2l-1.6-2.7v-3.8C17.5 7.5 15 5 12 5Z"
-                  stroke="currentColor"
-                  stroke-width="1.6"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-                <path
-                  d="M9.5 18c.4 1.1 1.4 1.8 2.5 1.8s2.1-.7 2.5-1.8"
-                  stroke="currentColor"
-                  stroke-width="1.6"
-                  stroke-linecap="round"
-                />
-              </svg>
-            </button>
-            <div
-              ref={popoverRef}
-              class="chat-invites-popover"
-              id="chat-invites-popover"
-              role="dialog"
-              aria-modal="false"
-              aria-labelledby="chat-invites-popover-title"
-              data-open={popoverOpen.value ? 'true' : 'false'}
-              hidden={!popoverOpen.value}
-              aria-hidden={popoverOpen.value ? 'false' : 'true'}
-            >
-              <div class="chat-invites-popover-header">
-                <h3 class="chat-invites-popover-title" id="chat-invites-popover-title">
-                  {props.title ?? 'Contact invites'}
-                </h3>
-                <span class="chat-invites-popover-count">{pendingCount}</span>
-              </div>
-              <div class="chat-invites-popover-body">
-                <div class="chat-invites-search">
-                  <label class="chat-invites-field">
-                    <span>{props.searchLabel ?? 'Search'}</span>
-                    <input
-                      ref={searchInputRef}
-                      type="text"
-                      value={searchQuery.value}
-                      placeholder={props.searchPlaceholder ?? 'name or identity'}
-                      onInput$={(event) => {
-                        searchQuery.value = (event.target as HTMLInputElement).value
-                      }}
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    class="chat-invites-button"
-                    onClick$={handleSearch}
-                    disabled={searchState.value === 'loading'}
-                  >
-                    {props.searchActionLabel ?? 'Search'}
-                  </button>
-                </div>
-                <section class="chat-invites-results">
-                  <div class="chat-invites-results-header">
-                    <span>Search results</span>
-                    {searchState.value === 'error' && searchError.value ? (
-                      <span class="chat-invites-error">{searchError.value}</span>
-                    ) : null}
-                  </div>
-                  <div class="chat-invites-list">
-                    {searchResults.value.length === 0 ? (
-                      <div class="chat-invites-empty">{props.emptyLabel ?? 'No invites yet.'}</div>
-                    ) : (
-                      searchResults.value.map((result, index) => (
-                        <div class="chat-invites-item" style={{ '--stagger-index': index }}>
-                          <div class="chat-invites-item-heading">
-                            <div class="chat-invites-avatar" data-size="sm">
-                              {resolveAvatarText(result)}
-                            </div>
-                            <div>
-                              <div class="chat-invites-item-name">{result.name?.trim() || result.handle || result.id}</div>
-                              <div class="chat-invites-item-meta">{result.handle || result.id}</div>
-                            </div>
-                          </div>
-                          <div class="chat-invites-actions">
-                            {result.status === 'none' ? (
-                              <button
-                                type="button"
-                                class="chat-invites-action success"
-                                onClick$={() => handleInvite(result.id)}
-                              >
-                                {props.inviteActionLabel ?? 'Invite'}
-                              </button>
-                            ) : null}
-                            {result.status === 'incoming' && result.inviteId ? (
-                              <>
-                                <button
-                                  type="button"
-                                  class="chat-invites-action success"
-                                  onClick$={() => handleInviteAction(result.inviteId ?? '', 'accept')}
-                                >
-                                  {props.acceptActionLabel ?? 'Accept'}
-                                </button>
-                                <button
-                                  type="button"
-                                  class="chat-invites-action ghost"
-                                  onClick$={() => handleInviteAction(result.inviteId ?? '', 'decline')}
-                                >
-                                  {props.declineActionLabel ?? 'Decline'}
-                                </button>
-                              </>
-                            ) : null}
-                            {result.status === 'outgoing' && result.inviteId ? (
-                              <button
-                                type="button"
-                                class="chat-invites-action ghost"
-                                onClick$={() => handleInviteAction(result.inviteId ?? '', 'remove')}
-                              >
-                                {props.removeActionLabel ?? 'Remove'}
-                              </button>
-                            ) : null}
-                            {result.status === 'accepted' ? (
-                              <span class="chat-invites-pill accent">Contact</span>
-                            ) : null}
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </section>
-                <section class="chat-invites-results">
-                  <div class="chat-invites-results-header">
-                    <span>Invites</span>
-                    {invitesState.value === 'error' && invitesError.value ? (
-                      <span class="chat-invites-error">{invitesError.value}</span>
-                    ) : null}
-                  </div>
-                  {invitesState.value === 'loading' ? (
-                    <div class="chat-invites-empty">Loading invites...</div>
-                  ) : (
-                    <>
-                      <div class="chat-invites-subsection">
-                        <div class="chat-invites-subheader">
-                          <span>{props.incomingLabel ?? 'Incoming'}</span>
-                          <span class="chat-invites-subcount" data-alert={incomingCount > 0 ? 'true' : 'false'}>
-                            {incomingCount}
-                          </span>
-                        </div>
-                        <div class="chat-invites-list">
-                          {invites.value.incoming.length === 0 ? (
-                            <div class="chat-invites-empty">{props.emptyLabel ?? 'No invites yet.'}</div>
-                          ) : (
-                            invites.value.incoming.map((invite, index) => (
-                              <div class="chat-invites-item" style={{ '--stagger-index': index }}>
-                                <div class="chat-invites-item-heading">
-                                  <div class="chat-invites-avatar">{resolveAvatarText(invite.user)}</div>
-                                  <div>
-                                    <div class="chat-invites-item-name">{resolveDisplayName(invite.user)}</div>
-                                    <div class="chat-invites-item-meta">{resolveMetaLine(invite.user)}</div>
-                                  </div>
-                                </div>
-                                <div class="chat-invites-actions">
-                                  <button
-                                    type="button"
-                                    class="chat-invites-action success"
-                                    onClick$={() => handleInviteAction(invite.id, 'accept')}
-                                  >
-                                    {props.acceptActionLabel ?? 'Accept'}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    class="chat-invites-action ghost"
-                                    onClick$={() => handleInviteAction(invite.id, 'decline')}
-                                  >
-                                    {props.declineActionLabel ?? 'Decline'}
-                                  </button>
-                                </div>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      </div>
-                      <div class="chat-invites-subsection">
-                        <div class="chat-invites-subheader">
-                          <span>{props.outgoingLabel ?? 'Outgoing'}</span>
-                          <span class="chat-invites-subcount">{outgoingCount}</span>
-                        </div>
-                        <div class="chat-invites-list">
-                          {invites.value.outgoing.length === 0 ? (
-                            <div class="chat-invites-empty">{props.emptyLabel ?? 'No invites yet.'}</div>
-                          ) : (
-                            invites.value.outgoing.map((invite, index) => (
-                              <div class="chat-invites-item" style={{ '--stagger-index': index }}>
-                                <div class="chat-invites-item-heading">
-                                  <div class="chat-invites-avatar">{resolveAvatarText(invite.user)}</div>
-                                  <div>
-                                    <div class="chat-invites-item-name">{resolveDisplayName(invite.user)}</div>
-                                    <div class="chat-invites-item-meta">{resolveMetaLine(invite.user)}</div>
-                                  </div>
-                                </div>
-                                <div class="chat-invites-actions">
-                                  <span class="chat-invites-pill">Pending</span>
-                                  <button
-                                    type="button"
-                                    class="chat-invites-action ghost"
-                                    onClick$={() => handleInviteAction(invite.id, 'remove')}
-                                  >
-                                    {props.removeActionLabel ?? 'Remove'}
-                                  </button>
-                                </div>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      </div>
-                      <div class="chat-invites-subsection">
-                        <div class="chat-invites-subheader">
-                          <span>{props.contactsLabel ?? 'Contacts'}</span>
-                          <span class="chat-invites-subcount">{contactsCount}</span>
-                        </div>
-                        <div class="chat-invites-list">
-                          {invites.value.contacts.length === 0 ? (
-                            <div class="chat-invites-empty">{props.emptyLabel ?? 'No invites yet.'}</div>
-                          ) : (
-                            invites.value.contacts.map((invite, index) => (
-                              <div class="chat-invites-item" style={{ '--stagger-index': index }}>
-                                <div class="chat-invites-item-heading">
-                                  <div class="chat-invites-avatar">{resolveAvatarText(invite.user)}</div>
-                                  <div>
-                                    <div class="chat-invites-item-name">{resolveDisplayName(invite.user)}</div>
-                                    <div class="chat-invites-item-meta">{resolveMetaLine(invite.user)}</div>
-                                  </div>
-                                </div>
-                                <div class="chat-invites-actions">
-                                  <span class="chat-invites-pill accent">Contact</span>
-                                  <button
-                                    type="button"
-                                    class="chat-invites-action ghost"
-                                    onClick$={() => handleInviteAction(invite.id, 'remove')}
-                                  >
-                                    {props.removeActionLabel ?? 'Remove'}
-                                  </button>
-                                </div>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </section>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
+      <div class="chat-invites-search">
+        <label class="chat-invites-field">
+          <span>{props.searchLabel ?? 'Search'}</span>
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={searchQuery.value}
+            placeholder={props.searchPlaceholder ?? 'name or identity'}
+            onInput$={(event) => {
+              searchQuery.value = (event.target as HTMLInputElement).value
+            }}
+            onKeyDown$={handleSearchKeyDown}
+            aria-label={props.searchLabel ?? 'Search'}
+          />
+        </label>
+        <button
+          type="button"
+          class="chat-invites-button"
+          onClick$={handleSearch}
+          disabled={searchState.value === 'loading'}
+        >
+          {props.searchActionLabel ?? 'Search'}
+        </button>
+      </div>
+      <section class="chat-invites-results">
+        <div class="chat-invites-results-header">
+          <span>Search results</span>
+          {searchState.value === 'error' && searchError.value ? (
+            <span class="chat-invites-error">{searchError.value}</span>
+          ) : null}
+        </div>
+        <div class="chat-invites-list">
+          {searchResults.value.length === 0 ? (
+            <div class="chat-invites-empty">{props.emptyLabel ?? 'No invites yet.'}</div>
+          ) : (
+            searchResults.value.map((result, index) => (
+              <div class="chat-invites-item" style={{ '--stagger-index': index }}>
+                <div class="chat-invites-item-heading">
+                  <div class="chat-invites-avatar" data-size="sm">
+                    {resolveAvatarText(result)}
+                  </div>
+                  <div>
+                    <div class="chat-invites-item-name">{result.name?.trim() || result.handle || result.id}</div>
+                    <div class="chat-invites-item-meta">{result.handle || result.id}</div>
+                  </div>
+                </div>
+                <div class="chat-invites-actions">
+                  {result.status === 'none' ? (
+                    <button
+                      type="button"
+                      class="chat-invites-action success"
+                      onClick$={() => handleInvite(result.id)}
+                    >
+                      {props.inviteActionLabel ?? 'Invite'}
+                    </button>
+                  ) : null}
+                  {result.status === 'incoming' && result.inviteId ? (
+                    <>
+                      <button
+                        type="button"
+                        class="chat-invites-action success"
+                        onClick$={() => handleInviteAction(result.inviteId ?? '', 'accept')}
+                      >
+                        {props.acceptActionLabel ?? 'Accept'}
+                      </button>
+                      <button
+                        type="button"
+                        class="chat-invites-action ghost"
+                        onClick$={() => handleInviteAction(result.inviteId ?? '', 'decline')}
+                      >
+                        {props.declineActionLabel ?? 'Decline'}
+                      </button>
+                    </>
+                  ) : null}
+                  {result.status === 'outgoing' && result.inviteId ? (
+                    <button
+                      type="button"
+                      class="chat-invites-action ghost"
+                      onClick$={() => handleInviteAction(result.inviteId ?? '', 'remove')}
+                    >
+                      {props.removeActionLabel ?? 'Remove'}
+                    </button>
+                  ) : null}
+                  {result.status === 'accepted' ? <span class="chat-invites-pill accent">Contact</span> : null}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </section>
     </div>
   )
 })

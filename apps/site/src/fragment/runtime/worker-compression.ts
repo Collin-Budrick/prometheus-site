@@ -9,6 +9,8 @@ export const canReadWorkerStreamEncoding = (
   return acceptedEncodings.includes(encoding)
 }
 
+export const shouldAdvertiseZstdForWorkerLiveStream = () => false
+
 export const shouldUseCompressedWorkerBootStream = ({
   firstWorkerCommitSent,
   supportedEncodingCount

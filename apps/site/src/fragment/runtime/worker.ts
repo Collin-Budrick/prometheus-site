@@ -15,7 +15,11 @@ import {
   resolveFragmentHeightWidthBucket,
   resolveReservedFragmentHeight
 } from '@prometheus/ui/fragment-height'
-import { canReadWorkerStreamEncoding, shouldUseCompressedWorkerBootStream } from './worker-compression'
+import {
+  canReadWorkerStreamEncoding,
+  shouldAdvertiseZstdForWorkerLiveStream,
+  shouldUseCompressedWorkerBootStream
+} from './worker-compression'
 import type { FragmentPayload } from '../types'
 import type {
   FragmentRuntimeCommitMessage,
@@ -1362,7 +1366,7 @@ const streamVisibleFragments = async (client: ClientState, ids: string[], contro
   const liveAttempt = await fetchWorkerFragmentResponse({
     url: `${apiBase}/fragments/stream?${buildStreamParams(client, ids, true).toString()}`,
     signal: controller.signal,
-    includeZstd: true,
+    includeZstd: shouldAdvertiseZstdForWorkerLiveStream(),
     label: 'Fragment stream'
   })
   await readStreamingResponse(liveAttempt)

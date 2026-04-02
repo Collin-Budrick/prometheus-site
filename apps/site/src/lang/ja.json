@@ -207,11 +207,17 @@
       "title": "新しいストアアイテムを追加。",
       "description": "SpaceTimeDBへ書き込み、ペイロードを検証し、更新をリアルタイムにストリームします。"
     },
-    "fragment://page/chat/contacts@v1": {
+    "fragment://page/chat/search@v1": {
       "heading": "h2",
       "metaLine": "連絡先招待",
       "title": "連絡先を招待して管理。",
       "description": "メールで検索して招待を送信し、承認や拒否で連絡先を整理します。"
+    },
+    "fragment://page/chat/activity@v1": {
+      "heading": "h2",
+      "metaLine": "contact activity",
+      "title": "Review pending and active contacts.",
+      "description": "Incoming invites, outgoing requests, and saved contacts load after the search shell is already usable."
     },
     "fragment://page/store/stream@v5": {
       "heading": "h2",

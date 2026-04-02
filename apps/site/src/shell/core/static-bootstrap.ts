@@ -45,11 +45,8 @@ import {
   consumeRegisteredStoreStaticControllerCleanup,
 } from "../store/store-static-controller-state";
 import { createStaticFragmentRouteData } from "../fragments/static-fragment-model";
-import {
-  loadClientAuthSession,
-  redirectProtectedStaticRouteToLogin,
-} from "../auth/auth-client";
 import { scheduleStaticShellTask } from "./scheduler";
+import { runAfterClientIntentIdle } from "../../shared/client-boot";
 import {
   staticDockRootNeedsSync,
   readStaticShellSeed,
@@ -79,8 +76,11 @@ import {
   ensureStaticShellSettingsPanelContent,
   readStaticShellTheme,
 } from "./settings-overlay-dom";
-import { mountStaticSettingsController } from "./controllers/settings-static-controller";
 import { acquirePretextDomController } from "../pretext/pretext-dom";
+
+const loadStaticAuthClient = () => import("../auth/auth-client");
+const loadStaticSettingsController = () =>
+  import("./controllers/settings-static-controller");
 
 type Theme = "light" | "dark";
 
@@ -254,6 +254,7 @@ const syncStaticFragmentDockIfNeeded = async (
 const refreshStaticFragmentDockAuthIfNeeded = async (
   controller: StaticFragmentController,
 ) => {
+  const { loadClientAuthSession } = await loadStaticAuthClient();
   const session = await loadClientAuthSession();
   if (controller.destroyed) return;
   const isAuthenticated = session.status === "authenticated";
@@ -759,10 +760,15 @@ const bindShellControls = (controller: StaticFragmentController) => {
       }),
     ).then(() => {
       if (!settingsControllerCleanup) {
-        settingsControllerCleanup = mountStaticSettingsController({
-          lang: controller.lang,
-        }).cleanup;
+        return loadStaticSettingsController().then(
+          ({ mountStaticSettingsController }) => {
+            settingsControllerCleanup = mountStaticSettingsController({
+              lang: controller.lang,
+            }).cleanup;
+          },
+        );
       }
+      return undefined;
     });
     return settingsPanelContentPromise;
   };
@@ -1170,8 +1176,10 @@ const hydrateProtectedStaticFragments = async (
 };
 
 const scheduleProtectedAuthUpgrade = (controller: StaticFragmentController) => {
-  void (async () => {
+  const runAuthUpgrade = async () => {
     try {
+      const { loadClientAuthSession, redirectProtectedStaticRouteToLogin } =
+        await loadStaticAuthClient();
       const session = await loadClientAuthSession();
       if (controller.destroyed) return;
       if (session.status !== "authenticated") {
@@ -1193,7 +1201,26 @@ const scheduleProtectedAuthUpgrade = (controller: StaticFragmentController) => {
         console.error("Protected static fragment auth upgrade failed:", error);
       }
     }
-  })();
+  };
+
+  let cancelDeferredIntent: () => void = () => undefined;
+  const cancelScheduledStart = scheduleStaticShellTask(
+    () => {
+      cancelDeferredIntent = runAfterClientIntentIdle(() => {
+        void runAuthUpgrade();
+      });
+    },
+    {
+      priority: "background",
+      timeoutMs: 900,
+      waitForPaint: true,
+    },
+  );
+
+  return () => {
+    cancelScheduledStart();
+    cancelDeferredIntent();
+  };
 };
 
 const bindRouteControllers = async (controller: StaticFragmentController) => {

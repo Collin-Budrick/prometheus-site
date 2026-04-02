@@ -24,6 +24,7 @@ type FragmentStaticEntryDocument = Document
 type InstallFragmentStaticEntryOptions = {
   doc?: FragmentStaticEntryDocument | null
   loadRuntime?: typeof loadFragmentBootstrapRuntime
+  loadWidgetRuntime?: typeof loadFragmentWidgetRuntime
   win?: FragmentStaticEntryWindow | null
   releaseReadyStagger?: typeof releaseQueuedReadyStaggerWithin
   schedulePaintReady?: typeof scheduleStaticRoutePaintReady
@@ -83,6 +84,7 @@ const replayDeferredInteraction = (target: EventTarget | null) => {
 export const installFragmentStaticEntry = ({
   doc = typeof document !== 'undefined' ? document : null,
   loadRuntime = loadFragmentBootstrapRuntime,
+  loadWidgetRuntime = loadFragmentWidgetRuntime,
   win = typeof window !== 'undefined' ? (window as FragmentStaticEntryWindow) : null,
   releaseReadyStagger = releaseQueuedReadyStaggerWithin,
   schedulePaintReady = scheduleStaticRoutePaintReady
@@ -103,6 +105,7 @@ export const installFragmentStaticEntry = ({
   let widgetRuntime:
     | import('../../fragment/ui/fragment-widget-runtime').FragmentWidgetRuntime
     | null = null
+  let autoWidgetRuntimeTimer: number | null = null
   let loadHandler: (() => void) | null = null
   let visibilityObserver: IntersectionObserver | null = null
   let paintReadyCleanup: (() => void) | null = null
@@ -112,6 +115,12 @@ export const installFragmentStaticEntry = ({
   const isFragmentBootstrapped = () =>
     fragmentBootstrapped || Boolean(win.__PROM_STATIC_FRAGMENT_BOOTSTRAP__)
   const readBootstrapRoot = () => doc.querySelector<HTMLElement>('[data-static-fragment-root]')
+  const readStaticPath = () => {
+    const root = readBootstrapRoot()
+    const staticPath = root?.dataset.staticPath?.trim()
+    if (staticPath) return staticPath
+    return win.location?.pathname?.trim?.() || ''
+  }
   const readWidgetRoot = () =>
     doc.querySelector<HTMLElement>(
       `[${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_MAIN_REGION}"]`
@@ -123,7 +132,7 @@ export const installFragmentStaticEntry = ({
   }
 
   const prewarmWidgetRuntime = () => {
-    widgetRuntimePromise ??= loadFragmentWidgetRuntime()
+    widgetRuntimePromise ??= loadWidgetRuntime()
     return widgetRuntimePromise
   }
 
@@ -168,6 +177,10 @@ export const installFragmentStaticEntry = ({
     if (loadHandler) {
       win.removeEventListener('load', loadHandler)
       loadHandler = null
+    }
+    if (autoWidgetRuntimeTimer) {
+      win.clearTimeout(autoWidgetRuntimeTimer)
+      autoWidgetRuntimeTimer = null
     }
     visibilityObserver?.disconnect()
     visibilityObserver = null
@@ -261,52 +274,6 @@ export const installFragmentStaticEntry = ({
       })
   }
 
-  const observeBootstrapRoot = () => {
-    if (
-      isFragmentBootstrapped() ||
-      fragmentBootstrapPromise ||
-      win.__PROM_STATIC_FRAGMENT_BOOTSTRAP__
-    ) {
-      fragmentBootstrapped = true
-      return
-    }
-
-    const root = readBootstrapRoot()
-    if (!root) return
-
-    if (typeof IntersectionObserver !== 'function') {
-      requestFragmentBootstrap()
-      return
-    }
-
-    if (!visibilityObserver) {
-      visibilityObserver = new IntersectionObserver(
-        (entries) => {
-          if (
-            fragmentBootstrapped ||
-            fragmentBootstrapPromise ||
-            win.__PROM_STATIC_FRAGMENT_BOOTSTRAP__
-          ) {
-            return
-          }
-
-          if (!entries.some((entry) => entry.isIntersecting || entry.intersectionRatio > 0)) {
-            return
-          }
-
-          requestFragmentBootstrap()
-        },
-        {
-          root: null,
-          rootMargin: FRAGMENT_BOOTSTRAP_VISIBILITY_ROOT_MARGIN,
-          threshold: FRAGMENT_BOOTSTRAP_VISIBILITY_THRESHOLD
-        }
-      )
-    }
-
-    visibilityObserver.observe(root)
-  }
-
   const setupBootstrapTriggers = () => {
     if (isFragmentBootstrapped() || fragmentBootstrapPromise) {
       fragmentBootstrapped = true
@@ -323,10 +290,14 @@ export const installFragmentStaticEntry = ({
       fragmentRuntimePromise = null
       console.error('Static fragment runtime prewarm failed:', error)
     })
-    void prewarmWidgetRuntime().catch((error) => {
-      widgetRuntimePromise = null
-      console.error('Static fragment widget runtime prewarm failed:', error)
-    })
+    if (readStaticPath() === '/store' && !autoWidgetRuntimeTimer) {
+      autoWidgetRuntimeTimer = win.setTimeout(() => {
+        autoWidgetRuntimeTimer = null
+        void startWidgetRuntime().catch((error) => {
+          console.error('Static store widget runtime failed:', error)
+        })
+      }, 0)
+    }
     paintReadyCleanup ??= schedulePaintReady({
       root: readBootstrapRoot(),
       readyAttr: STATIC_FRAGMENT_PAINT_ATTR,
@@ -337,7 +308,6 @@ export const installFragmentStaticEntry = ({
       setTimer: (handler, timeout) => win.setTimeout(handler, timeout),
       clearTimer: (handle) => win.clearTimeout(handle as number),
       onReady: () => {
-        void startWidgetRuntime()
         releaseReadyStagger({
           root: doc,
           queuedSelector: STATIC_FRAGMENT_READY_STAGGER_SELECTOR,
@@ -349,7 +319,6 @@ export const installFragmentStaticEntry = ({
       requestFragmentBootstrap()
       return
     }
-    observeBootstrapRoot()
   }
 
   if (doc.readyState === 'complete') {

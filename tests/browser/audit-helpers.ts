@@ -40,6 +40,22 @@ type PrometheusPerfDebugState = {
   routeTransitions?: PrometheusRouteTransitionDebugEntry[]
 }
 
+type FragmentStartupDebugEntry = {
+  at: number
+  kind: 'fetch' | 'stream-start'
+  shellMode: string
+  startupReady: boolean
+  ids: string[]
+  nonCriticalIds: string[]
+}
+
+type FragmentNetworkDebugEntry = {
+  at: number
+  bytes: number
+  id: string
+  source: 'single' | 'batch' | 'fetch-stream' | 'webtransport-stream' | 'webtransport-datagram'
+}
+
 export type PrometheusPerfSnapshot = {
   pathname: string
   clientBoot: ClientBootDebugState
@@ -60,6 +76,18 @@ export type PrometheusPerfSnapshot = {
     startAt: number | null
     endAt: number | null
     duration: number | null
+  }>
+}
+
+export type PrometheusFragmentStartupSnapshot = {
+  unlockCutoff: number | null
+  duplicateFragmentBytesBeforeUnlock: number
+  duplicateFragmentIdsBeforeUnlock: string[]
+  preUnlockNonCriticalRequests: Array<{
+    at: number
+    kind: 'fetch' | 'stream-start'
+    ids: string[]
+    nonCriticalIds: string[]
   }>
 }
 
@@ -571,6 +599,75 @@ export const expectPrometheusPerformanceSignals = async (
   }
 
   return resolvedSnapshot
+}
+
+export const readPrometheusFragmentStartup = async (
+  page: Page
+): Promise<PrometheusFragmentStartupSnapshot> =>
+  await page.evaluate(() => {
+    const readTimestamp = (value: unknown) =>
+      typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.round(value) : null
+    const clientBoot =
+      (window as Window & { __PROM_CLIENT_BOOT__?: ClientBootDebugState }).__PROM_CLIENT_BOOT__ ?? {
+        ready: false,
+        source: 'pending',
+        unlockedAt: null
+      }
+    const fragmentStartup =
+      (window as Window & { __PROM_FRAGMENT_STARTUP_DEBUG__?: FragmentStartupDebugEntry[] })
+        .__PROM_FRAGMENT_STARTUP_DEBUG__ ?? []
+    const fragmentNetwork =
+      (window as Window & { __PROM_FRAGMENT_NETWORK_DEBUG__?: FragmentNetworkDebugEntry[] })
+        .__PROM_FRAGMENT_NETWORK_DEBUG__ ?? []
+    const unlockCutoff = readTimestamp(clientBoot.unlockedAt)
+    const fragmentEntriesBeforeUnlock = fragmentNetwork
+      .filter((entry) => unlockCutoff === null || entry.at <= unlockCutoff)
+      .sort((left, right) => left.at - right.at)
+    const seenFragmentIds = new Set<string>()
+    const duplicateFragmentIdsBeforeUnlock: string[] = []
+    let duplicateFragmentBytesBeforeUnlock = 0
+
+    fragmentEntriesBeforeUnlock.forEach((entry) => {
+      const isStreamEntry =
+        entry.source === 'fetch-stream' ||
+        entry.source === 'webtransport-stream' ||
+        entry.source === 'webtransport-datagram'
+      if (isStreamEntry && seenFragmentIds.has(entry.id)) {
+        duplicateFragmentIdsBeforeUnlock.push(entry.id)
+        duplicateFragmentBytesBeforeUnlock += entry.bytes
+      }
+      seenFragmentIds.add(entry.id)
+    })
+
+    return {
+      unlockCutoff,
+      duplicateFragmentBytesBeforeUnlock,
+      duplicateFragmentIdsBeforeUnlock,
+      preUnlockNonCriticalRequests: fragmentStartup
+        .filter((entry) => unlockCutoff === null || entry.at <= unlockCutoff)
+        .filter((entry) => entry.nonCriticalIds.length > 0)
+        .map((entry) => ({
+          at: Math.round(entry.at),
+          kind: entry.kind,
+          ids: entry.ids,
+          nonCriticalIds: entry.nonCriticalIds
+        }))
+    }
+  })
+
+export const expectNoPreUnlockFragmentWaste = async (page: Page, label: string) => {
+  const snapshot = await readPrometheusFragmentStartup(page)
+
+  expect(
+    snapshot.duplicateFragmentBytesBeforeUnlock,
+    `${label} should not duplicate fragment bytes before unlock`
+  ).toBe(0)
+  expect(
+    snapshot.preUnlockNonCriticalRequests,
+    `${label} should not request non-critical fragments before unlock`
+  ).toEqual([])
+
+  return snapshot
 }
 
 export const openAndCloseSettings = async (page: Page) => {

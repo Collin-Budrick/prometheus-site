@@ -207,11 +207,17 @@
       "title": "새 스토어 아이템 추가.",
       "description": "SpaceTimeDB에 기록하고 페이로드를 검증한 뒤 업데이트를 실시간으로 스트리밍합니다."
     },
-    "fragment://page/chat/contacts@v1": {
+    "fragment://page/chat/search@v1": {
       "heading": "h2",
       "metaLine": "연락처 초대",
       "title": "연락처를 초대하고 관리하세요.",
       "description": "이메일로 검색해 초대를 보내고 수락 또는 거절로 연락처를 관리합니다."
+    },
+    "fragment://page/chat/activity@v1": {
+      "heading": "h2",
+      "metaLine": "contact activity",
+      "title": "Review pending and active contacts.",
+      "description": "Incoming invites, outgoing requests, and saved contacts load after the search shell is already usable."
     },
     "fragment://page/store/stream@v5": {
       "heading": "h2",

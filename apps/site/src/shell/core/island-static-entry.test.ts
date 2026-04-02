@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'bun:test'
 import { installIslandStaticEntry } from './island-static-entry'
 
-type Listener = () => void
+type Listener = (event?: Event) => void
 
 class MockWindow {
   __PROM_STATIC_ISLAND_ENTRY__?: boolean
 }
 
-class MockElement {}
+class MockElement {
+  contains(target: unknown) {
+    return target === this
+  }
+}
 
 class MockScriptElement extends MockElement {
   constructor(readonly textContent: string | null) {
@@ -22,7 +26,7 @@ class MockDocument {
   pageRoot: MockElement | null = new MockElement()
   settingsToggle: MockElement | null = new MockElement()
   shellSeedScript: MockScriptElement | null = new MockScriptElement('{"currentPath":"/login"}')
-  islandDataScript: MockScriptElement | null = new MockScriptElement('{"island":"login"}')
+  islandDataScript: MockScriptElement | null = new MockScriptElement('{"island":"dashboard"}')
 
   addEventListener(type: string, listener: Listener) {
     const listeners = this.listeners.get(type) ?? new Set()
@@ -39,8 +43,8 @@ class MockDocument {
     }
   }
 
-  emit(type: string) {
-    ;(this.listeners.get(type) ?? new Set()).forEach((listener) => listener())
+  emit(type: string, event?: Event) {
+    ;(this.listeners.get(type) ?? new Set()).forEach((listener) => listener(event))
   }
 
   querySelector(selector: string) {
@@ -75,7 +79,7 @@ const flushMicrotasks = async () => {
 }
 
 describe('installIslandStaticEntry', () => {
-  it('waits for DOMContentLoaded before bootstrapping the island shell', async () => {
+  it('waits for DOMContentLoaded before arming the island shell bridge', async () => {
     const win = new MockWindow()
     const doc = new MockDocument()
     doc.readyState = 'loading'
@@ -97,14 +101,70 @@ describe('installIslandStaticEntry', () => {
     doc.emit('DOMContentLoaded')
     await flushMicrotasks()
 
+    expect(bootstrapCount).toBe(0)
+    doc.emit('pointerdown', { target: doc.pageRoot } as Event)
+    await flushMicrotasks()
+
     expect(bootstrapCount).toBe(1)
 
     cleanup()
   })
 
-  it('boots immediately when the document is already ready', async () => {
+  it('waits for first interaction when the document is already ready', async () => {
     const win = new MockWindow()
     const doc = new MockDocument()
+    let bootstrapCount = 0
+
+    const cleanup = installIslandStaticEntry({
+      win: win as never,
+      doc: doc as never,
+      observeDom: () => () => undefined,
+      loadRuntime: async () => ({
+        bootstrapStaticIslandShell: async () => {
+          bootstrapCount += 1
+        }
+      })
+    })
+
+    await flushMicrotasks()
+
+    expect(bootstrapCount).toBe(0)
+    doc.emit('pointerdown', { target: doc.pageRoot } as Event)
+    await flushMicrotasks()
+
+    expect(bootstrapCount).toBe(1)
+
+    cleanup()
+  })
+
+  it('boots the login island shell immediately after the static route becomes ready', async () => {
+    const win = new MockWindow()
+    const doc = new MockDocument()
+    doc.islandDataScript = new MockScriptElement('{"island":"login"}')
+    let bootstrapCount = 0
+
+    const cleanup = installIslandStaticEntry({
+      win: win as never,
+      doc: doc as never,
+      observeDom: () => () => undefined,
+      loadRuntime: async () => ({
+        bootstrapStaticIslandShell: async () => {
+          bootstrapCount += 1
+        }
+      })
+    })
+
+    await flushMicrotasks()
+
+    expect(bootstrapCount).toBe(1)
+
+    cleanup()
+  })
+
+  it('boots the settings island shell immediately after the static route becomes ready', async () => {
+    const win = new MockWindow()
+    const doc = new MockDocument()
+    doc.islandDataScript = new MockScriptElement('{"island":"settings"}')
     let bootstrapCount = 0
 
     const cleanup = installIslandStaticEntry({
@@ -146,6 +206,9 @@ describe('installIslandStaticEntry', () => {
     })
 
     await flushMicrotasks()
+    expect(bootstrapCount).toBe(0)
+    doc.emit('pointerdown', { target: doc.pageRoot } as Event)
+    await flushMicrotasks()
     expect(bootstrapCount).toBe(1)
 
     doc.settingsToggle = new MockElement()
@@ -178,6 +241,8 @@ describe('installIslandStaticEntry', () => {
       })
     })
 
+    await flushMicrotasks()
+    doc.emit('pointerdown', { target: doc.pageRoot } as Event)
     await flushMicrotasks()
     doc.routeRoot = null
     doc.pageRoot = null

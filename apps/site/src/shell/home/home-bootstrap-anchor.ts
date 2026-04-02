@@ -22,6 +22,11 @@ import {
 } from "./home-active-controller";
 import { createStaticHomeAnchorPatchQueue } from "./home-anchor-patch";
 
+const yieldHomeBootstrapTask = () =>
+  new Promise<void>((resolve) => {
+    globalThis.setTimeout(resolve, 0);
+  });
+
 export const bootstrapStaticHomeAnchor = async () => {
   const data = readStaticHomeBootstrapData();
   if (!data) return;
@@ -49,6 +54,7 @@ export const bootstrapStaticHomeAnchor = async () => {
   };
   setActiveHomeController(controller);
 
+  await yieldHomeBootstrapTask();
   controller.patchQueue = createStaticHomeAnchorPatchQueue({
     lang: controller.lang,
     visibleFirst: true,
@@ -78,6 +84,7 @@ export const bootstrapStaticHomeAnchor = async () => {
       handleDeferredCommitRelease,
     ),
   );
+  await yieldHomeBootstrapTask();
   const sharedRuntime = connectHomeAnchorSharedRuntime({
     controller,
     runtimePlanEntries: data.runtimePlanEntries,
@@ -92,6 +99,7 @@ export const bootstrapStaticHomeAnchor = async () => {
     },
   });
   controller.sharedRuntime = sharedRuntime;
+  await yieldHomeBootstrapTask();
   const homeFragmentHydration = bindHomeAnchorFragmentHydration({
     controller,
     requestFragments: sharedRuntime?.requestFragments,

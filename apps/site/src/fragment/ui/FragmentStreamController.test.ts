@@ -8,6 +8,9 @@ describe('FragmentStreamController eager worker startup invariants', () => {
     const source = await readSource()
 
     expect(source).toContain('new FragmentRuntimeBridge()')
+    expect(source).toContain('consumePrimedFragmentBootstrapBytes')
+    expect(source).toContain('startupPrime = primedBootstrapBytes')
+    expect(source).toContain('await bridge.primeBootstrap(bytes, bootstrapHref)')
     expect(source).toContain("startupMode: 'eager-visible-first'")
     expect(source).toContain('bridge.setVisibleIds(Array.from(visibleIds))')
     expect(source).toContain('deferredVisibleRequestIds')

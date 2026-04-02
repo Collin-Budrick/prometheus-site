@@ -7,6 +7,7 @@ import {
   expectDockShortcuts,
   expectHeightDriftWithin,
   expectMeasuredCard,
+  expectNoPreUnlockFragmentWaste,
   expectPathname,
   expectPrometheusPerformanceSignals,
   openAndCloseSettings,
@@ -91,6 +92,18 @@ const waitForStoreRuntimeReady = async (page: Page) => {
     timeout: 15000
   })
   await expect(page.getByText(/Store snapshot ready|Live snapshot/i)).toBeVisible()
+}
+
+const waitForChatSearchShell = async (page: Page) => {
+  await expect(page.locator('[data-fragment-id="fragment://page/chat/search@v1"]').first()).toBeVisible()
+}
+
+const waitForSettingsFirstControl = async (page: Page) => {
+  await expect(page.locator('[data-static-settings-toggle="read-receipts"]').first()).toBeVisible()
+}
+
+const waitForProfileFirstControl = async (page: Page) => {
+  await expect(page.locator('[data-static-profile-name-input]').first()).toBeVisible()
 }
 
 test.describe('full preset live route audit', () => {
@@ -531,11 +544,7 @@ test.describe('full preset live route audit', () => {
         {
           path: '/chat/',
           title: 'Chat | Prometheus',
-          locator: () =>
-            page
-              .locator('[data-fragment-id="fragment://page/chat/contacts@v1"]')
-              .filter({ has: page.getByText('Contact invites').first() })
-              .first()
+          locator: () => page.locator('[data-fragment-id="fragment://page/chat/search@v1"]').first()
         }
       ] as const
 
@@ -557,16 +566,40 @@ test.describe('full preset live route audit', () => {
       await signInWithAuditCredentials(page, credentials)
 
       await page.goto('/chat/', { waitUntil: 'domcontentloaded' })
-      await expect(
-        page
-          .locator('[data-fragment-id="fragment://page/chat/contacts@v1"]')
-          .filter({ has: page.getByText('Contact invites').first() })
-          .first()
-      ).toBeVisible()
+      await waitForChatSearchShell(page)
       await expectPrometheusPerformanceSignals(page, 'chat cold load')
+      await expectNoPreUnlockFragmentWaste(page, 'chat cold load')
+
+      const chatSearchInput = page.getByRole('textbox', { name: /search by user id/i }).first()
+      await expect(chatSearchInput).toBeVisible()
+      await chatSearchInput.fill('demo')
+      await expect(chatSearchInput).toHaveValue('demo')
+      await expectPrometheusPerformanceSignals(page, 'chat interaction')
+
+      await page.goto('/settings/', { waitUntil: 'domcontentloaded' })
+      await waitForSettingsFirstControl(page)
+      await expectPrometheusPerformanceSignals(page, 'settings cold load')
+
+      const readReceiptsToggle = page.locator('[data-static-settings-toggle="read-receipts"]').first()
+      const readReceiptsBefore = (await readReceiptsToggle.getAttribute('aria-checked')) ?? 'false'
+      await readReceiptsToggle.click()
+      await expect(readReceiptsToggle).toHaveAttribute(
+        'aria-checked',
+        readReceiptsBefore === 'true' ? 'false' : 'true'
+      )
+      await expectPrometheusPerformanceSignals(page, 'settings interaction')
+
+      await page.goto('/profile/', { waitUntil: 'domcontentloaded' })
+      await waitForProfileFirstControl(page)
+      await expectPrometheusPerformanceSignals(page, 'profile cold load')
+
+      const profileBio = page.locator('[data-static-profile-bio]').first()
+      await expect(profileBio).toBeVisible()
+      await profileBio.fill('first input stays responsive')
+      await expect(profileBio).toHaveValue('first input stays responsive')
+      await expectPrometheusPerformanceSignals(page, 'profile interaction')
 
       await openAndCloseSettings(page)
-      await expectPrometheusPerformanceSignals(page, 'chat interaction')
     })
   })
 })

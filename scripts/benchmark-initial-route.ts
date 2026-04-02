@@ -1,6 +1,12 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { chromium, type Page } from '@playwright/test'
+import {
+  chromium,
+  type Browser,
+  type BrowserContextOptions,
+  type Page,
+  type StorageState
+} from '@playwright/test'
 
 type AuditCredentials = {
   email: string
@@ -62,6 +68,9 @@ type RouteBenchmark = {
   route: string
   scenario: 'cold-no-interaction'
   usedAuditCredentials: boolean
+  routeContentLabel: string
+  protectedContentVerified: boolean | null
+  protectedContentLabel: string | null
   finalPath: string
   observeWindowMs: number
   longTaskCount: number
@@ -255,6 +264,80 @@ const signInWithDevSession = async (page: Page, baseUrl: string) => {
   await navigateToAuthenticatedProfile(page, baseUrl)
 }
 
+const verifyBenchmarkRouteContent = async (
+  page: Page,
+  route: string
+): Promise<{
+  routeContentLabel: string
+  protectedContentVerified: boolean | null
+  protectedContentLabel: string | null
+}> => {
+  const normalizedRoute = normalizeRoute(route)
+
+  switch (normalizedRoute) {
+    case '/':
+      await page.getByRole('heading', { name: 'Field brief' }).waitFor({ state: 'visible', timeout: 20000 })
+      return {
+        routeContentLabel: 'home heading',
+        protectedContentVerified: null,
+        protectedContentLabel: null
+      }
+    case '/login':
+      await page.getByRole('heading', { name: 'Welcome back' }).waitFor({ state: 'visible', timeout: 20000 })
+      return {
+        routeContentLabel: 'login heading',
+        protectedContentVerified: null,
+        protectedContentLabel: null
+      }
+    case '/store':
+      await page.locator('[data-fragment-id="fragment://page/store/stream@v5"]').first().waitFor({
+        state: 'visible',
+        timeout: 20000
+      })
+      return {
+        routeContentLabel: 'store stream fragment',
+        protectedContentVerified: null,
+        protectedContentLabel: null
+      }
+    case '/chat':
+      await page.locator('[data-fragment-id="fragment://page/chat/search@v1"]').first().waitFor({
+        state: 'visible',
+        timeout: 20000
+      })
+      return {
+        routeContentLabel: 'chat search shell',
+        protectedContentVerified: true,
+        protectedContentLabel: 'chat search shell'
+      }
+    case '/settings':
+      await page.locator('[data-static-settings-toggle="read-receipts"]').first().waitFor({
+        state: 'visible',
+        timeout: 20000
+      })
+      return {
+        routeContentLabel: 'settings read receipts toggle',
+        protectedContentVerified: true,
+        protectedContentLabel: 'settings read receipts toggle'
+      }
+    case '/profile':
+      await page.locator('[data-static-profile-name-input]').first().waitFor({
+        state: 'visible',
+        timeout: 20000
+      })
+      return {
+        routeContentLabel: 'profile name input',
+        protectedContentVerified: true,
+        protectedContentLabel: 'profile name input'
+      }
+    default:
+      return {
+        routeContentLabel: 'route content',
+        protectedContentVerified: routeRequiresAuditCredentials(normalizedRoute) ? true : null,
+        protectedContentLabel: routeRequiresAuditCredentials(normalizedRoute) ? 'protected route content' : null
+      }
+  }
+}
+
 const collectChunkNames = (patterns: RegExp[]) => {
   const manifestPath = resolve(process.cwd(), 'apps/site/dist/q-manifest.json')
   if (!existsSync(manifestPath)) return new Set<string>()
@@ -287,6 +370,46 @@ const collectForbiddenChunkNames = (rules: ForbiddenChunkRule[]) =>
     names: collectChunkNames(rule.patterns)
   }))
 
+const BENCHMARK_CONTEXT_OPTIONS: BrowserContextOptions = {
+  ignoreHTTPSErrors: true
+}
+
+const installBenchmarkInitScript = async (context: {
+  addInitScript: (script: () => void) => Promise<void>
+}) => {
+  await context.addInitScript(() => {
+    ;(window as Window & { __PROM_STATIC_SHELL_DEBUG_PERF__?: boolean }).__PROM_STATIC_SHELL_DEBUG_PERF__ =
+      true
+    const entries: Array<{ startTime: number; duration: number }> = []
+    ;(window as Window & { __promLongTasks?: Array<{ startTime: number; duration: number }> }).__promLongTasks =
+      entries
+    const observer = new PerformanceObserver((list) => {
+      list.getEntries().forEach((entry) => {
+        entries.push({
+          startTime: entry.startTime,
+          duration: entry.duration
+        })
+      })
+    })
+    observer.observe({ type: 'longtask', buffered: true })
+  })
+}
+
+const prewarmBenchmarkOrigin = async (browser: Browser, baseUrl: string) => {
+  const warmContext = await browser.newContext(BENCHMARK_CONTEXT_OPTIONS)
+  try {
+    const page = await warmContext.newPage()
+    try {
+      await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' })
+      await page.waitForLoadState('load', { timeout: 20000 }).catch(() => undefined)
+    } finally {
+      await page.close().catch(() => undefined)
+    }
+  } finally {
+    await warmContext.close()
+  }
+}
+
 const run = async () => {
   const { baseUrl, routes, thresholdMs, observeWindowMs } = parseArgs()
   const settingsChunkNames = collectChunkNames(SETTINGS_CHUNK_PATTERNS)
@@ -294,55 +417,53 @@ const run = async () => {
   const bootChunkNames = collectChunkNames(BOOT_CHUNK_PATTERNS)
   const forbiddenChunkNames = collectForbiddenChunkNames(FORBIDDEN_CHUNK_RULES)
   const browser = await chromium.launch({ headless: true })
-  const context = await browser.newContext({ ignoreHTTPSErrors: true })
   const auditCredentials = readAuditCredentials()
-  let authenticatedSessionReady = false
+  let authenticatedStorageState: StorageState | null = null
 
   try {
+    await prewarmBenchmarkOrigin(browser, baseUrl)
     const results: RouteBenchmark[] = []
-    const ensureAuthenticatedSession = async () => {
-      if (authenticatedSessionReady) {
-        return true
+    const ensureAuthenticatedStorageState = async () => {
+      if (authenticatedStorageState) {
+        return authenticatedStorageState
       }
-      const authPage = await context.newPage()
+
+      const authContext = await browser.newContext(BENCHMARK_CONTEXT_OPTIONS)
       try {
-        if (auditCredentials) {
-          await signInWithAuditCredentials(authPage, baseUrl, auditCredentials)
-        } else {
-          await signInWithDevSession(authPage, baseUrl)
+        const authPage = await authContext.newPage()
+        try {
+          if (auditCredentials) {
+            await signInWithAuditCredentials(authPage, baseUrl, auditCredentials)
+          } else {
+            await signInWithDevSession(authPage, baseUrl)
+          }
+          authenticatedStorageState = await authContext.storageState()
+          return authenticatedStorageState
+        } finally {
+          await authPage.close().catch(() => undefined)
         }
-        authenticatedSessionReady = true
-        return true
       } finally {
-        await authPage.close()
+        await authContext.close()
       }
     }
 
     for (const route of routes) {
-      const usedAuditCredentials = routeRequiresAuditCredentials(route) ? await ensureAuthenticatedSession() : false
-      const page = await context.newPage()
-      await page.addInitScript(() => {
-        ;(window as Window & { __PROM_STATIC_SHELL_DEBUG_PERF__?: boolean }).__PROM_STATIC_SHELL_DEBUG_PERF__ =
-          true
-        const entries: Array<{ startTime: number; duration: number }> = []
-        ;(window as Window & { __promLongTasks?: Array<{ startTime: number; duration: number }> }).__promLongTasks =
-          entries
-        const observer = new PerformanceObserver((list) => {
-          list.getEntries().forEach((entry) => {
-            entries.push({
-              startTime: entry.startTime,
-              duration: entry.duration
-            })
-          })
-        })
-        observer.observe({ type: 'longtask', buffered: true })
+      const needsAuthenticatedSession = routeRequiresAuditCredentials(route)
+      const storageState = needsAuthenticatedSession ? await ensureAuthenticatedStorageState() : undefined
+      const routeContext = await browser.newContext({
+        ...BENCHMARK_CONTEXT_OPTIONS,
+        ...(storageState ? { storageState } : {})
       })
+      await installBenchmarkInitScript(routeContext)
+      const page = await routeContext.newPage()
 
-      await page.goto(`${baseUrl}${route}`, { waitUntil: 'domcontentloaded' })
-      await page.waitForTimeout(observeWindowMs)
+      try {
+        await page.goto(`${baseUrl}${route}`, { waitUntil: 'domcontentloaded' })
+        const contentVerification = await verifyBenchmarkRouteContent(page, route)
+        await page.waitForTimeout(observeWindowMs)
 
-      const result = await page.evaluate(
-        ({ settingsChunks, demoChunks, bootChunks, forbiddenChunks, observeWindowMs }) => {
+        const result = await page.evaluate(
+          ({ settingsChunks, demoChunks, bootChunks, forbiddenChunks, observeWindowMs }) => {
           const readTimestamp = (value: unknown) => {
             if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return null
             return Math.round(value)
@@ -574,26 +695,29 @@ const run = async () => {
             forbiddenChunkLoadsBeforeInteraction
           }
         },
-        {
-          settingsChunks: Array.from(settingsChunkNames),
-          demoChunks: Array.from(demoChunkNames),
-          bootChunks: Array.from(bootChunkNames),
-          forbiddenChunks: forbiddenChunkNames.map((entry) => ({
-            label: entry.label,
-            chunks: Array.from(entry.names)
-          })),
-          observeWindowMs
-        }
-      )
+          {
+            settingsChunks: Array.from(settingsChunkNames),
+            demoChunks: Array.from(demoChunkNames),
+            bootChunks: Array.from(bootChunkNames),
+            forbiddenChunks: forbiddenChunkNames.map((entry) => ({
+              label: entry.label,
+              chunks: Array.from(entry.names)
+            })),
+            observeWindowMs
+          }
+        )
 
-      results.push({
-        route,
-        scenario: 'cold-no-interaction',
-        usedAuditCredentials,
-        ...result
-      })
-
-      await page.close()
+        results.push({
+          route,
+          scenario: 'cold-no-interaction',
+          usedAuditCredentials: needsAuthenticatedSession,
+          ...contentVerification,
+          ...result
+        })
+      } finally {
+        await page.close().catch(() => undefined)
+        await routeContext.close()
+      }
     }
 
     console.log(`Base URL: ${baseUrl}`)
@@ -616,6 +740,10 @@ const run = async () => {
           result.lastRouteTransition?.duration === null || result.lastRouteTransition === null
             ? 'none'
             : `${result.lastRouteTransition.duration}ms`
+        }, routeContent=${result.routeContentLabel}, protectedContent=${
+          result.protectedContentVerified === null
+            ? 'n/a'
+            : `${result.protectedContentVerified ? 'verified' : 'missing'}:${result.protectedContentLabel ?? 'protected content'}`
         }, fragmentBootstrapBytes=${result.fragmentBootstrapBytesBeforeUnlock}, fragmentStreamBytes=${result.fragmentStreamBytesBeforeUnlock}, duplicateStreamBytes=${result.duplicateFragmentBytesBeforeUnlock}, preUnlockNonCritical=${result.preUnlockNonCriticalRequests.length}, settingsChunks=${
           result.loadedSettingsChunksBeforeInteraction.join(', ') || 'none'
         }, demoChunks=${result.loadedDemoChunksBeforeActivation.join(', ') || 'none'}, bootChunks=${
@@ -644,6 +772,9 @@ const run = async () => {
     const hasForbiddenChunkFailure = results.some((result) =>
       result.forbiddenChunkLoadsBeforeInteraction.some((entry) => entry.chunks.length > 0)
     )
+    const hasProtectedContentFailure = results.some(
+      (result) => result.protectedContentVerified === false
+    )
     if (
       hasLongTaskFailure ||
       hasSettingsChunkFailure ||
@@ -651,12 +782,12 @@ const run = async () => {
       hasPreUnlockHomeFailure ||
       hasDuplicateFragmentFailure ||
       hasFirstActionableFailure ||
-      hasForbiddenChunkFailure
+      hasForbiddenChunkFailure ||
+      hasProtectedContentFailure
     ) {
       process.exitCode = 1
     }
   } finally {
-    await context.close()
     await browser.close()
   }
 }

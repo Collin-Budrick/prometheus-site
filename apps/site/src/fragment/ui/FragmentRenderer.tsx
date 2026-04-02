@@ -320,6 +320,7 @@ export const FragmentRenderer = component$(({ node }: NodeProps) => {
         class={node.attrs?.class}
         title={node.attrs?.['data-title']}
         helper={node.attrs?.['data-helper']}
+        variant={node.attrs?.['data-variant'] === 'details' ? 'details' : 'shell'}
         searchLabel={node.attrs?.['data-search-label']}
         searchPlaceholder={node.attrs?.['data-search-placeholder']}
         searchActionLabel={node.attrs?.['data-search-action']}

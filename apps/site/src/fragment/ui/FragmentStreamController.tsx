@@ -27,6 +27,10 @@ import { resolveFragments, resolvePlan } from './utils'
 import type { Lang } from '../../shared/lang-store'
 import type { FragmentShellMode } from './fragment-shell-types'
 import { FragmentRuntimeBridge } from '../runtime/client-bridge'
+import {
+  buildFragmentBootstrapHref,
+  consumePrimedFragmentBootstrapBytes
+} from '../bootstrap-cache'
 import type {
   FragmentRuntimeCardSizing,
   FragmentRuntimePlanEntry,
@@ -107,6 +111,16 @@ const normalizeRuntimePlanEntries = (plan: ReturnType<typeof resolvePlan>): Frag
 
 const normalizeRuntimeFetchGroups = (plan: ReturnType<typeof resolvePlan>) =>
   plan.fetchGroups?.map((group) => [...group]) ?? []
+
+const resolveRuntimeBootstrapIds = (plan: ReturnType<typeof resolvePlan>) => {
+  const entryIds = new Set(plan.fragments.map((entry) => entry.id))
+  const fetchGroup = plan.fetchGroups?.find((group) => group.some((id) => entryIds.has(id)))
+  const groupedIds = fetchGroup?.filter((id) => entryIds.has(id)) ?? []
+  if (groupedIds.length) {
+    return groupedIds
+  }
+  return plan.fragments.filter((entry) => entry.critical).map((entry) => entry.id)
+}
 
 const resolveInitialSizingSeeds = (
   path: string,
@@ -232,6 +246,7 @@ export const FragmentStreamController = component$(
         const refreshQueue = new Set<string>()
         const shouldAnimateLangSwap = langChanged
         let langTransitionInFlight = false
+        let startupPrime: Promise<void> | null = null
         const canObserve = 'IntersectionObserver' in window
         const planValue = resolvePlan(plan)
         if (langChanged) {
@@ -275,6 +290,14 @@ export const FragmentStreamController = component$(
         const allIds = planValue.fragments.map((entry) => entry.id)
         const staticCriticalIds = new Set(planValue.fragments.filter((entry) => entry.critical).map((entry) => entry.id))
         const criticalIds = Array.from(staticCriticalIds)
+        const bootstrapFragmentIds = resolveRuntimeBootstrapIds(planValue)
+        const bootstrapHref = bootstrapFragmentIds.length
+          ? buildFragmentBootstrapHref({
+              ids: bootstrapFragmentIds,
+              lang: activeLang,
+              apiBase: getPublicFragmentApiBase()
+            })
+          : undefined
         const dynamicCriticalSeed = dynamicCriticalIds?.value ?? []
         const dynamicCriticalSet = new Set<string>()
         const isCriticalId = (id: string) => staticCriticalIds.has(id) || dynamicCriticalSet.has(id)
@@ -476,6 +499,7 @@ export const FragmentStreamController = component$(
           viewportWidth: window.innerWidth,
           enableStreaming: FRAGMENT_STREAMING_ENABLED,
           startupMode: 'eager-visible-first',
+          bootstrapHref,
           onCommit: queuePayload,
           onSizing: updateWorkerSizing,
           onStatus: updateStatusFromRuntime,
@@ -488,6 +512,21 @@ export const FragmentStreamController = component$(
             status.value = 'error'
           }
         })
+        const primedBootstrapBytes = bootstrapHref
+          ? consumePrimedFragmentBootstrapBytes({ href: bootstrapHref })
+          : null
+        if (connected && primedBootstrapBytes && bootstrapHref) {
+          startupPrime = primedBootstrapBytes
+            .then(async (bytes) => {
+              await bridge.primeBootstrap(bytes, bootstrapHref)
+            })
+            .catch((error) => {
+              console.warn('Failed to prime warmed fragment bootstrap bytes:', error)
+            })
+            .finally(() => {
+              startupPrime = null
+            })
+        }
         const handlePageHide = () => {
           if (!connected) return
           bridge.suspendForPageHide()
@@ -548,10 +587,20 @@ export const FragmentStreamController = component$(
             nonCriticalIds: fetchable.filter((id) => !isCriticalId(id))
           })
 
-          bridge.requestFragments(fetchable, {
-            priority,
-            refreshIds: refreshList
-          })
+          const dispatchRequest = () => {
+            if (!active || !connected) return
+            bridge.requestFragments(fetchable, {
+              priority,
+              refreshIds: refreshList
+            })
+          }
+
+          if (startupPrime) {
+            void startupPrime.finally(dispatchRequest)
+            return
+          }
+
+          dispatchRequest()
         }
 
         const scheduleHmrRefresh = (payload?: FragmentHmrEventPayload) => {

@@ -108,6 +108,7 @@ export const installHomeStaticAnchorEntry = ({
   let lcpGateReleased = false
   let bootstrapRuntimePromise: ReturnType<typeof loadBootstrapRuntime> | null = null
   let cancelDeferredEntryFallback: (() => void) | null = null
+  let cancelWorkerRuntimeStart: (() => void) | null = null
   let lcpGateCleanup: (() => void) | null = null
   let domReadyHandler: (() => void) | null = null
   let loadHandler: (() => void) | null = null
@@ -171,6 +172,25 @@ export const installHomeStaticAnchorEntry = ({
         enableStreaming: false
       },
       liveWin
+    )
+  }
+
+  const scheduleHomeWorkerRuntime = () => {
+    if (cancelWorkerRuntimeStart) {
+      return
+    }
+
+    cancelWorkerRuntimeStart = scheduleTask(
+      () => {
+        cancelWorkerRuntimeStart = null
+        startHomeWorkerRuntime()
+      },
+      {
+        priority: 'background',
+        timeoutMs: 1800,
+        preferIdle: true,
+        waitForPaint: true
+      }
     )
   }
 
@@ -253,9 +273,9 @@ export const installHomeStaticAnchorEntry = ({
       },
       {
         priority: 'background',
-        delayMs: 250,
-        timeoutMs: 0,
-        preferIdle: false,
+        delayMs: 3200,
+        timeoutMs: 5000,
+        preferIdle: true,
         waitForLoad: true,
         waitForPaint: true
       }
@@ -347,6 +367,8 @@ export const installHomeStaticAnchorEntry = ({
     cleanupSettingsEntryBridge()
     cancelDeferredEntryFallback?.()
     cancelDeferredEntryFallback = null
+    cancelWorkerRuntimeStart?.()
+    cancelWorkerRuntimeStart = null
     lcpGateCleanup?.()
     lcpGateCleanup = null
     disposeSharedRuntime(liveWin)
@@ -361,7 +383,7 @@ export const installHomeStaticAnchorEntry = ({
     }
 
     clearStartupHandlers()
-    startHomeWorkerRuntime()
+    scheduleHomeWorkerRuntime()
     requestBootstrap()
     liveDoc.addEventListener?.(HOME_FIRST_ANCHOR_PATCH_EVENT, startDeferredEntry, { once: true })
     scheduleDeferredEntryFallback()

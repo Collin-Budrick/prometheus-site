@@ -23,6 +23,7 @@ import { appConfig } from '../site-config'
 import { buildFragmentCssLinks } from '../fragment/fragment-css'
 import { FRAGMENT_WIDGET_RUNTIME_ASSET_PATH } from '../fragment/ui/fragment-widget-runtime-loader'
 import { fragmentPlanCache } from '../fragment/plan-cache'
+import { createRouteFragmentWarmupManager } from '../fragment/route-warmup'
 import type { FragmentPlan } from '../fragment/types'
 import { resolveStaticAssetPublicHref, shouldUseStaticShellSourceModules } from '../shell/core/static-asset-url'
 import { setPreference } from '../native/preferences'
@@ -1264,7 +1265,6 @@ const InteractiveShellLayout = component$(() => {
       const pathSearch = ctx.track(() => location.url.search)
       const currentLang = ctx.track(() => langSignal.value)
       const authenticated = ctx.track(() => authSession.value.status === 'authenticated')
-      if (!appConfig.enablePrefetch) return
 
       const warmupDescriptors = createRouteWarmupDescriptors(TOPBAR_NAV_ITEMS, AUTH_NAV_ITEMS).map((descriptor) => ({
         href: withLangParam(descriptor.href, currentLang),
@@ -1274,6 +1274,9 @@ const InteractiveShellLayout = component$(() => {
       const controller = createRouteWarmupController({
         documentRef: document,
         nonce
+      })
+      const fragmentWarmupManager = createRouteFragmentWarmupManager({
+        origin: window.location.origin
       })
       const idleApi = window as Window & {
         requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number
@@ -1285,9 +1288,9 @@ const InteractiveShellLayout = component$(() => {
       let timeoutHandle: number | null = null
 
       const setIdleWarmups = () => {
-        controller.setIdlePrefetchUrls(
-          getIdleWarmupDescriptors(pathName, warmupDescriptors, authenticated).map((descriptor) => descriptor.href)
-        )
+        const idleWarmups = getIdleWarmupDescriptors(pathName, warmupDescriptors, authenticated)
+        controller.setIdlePrefetchUrls(idleWarmups.map((descriptor) => descriptor.href))
+        fragmentWarmupManager.warmIdleRoutes(idleWarmups.map((descriptor) => descriptor.href))
       }
 
       const warmFromEvent = (target: EventTarget | null, trigger: 'pointer' | 'focus') => {
@@ -1302,6 +1305,7 @@ const InteractiveShellLayout = component$(() => {
           return
         }
         controller.warmTarget(url.toString(), resolveRouteSafetyMode(url.pathname) === 'prerender-ok')
+        void fragmentWarmupManager.warmRoute(url.toString())
       }
 
       const handlePointerWarmup = (event: Event) => {
@@ -1331,6 +1335,7 @@ const InteractiveShellLayout = component$(() => {
         if (timeoutHandle !== null) {
           window.clearTimeout(timeoutHandle)
         }
+        fragmentWarmupManager.dispose()
         controller.dispose()
       })
     },

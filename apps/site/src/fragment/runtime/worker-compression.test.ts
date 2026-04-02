@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'bun:test'
 
-import { canReadWorkerStreamEncoding, shouldUseCompressedWorkerBootStream } from './worker-compression'
+import {
+  canReadWorkerStreamEncoding,
+  shouldAdvertiseZstdForWorkerLiveStream,
+  shouldUseCompressedWorkerBootStream
+} from './worker-compression'
 
 describe('worker compression helpers', () => {
   it('only treats native encodings as stream-readable', () => {
@@ -29,5 +33,9 @@ describe('worker compression helpers', () => {
         supportedEncodingCount: 0
       })
     ).toBe(false)
+  })
+
+  it('keeps zstd off long-lived live streams until the worker can stream-read it directly', () => {
+    expect(shouldAdvertiseZstdForWorkerLiveStream()).toBe(false)
   })
 })
