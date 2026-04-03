@@ -32,6 +32,12 @@ import { useCspNonce } from '../security/qwik'
 import { buildSiteCsp, getOrCreateRequestCspNonce } from '../security/server'
 import { buildPartytownHeadScript } from '../shared/partytown'
 import {
+  readServerReachabilitySnapshot,
+  resolveEffectiveFragmentStatus,
+  SERVER_REACHABILITY_EVENT,
+  type ServerReachabilitySnapshot
+} from '../shared/server-reachability'
+import {
   bindOverlayDismiss,
   focusOverlayEntry,
   restoreOverlayFocusBeforeHide,
@@ -1216,6 +1222,9 @@ const InteractiveShellLayout = component$(() => {
   const langSignal = useProvideLangSignal(shellPreferences.value.lang)
   const copy = useLangCopy(langSignal)
   const fragmentStatus = useSharedFragmentStatusSignal()
+  const serverReachability = useSignal<ServerReachabilitySnapshot>(
+    readServerReachabilitySnapshot(typeof window !== 'undefined' ? window : null)
+  )
   const authSession = useAuthSession()
   const isAuthenticated = authSession.value.status === 'authenticated'
   const settingsOpen = useSignal(false)
@@ -1245,13 +1254,29 @@ const InteractiveShellLayout = component$(() => {
     safety: descriptor.safety,
     warmupAudience: descriptor.warmupAudience
   }))
+  const effectiveFragmentStatus = resolveEffectiveFragmentStatus(fragmentStatus.value, serverReachability.value)
   const statusLabel =
-    fragmentStatus.value === 'streaming'
+    effectiveFragmentStatus === 'streaming'
       ? copy.value.fragmentStatusStreaming
-      : fragmentStatus.value === 'error'
+      : effectiveFragmentStatus === 'error'
         ? copy.value.fragmentStatusStalled
         : copy.value.fragmentStatusIdle
   const hasMultipleLangs = supportedLangs.length > 1
+
+  useVisibleTask$(
+    (ctx) => {
+      if (typeof window === 'undefined') return
+      const syncReachability = () => {
+        serverReachability.value = readServerReachabilitySnapshot(window)
+      }
+      syncReachability()
+      window.addEventListener(SERVER_REACHABILITY_EVENT, syncReachability as EventListener)
+      ctx.cleanup(() => {
+        window.removeEventListener(SERVER_REACHABILITY_EVENT, syncReachability as EventListener)
+      })
+    },
+    { strategy: 'document-ready' }
+  )
 
   useVisibleTask$(
     (ctx) => {
@@ -1368,7 +1393,8 @@ const InteractiveShellLayout = component$(() => {
             <div class="topbar-settings" ref={settingsRef} data-open={settingsOpen.value ? 'true' : 'false'}>
               <div
                 class="fragment-status"
-                data-state={fragmentStatus.value}
+                data-runtime-state={fragmentStatus.value}
+                data-state={effectiveFragmentStatus}
                 role="status"
                 aria-live="polite"
                 aria-label={statusLabel}

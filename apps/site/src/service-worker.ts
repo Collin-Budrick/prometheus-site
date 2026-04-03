@@ -1,11 +1,23 @@
 /// <reference lib="webworker" />
 import { templateBranding } from '@prometheus/template-config'
+import {
+  probeServerHealth,
+  SERVER_HEALTH_INTERVAL_MS,
+  SERVER_HEALTH_PERIODIC_SYNC_TAG,
+  type ServerHealthResult,
+  type ServerHealthSource,
+  shouldProbeServerHealth
+} from './shared/server-health'
 
 declare const self: ServiceWorkerGlobalScope & {
   __SW_MANIFEST: (string | { url: string; revision?: string | null })[]
 }
 
 type SyncEventLike = ExtendableEvent & {
+  tag: string
+}
+
+type PeriodicSyncEventLike = ExtendableEvent & {
   tag: string
 }
 
@@ -17,10 +29,13 @@ const USER_DATA_CACHE_PREFIX = `${CACHE_PREFIX}-user-data-v1`
 const OUTBOX_CACHE_NAME = `${CACHE_PREFIX}-outbox-v1`
 const ACTIVE_USER_RESOURCE_KEY = 'meta:active-user'
 const MANUAL_REFRESH_HEADER = 'x-prometheus-manual-refresh'
+const SERVER_HEALTH_HEADER = 'x-prometheus-health-check'
 const scopeUrl = new URL(self.registration.scope)
 const scopePath = scopeUrl.pathname.endsWith('/') ? scopeUrl.pathname : `${scopeUrl.pathname}/`
 const SHELL_URL = new URL('./', scopeUrl).toString()
 const OFFLINE_FALLBACK_URL = new URL('./offline/', scopeUrl).toString()
+const SERVER_HEALTH_URL = new URL('./api/health', scopeUrl).toString()
+const SERVER_HEALTH_KEY = scopeUrl.host || null
 const FRAGMENT_STREAM_PATH = '/fragments/stream'
 const STATIC_DESTINATIONS = new Set(['style', 'script', 'font', 'image', 'worker', 'manifest'])
 const STATIC_EXTENSIONS = /\.(css|js|mjs|cjs|json|woff2?|ttf|otf|png|jpe?g|gif|svg|ico|webp|avif|txt|mp4|webm)$/i
@@ -216,6 +231,52 @@ const extractHtmlWarmupUrls = (html: string, baseUrl: URL) => {
 const broadcastMessage = async (message: Record<string, unknown>) => {
   const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
   await Promise.all(clients.map((client: Client) => client.postMessage(message)))
+}
+
+let lastServerHealthStatus: ServerHealthResult | null = null
+let serverHealthCheckPromise: Promise<ServerHealthResult> | null = null
+
+const broadcastServerHealthStatus = async (
+  status: ServerHealthResult,
+  source: ServerHealthSource = status.source
+) => {
+  await broadcastMessage({
+    type: 'sw:status',
+    online: status.online,
+    checkedAt: status.checkedAt,
+    key: status.key,
+    source
+  })
+}
+
+const checkServerHealth = async (source: ServerHealthSource) => {
+  if (serverHealthCheckPromise) return serverHealthCheckPromise
+
+  if (
+    lastServerHealthStatus &&
+    !shouldProbeServerHealth(lastServerHealthStatus.checkedAt, Date.now(), SERVER_HEALTH_INTERVAL_MS)
+  ) {
+    await broadcastServerHealthStatus(lastServerHealthStatus, source)
+    return lastServerHealthStatus
+  }
+
+  serverHealthCheckPromise = probeServerHealth({
+    fetchImpl: fetch,
+    url: SERVER_HEALTH_URL,
+    key: SERVER_HEALTH_KEY,
+    source,
+    headers: {
+      [SERVER_HEALTH_HEADER]: '1'
+    }
+  }).then(async (status) => {
+    lastServerHealthStatus = status
+    await broadcastServerHealthStatus(status)
+    return status
+  }).finally(() => {
+    serverHealthCheckPromise = null
+  })
+
+  return serverHealthCheckPromise
 }
 
 const clearRuntimeCaches = async () => {
@@ -550,6 +611,7 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const request = event.request
   if (request.method !== 'GET') return
+  if (request.headers.get(SERVER_HEALTH_HEADER) === '1') return
   const url = new URL(request.url)
   if (url.origin !== self.location.origin) return
   if (isFragmentStreamPath(url)) return
@@ -583,6 +645,13 @@ self.addEventListener('sync', (event) => {
     syncEvent.waitUntil(flushContactInviteQueue('sync'))
   }
 })
+
+self.addEventListener('periodicsync' as never, ((event: ExtendableEvent) => {
+  const periodicSyncEvent = event as PeriodicSyncEventLike
+  if (periodicSyncEvent.tag === SERVER_HEALTH_PERIODIC_SYNC_TAG) {
+    periodicSyncEvent.waitUntil(checkServerHealth('periodic-sync').then(() => undefined))
+  }
+}) as EventListener)
 
 self.addEventListener('message', (event) => {
   const payload = event.data as Record<string, unknown> | null
@@ -686,6 +755,13 @@ self.addEventListener('message', (event) => {
     return
   }
 
+  if (payload.type === 'sw:check-server-health') {
+    const reason =
+      typeof payload.reason === 'string' && payload.reason.trim() ? payload.reason.trim() : 'heartbeat'
+    event.waitUntil(checkServerHealth(reason))
+    return
+  }
+
   if (payload.type === 'sw:update-resource' && typeof payload.resourceKey === 'string') {
     event.waitUntil(
       updateResource({
@@ -723,7 +799,13 @@ self.addEventListener('push', (event: PushEvent) => {
     event.waitUntil(
       (async () => {
         await flushOutbox('server-online')
-        await broadcastMessage({ type: 'sw:status', online: true, source: 'push' })
+        lastServerHealthStatus = {
+          online: true,
+          checkedAt: Date.now(),
+          key: SERVER_HEALTH_KEY,
+          source: 'push'
+        }
+        await broadcastServerHealthStatus(lastServerHealthStatus)
         const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
         const hasVisibleClient = clients.some((client) => {
           const windowClient = client as WindowClient

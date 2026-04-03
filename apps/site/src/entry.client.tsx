@@ -12,6 +12,14 @@ import {
   writeServiceWorkerOptOutCookie
 } from './shared/service-worker-seed'
 import { runAfterClientIntent, runAfterClientIntentIdle } from './shared/client-boot'
+import {
+  SERVER_HEALTH_INTERVAL_MS,
+  SERVER_HEALTH_PERIODIC_SYNC_TAG
+} from './shared/server-health'
+import {
+  readServerReachabilitySnapshot,
+  writeServerReachabilitySnapshot
+} from './shared/server-reachability'
 import { initConnectivityStore, isOnline } from './native/connectivity'
 import { isNativeShellRuntime } from './native/runtime'
 import { createRouteFragmentWarmupManager } from './fragment/route-warmup'
@@ -46,6 +54,9 @@ const serviceWorkerSeed = readServiceWorkerSeedFromDocument()
 type BackgroundSyncRegistration = ServiceWorkerRegistration & {
   sync?: {
     register: (tag: string) => Promise<void>
+  }
+  periodicSync?: {
+    register: (tag: string, options?: { minInterval: number }) => Promise<void>
   }
 }
 
@@ -245,6 +256,7 @@ export default function (opts: RenderOptions) {
   if (shouldBridgeServiceWorker) {
     runAfterClientIntentIdle(() => {
       setupServiceWorkerBridge()
+      setupServiceWorkerHeartbeatLoop()
     })
   }
 
@@ -467,7 +479,14 @@ function setupServiceWorkerBridge() {
       dispatchSwEvent('prom:sw-resource-invalidated', payload)
     }
     if (payload.type === 'sw:status') {
-      if (payload.online === true) {
+      writeServerReachabilitySnapshot({
+        online: payload.online === true,
+        browserOnline: isOnline(),
+        checkedAt: typeof payload.checkedAt === 'number' ? payload.checkedAt : Date.now(),
+        key: typeof payload.key === 'string' ? payload.key : null,
+        source: typeof payload.source === 'string' ? payload.source : 'heartbeat'
+      })
+      if (payload.online === true && payload.source === 'push') {
         markServerSuccess(resolveServerKey())
       }
       dispatchSwEvent('prom:network-status', payload)
@@ -477,9 +496,21 @@ function setupServiceWorkerBridge() {
   navigator.serviceWorker.addEventListener('message', handleMessage)
 
   window.addEventListener('online', () => {
+    writeServerReachabilitySnapshot({
+      online: false,
+      browserOnline: true,
+      checkedAt: readServerReachabilitySnapshot().checkedAt,
+      source: 'online-event'
+    })
     dispatchSwEvent('prom:network-status', { online: true })
   })
   window.addEventListener('offline', () => {
+    writeServerReachabilitySnapshot({
+      online: false,
+      browserOnline: false,
+      checkedAt: Date.now(),
+      source: 'offline-event'
+    })
     dispatchSwEvent('prom:network-status', { online: false })
   })
 
@@ -555,6 +586,51 @@ function setupServiceWorkerBridge() {
 function resolveServerKey() {
   if (typeof window === 'undefined') return 'default'
   return resolvePublicApiHost(window.location.origin)
+}
+
+async function registerPeriodicServerHealthCheck() {
+  const registration = await getActiveRegistration()
+  const periodicRegistration = registration as BackgroundSyncRegistration | undefined
+  if (!periodicRegistration?.periodicSync?.register) return
+
+  try {
+    await periodicRegistration.periodicSync.register(SERVER_HEALTH_PERIODIC_SYNC_TAG, {
+      minInterval: SERVER_HEALTH_INTERVAL_MS
+    })
+  } catch {
+    // Ignore unsupported or permission-gated background registration paths.
+  }
+}
+
+function setupServiceWorkerHeartbeatLoop() {
+  if (typeof window === 'undefined') return
+  if (resolveStaticRouteBootstrapKind()) return
+  const flags = window as Window & typeof globalThis & {
+    __PROM_SERVER_HEARTBEAT_INSTALLED__?: boolean
+  }
+  if (flags.__PROM_SERVER_HEARTBEAT_INSTALLED__) return
+  flags.__PROM_SERVER_HEARTBEAT_INSTALLED__ = true
+
+  const requestServerHealth = (reason: string) => {
+    void postServiceWorkerMessage({ type: 'sw:check-server-health', reason })
+  }
+
+  void getActiveRegistration().then(() => {
+    requestServerHealth('heartbeat')
+    window.setInterval(() => {
+      requestServerHealth('heartbeat')
+    }, SERVER_HEALTH_INTERVAL_MS)
+    void registerPeriodicServerHealthCheck()
+  })
+
+  window.addEventListener('online', () => {
+    requestServerHealth('online-event')
+  })
+  window.addEventListener('pageshow', (event) => {
+    if ((event as PageTransitionEvent).persisted) {
+      requestServerHealth('heartbeat')
+    }
+  })
 }
 
 async function triggerManualSync() {

@@ -210,6 +210,7 @@ export const StaticShellLayout = component$<StaticShellLayoutProps>(({
             <div class="topbar-settings" data-open="false">
               <div
                 class="fragment-status"
+                data-runtime-state="idle"
                 data-state="idle"
                 role="status"
                 aria-live="polite"

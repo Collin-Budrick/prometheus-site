@@ -1,4 +1,8 @@
 import type { HomeStaticBootstrapData } from './home-bootstrap-data'
+import {
+  applyFragmentStatusIndicator,
+  readServerReachabilitySnapshot,
+} from '../../shared/server-reachability'
 
 type FragmentStatusState = 'idle' | 'streaming' | 'error'
 
@@ -48,9 +52,14 @@ export const updateFragmentStatusFromBootstrapData = (
     return
   }
 
-  element.dataset.state = state
-  const label = resolveFragmentStatusLabel(data, state)
-  if (label) {
-    element.setAttribute('aria-label', label)
-  }
+  applyFragmentStatusIndicator({
+    element,
+    runtimeState: state,
+    labels: {
+      idle: resolveFragmentStatusLabel(data, 'idle'),
+      streaming: resolveFragmentStatusLabel(data, 'streaming'),
+      error: resolveFragmentStatusLabel(data, 'error')
+    },
+    reachability: readServerReachabilitySnapshot()
+  })
 }

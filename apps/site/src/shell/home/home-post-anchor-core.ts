@@ -5,6 +5,7 @@ import { loadHomeBootstrapDeferredRuntime } from './runtime-loaders'
 import { scheduleStaticShellTask } from '../core/scheduler'
 import { loadHomeSettingsInteractionRuntime } from './runtime-loaders'
 import { ensureHomePostAnchorPreconnects } from './home-post-anchor-preconnect'
+import { bindHomeServerReachabilityStatus } from './home-bootstrap-ui'
 import {
   markStaticShellUserTiming,
   measureStaticShellUserTiming
@@ -191,6 +192,10 @@ export const installHomeStaticEntry = ({
   let cancelDeferredGlobalStylesheetStart: (() => void) | null = null
   let cancelDeferredRuntimeStart: (() => void) | null = null
   let cancelPendingClickReplay: (() => void) | null = null
+  const cleanupServerReachability = bindHomeServerReachabilityStatus({
+    win: liveWin,
+    doc: liveDoc
+  })
 
   const eventOptions: AddEventListenerOptions = { capture: true, passive: true }
   const clickReplayOptions: AddEventListenerOptions = { capture: true }
@@ -513,6 +518,7 @@ export const installHomeStaticEntry = ({
     cancelDeferredRuntimeStart?.()
     cancelDeferredRuntimeStart = null
     clearPendingClickReplay()
+    cleanupServerReachability()
     widgetRuntime?.destroy()
     widgetRuntime = null
     liveWin.__PROM_STATIC_HOME_ENTRY__ = false

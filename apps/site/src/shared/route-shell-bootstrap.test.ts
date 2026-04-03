@@ -17,6 +17,9 @@ describe('route shell bootstrap script', () => {
 
     expect(script).toContain('sessionStorage.setItem')
     expect(script).toContain("document.addEventListener('click'")
+    expect(script).toContain("type: 'sw:check-server-health'")
+    expect(script).toContain('server-health')
+    expect(script).toContain('prom:server-reachability')
     expect(script).not.toContain('data-route-speculation="shell"')
     expect(script).not.toContain('data-route-prefetch="shell"')
     expect(script).not.toContain('requestIdleCallback(run')

@@ -1,4 +1,13 @@
 import { TRUSTED_TYPES_RUNTIME_SCRIPT_POLICY_NAME } from '../security/shared'
+import { STATIC_ROUTE_ATTR } from '../shell/core/constants'
+import {
+  SERVER_HEALTH_INTERVAL_MS,
+  SERVER_HEALTH_PERIODIC_SYNC_TAG
+} from './server-health'
+import {
+  SERVER_REACHABILITY_EVENT,
+  SERVER_REACHABILITY_WINDOW_KEY
+} from './server-reachability'
 import type { RouteSafetyMode, RouteWarmupAudience } from './route-navigation'
 
 export type RouteShellBootstrapNavigationDescriptor = {
@@ -346,9 +355,15 @@ export const buildRouteShellBootstrapScript = ({
   var stateKey = ${serializeJson(ROUTE_TRANSITION_STATE_KEY)};
   var routeWarmupStateKey = ${serializeJson(ROUTE_WARMUP_STATE_KEY)};
   var runtimeScriptPolicyName = ${serializeJson(TRUSTED_TYPES_RUNTIME_SCRIPT_POLICY_NAME)};
+  var staticRouteAttr = ${serializeJson(STATIC_ROUTE_ATTR)};
+  var serverReachabilityEvent = ${serializeJson(SERVER_REACHABILITY_EVENT)};
+  var serverReachabilityKey = ${serializeJson(SERVER_REACHABILITY_WINDOW_KEY)};
+  var serverHealthIntervalMs = ${String(SERVER_HEALTH_INTERVAL_MS)};
+  var serverHealthPeriodicSyncTag = ${serializeJson(SERVER_HEALTH_PERIODIC_SYNC_TAG)};
   var swOptOutKey = 'fragment:sw-opt-out';
   var swBridgeReadyKey = '__PROMETHEUS_ROUTE_SW_BRIDGE_READY__';
   var swBridgeInstalledKey = '__PROMETHEUS_ROUTE_SW_BRIDGE_INSTALLED__';
+  var swHeartbeatInstalledKey = '__PROMETHEUS_ROUTE_SW_HEARTBEAT_INSTALLED__';
   var swRegistrationPromise = null;
 
   var normalizePath = function (value) {
@@ -420,6 +435,56 @@ export const buildRouteShellBootstrapScript = ({
 
   var dispatchSwEvent = function (name, detail) {
     window.dispatchEvent(new CustomEvent(name, { detail: detail || {} }));
+  };
+
+  var resolveBrowserOnline = function () {
+    return navigator.onLine !== false;
+  };
+
+  var readServerReachability = function () {
+    var browserOnline = resolveBrowserOnline();
+    var current = window[serverReachabilityKey];
+    if (!current || typeof current !== 'object') {
+      return {
+        online: browserOnline,
+        browserOnline: browserOnline,
+        checkedAt: null,
+        key: null,
+        source: 'bootstrap'
+      };
+    }
+    return {
+      online: current.online === true,
+      browserOnline: 'browserOnline' in current ? current.browserOnline !== false : browserOnline,
+      checkedAt: typeof current.checkedAt === 'number' && isFinite(current.checkedAt) ? current.checkedAt : null,
+      key: typeof current.key === 'string' && current.key.trim() ? current.key.trim() : null,
+      source: typeof current.source === 'string' && current.source.trim() ? current.source.trim() : 'bootstrap'
+    };
+  };
+
+  var hasReachabilityChanged = function (current, next) {
+    return current.online !== next.online ||
+      current.browserOnline !== next.browserOnline ||
+      current.checkedAt !== next.checkedAt ||
+      current.key !== next.key ||
+      current.source !== next.source;
+  };
+
+  var writeServerReachability = function (patch) {
+    var current = readServerReachability();
+    var next = {
+      online: typeof patch.online === 'boolean' ? patch.online : current.online,
+      browserOnline: typeof patch.browserOnline === 'boolean' ? patch.browserOnline : resolveBrowserOnline(),
+      checkedAt: typeof patch.checkedAt === 'number' && isFinite(patch.checkedAt) ? patch.checkedAt : current.checkedAt,
+      key: typeof patch.key === 'string' && patch.key.trim() ? patch.key.trim() : current.key,
+      source: typeof patch.source === 'string' && patch.source.trim() ? patch.source.trim() : current.source
+    };
+    if (!hasReachabilityChanged(current, next)) {
+      return current;
+    }
+    window[serverReachabilityKey] = next;
+    dispatchSwEvent(serverReachabilityEvent, next);
+    return next;
   };
 
   var isServiceWorkerDisabled = function () {
@@ -541,7 +606,37 @@ export const buildRouteShellBootstrapScript = ({
       }
       if (payload.type === 'sw:resource-invalidated') {
         dispatchSwEvent('prom:sw-resource-invalidated', payload);
+        return;
       }
+      if (payload.type === 'sw:status') {
+        writeServerReachability({
+          online: payload.online === true,
+          browserOnline: resolveBrowserOnline(),
+          checkedAt: typeof payload.checkedAt === 'number' ? payload.checkedAt : Date.now(),
+          key: typeof payload.key === 'string' ? payload.key : null,
+          source: typeof payload.source === 'string' ? payload.source : 'heartbeat'
+        });
+        dispatchSwEvent('prom:network-status', payload);
+      }
+    });
+
+    window.addEventListener('online', function () {
+      writeServerReachability({
+        online: false,
+        browserOnline: true,
+        checkedAt: readServerReachability().checkedAt,
+        source: 'online-event'
+      });
+      dispatchSwEvent('prom:network-status', { online: true, source: 'online-event' });
+    });
+    window.addEventListener('offline', function () {
+      writeServerReachability({
+        online: false,
+        browserOnline: false,
+        checkedAt: Date.now(),
+        source: 'offline-event'
+      });
+      dispatchSwEvent('prom:network-status', { online: false, source: 'offline-event' });
     });
 
     window.addEventListener('prom:sw-manual-refresh', function () {
@@ -593,6 +688,58 @@ export const buildRouteShellBootstrapScript = ({
     });
   };
 
+  var hasStaticRoute = Boolean(document.querySelector('[' + staticRouteAttr + ']'));
+
+  var requestServerHealth = function (reason) {
+    postServiceWorkerMessage({
+      type: 'sw:check-server-health',
+      reason: reason || 'heartbeat'
+    });
+  };
+
+  var registerPeriodicServerHealthCheck = function () {
+    return registerServiceWorker()
+      .then(function (registration) {
+        var periodicSync = registration && registration.periodicSync;
+        if (!periodicSync || typeof periodicSync.register !== 'function') {
+          return null;
+        }
+        return periodicSync.register(serverHealthPeriodicSyncTag, {
+          minInterval: serverHealthIntervalMs
+        }).catch(function () {
+          return null;
+        });
+      })
+      .catch(function () {
+        return null;
+      });
+  };
+
+  var setupServerHealthHeartbeat = function () {
+    if (!hasStaticRoute || window[swHeartbeatInstalledKey]) return;
+    window[swHeartbeatInstalledKey] = true;
+    registerServiceWorker()
+      .then(function () {
+        requestServerHealth('heartbeat');
+        window.setInterval(function () {
+          requestServerHealth('heartbeat');
+        }, serverHealthIntervalMs);
+        return registerPeriodicServerHealthCheck();
+      })
+      .catch(function () {
+        // Ignore service worker heartbeat setup failures during bootstrap.
+      });
+
+    window.addEventListener('online', function () {
+      requestServerHealth('online-event');
+    });
+    window.addEventListener('pageshow', function (event) {
+      if (event && event.persisted) {
+        requestServerHealth('heartbeat');
+      }
+    });
+  };
+
   var publicHrefs = warmupDescriptors
     .filter(function (descriptor) {
       return descriptor.warmupAudience === 'public' && descriptor.safety !== 'no-warmup';
@@ -618,8 +765,14 @@ export const buildRouteShellBootstrapScript = ({
     userCacheKey: userCacheKey
   };
 
+  writeServerReachability({
+    online: resolveBrowserOnline(),
+    browserOnline: resolveBrowserOnline(),
+    source: 'bootstrap'
+  });
   registerServiceWorker();
   setupServiceWorkerBridge();
+  setupServerHealthHeartbeat();
 
   var warmRoutes = function () {
     if (publicHrefs.length) {

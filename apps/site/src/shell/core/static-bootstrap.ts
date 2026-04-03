@@ -71,6 +71,12 @@ import {
 } from "../../shared/overlay-a11y";
 import { getPublicFragmentApiBase } from "../../shared/public-fragment-config";
 import { appConfig } from "../../site-config";
+import {
+  applyFragmentStatusIndicator,
+  readFragmentRuntimeStateFromElement,
+  readServerReachabilitySnapshot,
+  SERVER_REACHABILITY_EVENT,
+} from "../../shared/server-reachability";
 import type { StoreSeed } from "../../features/store/store-seed";
 import {
   createStaticShellThemeIcon,
@@ -205,14 +211,16 @@ const updateFragmentStatus = (
   );
   if (!element) return;
   const copy = getUiCopy(lang);
-  const label =
-    state === "streaming"
-      ? copy.fragmentStatusStreaming
-      : state === "error"
-        ? copy.fragmentStatusStalled
-        : copy.fragmentStatusIdle;
-  element.dataset.state = state;
-  element.setAttribute("aria-label", label);
+  applyFragmentStatusIndicator({
+    element,
+    runtimeState: state,
+    labels: {
+      idle: copy.fragmentStatusIdle,
+      streaming: copy.fragmentStatusStreaming,
+      error: copy.fragmentStatusStalled,
+    },
+    reachability: readServerReachabilitySnapshot(),
+  });
 };
 
 const loadFragmentStreamRuntime = () => {
@@ -1354,6 +1362,25 @@ export const bootstrapStaticFragmentShell = async () => {
   connectSharedFragmentRuntime(controller);
   controller.cleanupFns.push(observeVisibleStaticFragments(controller));
   updateFragmentStatus(controller.lang, "idle");
+  const handleServerReachabilityChange = () => {
+    const element = document.querySelector<HTMLElement>("[data-static-fragment-status]");
+    if (!element) return;
+    updateFragmentStatus(
+      controller.lang,
+      readFragmentRuntimeStateFromElement(element),
+    );
+  };
+  window.addEventListener(
+    SERVER_REACHABILITY_EVENT,
+    handleServerReachabilityChange as EventListener,
+  );
+  controller.cleanupFns.push(() =>
+    window.removeEventListener(
+      SERVER_REACHABILITY_EVENT,
+      handleServerReachabilityChange as EventListener,
+    ),
+  );
+  handleServerReachabilityChange();
 
   const handlePageHide = () => {
     stopConnections(controller);
