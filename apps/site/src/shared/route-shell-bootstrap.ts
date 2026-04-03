@@ -1,3 +1,4 @@
+import { TRUSTED_TYPES_RUNTIME_SCRIPT_POLICY_NAME } from '../security/shared'
 import type { RouteSafetyMode, RouteWarmupAudience } from './route-navigation'
 
 export type RouteShellBootstrapNavigationDescriptor = {
@@ -16,9 +17,11 @@ type RouteShellBootstrapConfig = {
   navigationDescriptors: ReadonlyArray<RouteShellBootstrapNavigationDescriptor>
   warmupDescriptors: ReadonlyArray<RouteShellBootstrapWarmupDescriptor>
   isAuthenticated: boolean
+  userCacheKey?: string | null
 }
 
 const ROUTE_TRANSITION_STATE_KEY = '__PROMETHEUS_ROUTE_TRANSITION__'
+const ROUTE_WARMUP_STATE_KEY = '__PROMETHEUS_ROUTE_WARMUP__'
 const PROM_PERF_DEBUG_KEY = '__PROM_PERF_DEBUG__'
 const PROM_PERF_DEBUG_FLAG = '__PROM_STATIC_SHELL_DEBUG_PERF__'
 const FIRST_ACTIONABLE_CONTROL_MARK = 'prom:perf:first-actionable-control'
@@ -333,14 +336,20 @@ export const routeDirectionRestoreScript = `(function () {
 export const buildRouteShellBootstrapScript = ({
   navigationDescriptors,
   warmupDescriptors,
-  isAuthenticated
+  isAuthenticated,
+  userCacheKey = null
 }: RouteShellBootstrapConfig) => `(function () {
   var navigationDescriptors = ${serializeJson(navigationDescriptors)};
   var warmupDescriptors = ${serializeJson(warmupDescriptors)};
   var isAuthenticated = ${serializeJson(isAuthenticated)};
+  var userCacheKey = ${serializeJson(userCacheKey)};
   var stateKey = ${serializeJson(ROUTE_TRANSITION_STATE_KEY)};
-  void warmupDescriptors;
-  void isAuthenticated;
+  var routeWarmupStateKey = ${serializeJson(ROUTE_WARMUP_STATE_KEY)};
+  var runtimeScriptPolicyName = ${serializeJson(TRUSTED_TYPES_RUNTIME_SCRIPT_POLICY_NAME)};
+  var swOptOutKey = 'fragment:sw-opt-out';
+  var swBridgeReadyKey = '__PROMETHEUS_ROUTE_SW_BRIDGE_READY__';
+  var swBridgeInstalledKey = '__PROMETHEUS_ROUTE_SW_BRIDGE_INSTALLED__';
+  var swRegistrationPromise = null;
 
   var normalizePath = function (value) {
     var trimmed = String(value || '').trim();
@@ -390,6 +399,249 @@ export const buildRouteShellBootstrapScript = ({
 
     return targetOwner.index > currentOwner.index ? 'forward' : 'back';
   };
+
+  var toAbsoluteUrl = function (href) {
+    try {
+      var url = new URL(href, location.origin);
+      if (url.pathname !== '/' && !url.pathname.endsWith('/')) {
+        url.pathname = url.pathname + '/';
+      }
+      if (!url.search) {
+        var currentParams = new URLSearchParams(location.search);
+        if (currentParams.has('lang')) {
+          url.searchParams.set('lang', currentParams.get('lang'));
+        }
+      }
+      return url.toString();
+    } catch (error) {
+      return null;
+    }
+  };
+
+  var dispatchSwEvent = function (name, detail) {
+    window.dispatchEvent(new CustomEvent(name, { detail: detail || {} }));
+  };
+
+  var isServiceWorkerDisabled = function () {
+    if (!('serviceWorker' in navigator)) return true;
+    if (document.documentElement.getAttribute('data-sw-disabled') === '1') return true;
+    if (window.__FRAGMENT_PRIME_DISABLE_SW__ === true) return true;
+    try {
+      return window.localStorage.getItem(swOptOutKey) === '1';
+    } catch (error) {
+      return false;
+    }
+  };
+
+  var resolveServiceWorkerLocation = function () {
+    return {
+      swUrl: new URL('/service-worker.js', location.origin).toString(),
+      scope: '/',
+      scopeUrl: new URL('/', location.origin).toString()
+    };
+  };
+
+  var asTrustedScriptUrl = function (url) {
+    var target = window;
+    var factory = target.trustedTypes;
+    if (!factory || typeof factory.createPolicy !== 'function') {
+      return url;
+    }
+    var policies = target.__PROM_TT_POLICIES__ || {};
+    var cached = policies[runtimeScriptPolicyName];
+    if (cached && typeof cached.createScriptURL === 'function') {
+      return cached.createScriptURL(url);
+    }
+    try {
+      var policy = factory.createPolicy(runtimeScriptPolicyName, {
+        createScript: function (input) {
+          return input;
+        },
+        createScriptURL: function (input) {
+          return input;
+        }
+      });
+      target.__PROM_TT_POLICIES__ = Object.assign({}, policies, {
+        [runtimeScriptPolicyName]: policy
+      });
+      return typeof policy.createScriptURL === 'function' ? policy.createScriptURL(url) : url;
+    } catch (error) {
+      var existing = (target.__PROM_TT_POLICIES__ || {})[runtimeScriptPolicyName];
+      if (existing && typeof existing.createScriptURL === 'function') {
+        return existing.createScriptURL(url);
+      }
+      return url;
+    }
+  };
+
+  var registerServiceWorker = function () {
+    if (swRegistrationPromise) return swRegistrationPromise;
+    if (isServiceWorkerDisabled()) {
+      swRegistrationPromise = Promise.resolve(null);
+      return swRegistrationPromise;
+    }
+    var serviceWorkerLocation = resolveServiceWorkerLocation();
+    swRegistrationPromise = navigator.serviceWorker
+      .getRegistration(serviceWorkerLocation.scopeUrl)
+      .then(function (registration) {
+        if (registration) return registration;
+        return navigator.serviceWorker.register(asTrustedScriptUrl(serviceWorkerLocation.swUrl), {
+          scope: serviceWorkerLocation.scope
+        });
+      })
+      .catch(function (error) {
+        console.error('Route shell service worker registration failed:', error);
+        return null;
+      });
+    return swRegistrationPromise;
+  };
+
+  var resolveServiceWorkerTarget = function () {
+    return registerServiceWorker()
+      .then(function (registration) {
+        if (registration && registration.active) {
+          return registration.active;
+        }
+        return navigator.serviceWorker.ready
+          .then(function (readyRegistration) {
+            return readyRegistration.active || navigator.serviceWorker.controller || null;
+          })
+          .catch(function () {
+            return navigator.serviceWorker.controller || null;
+          });
+      })
+      .catch(function () {
+        return navigator.serviceWorker.controller || null;
+      });
+  };
+
+  var setupServiceWorkerBridge = function () {
+    if (!('serviceWorker' in navigator)) return;
+    if (window[swBridgeInstalledKey]) return;
+    window[swBridgeInstalledKey] = true;
+
+    navigator.serviceWorker.addEventListener('message', function (event) {
+      var payload = event && event.data ? event.data : null;
+      if (!payload || typeof payload !== 'object') return;
+      if (payload.type === 'sw:cache-refreshed') {
+        dispatchSwEvent('prom:sw-cache-refreshed', payload);
+        return;
+      }
+      if (payload.type === 'sw:cache-cleared') {
+        dispatchSwEvent('prom:sw-cache-cleared', payload);
+        return;
+      }
+      if (payload.type === 'sw:warm-complete') {
+        dispatchSwEvent('prom:sw-warm-complete', payload);
+        return;
+      }
+      if (payload.type === 'sw:resource-updated') {
+        dispatchSwEvent('prom:sw-resource-updated', payload);
+        return;
+      }
+      if (payload.type === 'sw:resource-invalidated') {
+        dispatchSwEvent('prom:sw-resource-invalidated', payload);
+      }
+    });
+
+    window.addEventListener('prom:sw-manual-refresh', function () {
+      postServiceWorkerMessage({ type: 'sw:manual-refresh' });
+    });
+    window.addEventListener('prom:sw-warm-public', function () {
+      if (!publicHrefs.length) return;
+      postServiceWorkerMessage({ type: 'sw:warm-public', hrefs: publicHrefs });
+    });
+    window.addEventListener('prom:sw-warm-user', function () {
+      if (!isAuthenticated || !userCacheKey || !authHrefs.length) return;
+      postServiceWorkerMessage({
+        type: 'sw:warm-user',
+        hrefs: authHrefs,
+        userCacheKey: userCacheKey
+      });
+    });
+    window.addEventListener('prom:sw-update-resource', function (event) {
+      var detail = event && event.detail ? event.detail : null;
+      if (!detail || typeof detail.resourceKey !== 'string') return;
+      postServiceWorkerMessage(Object.assign({ type: 'sw:update-resource' }, detail));
+    });
+    window.addEventListener('prom:sw-invalidate-resource', function (event) {
+      var detail = event && event.detail ? event.detail : null;
+      if (!detail || typeof detail.resourceKey !== 'string') return;
+      postServiceWorkerMessage(Object.assign({ type: 'sw:invalidate-resource' }, detail));
+    });
+    window.addEventListener('prom:sw-refresh-cache', function () {
+      postServiceWorkerMessage({ type: 'sw:manual-refresh' });
+    });
+    window.addEventListener('prom:sw-clear-cache', function () {
+      postServiceWorkerMessage({ type: 'sw:clear-cache' });
+    });
+    window.addEventListener('prom:sw-manual-sync', function () {
+      dispatchSwEvent('prom:sw-sync-requested', { method: 'message' });
+      postServiceWorkerMessage({ type: 'p2p:flush-outbox' });
+      postServiceWorkerMessage({ type: 'store:cart:flush' });
+      postServiceWorkerMessage({ type: 'contact-invites:flush-queue' });
+    });
+  };
+
+  var postServiceWorkerMessage = function (message) {
+    if (!('serviceWorker' in navigator)) return;
+    resolveServiceWorkerTarget().then(function (target) {
+      if (!target || typeof target.postMessage !== 'function') return;
+      target.postMessage(message);
+    }).catch(function () {
+      // Ignore warmup failures during bootstrap.
+    });
+  };
+
+  var publicHrefs = warmupDescriptors
+    .filter(function (descriptor) {
+      return descriptor.warmupAudience === 'public' && descriptor.safety !== 'no-warmup';
+    })
+    .map(function (descriptor) {
+      return toAbsoluteUrl(descriptor.href);
+    })
+    .filter(Boolean);
+
+  var authHrefs = warmupDescriptors
+    .filter(function (descriptor) {
+      return descriptor.warmupAudience === 'auth' && descriptor.safety !== 'no-warmup';
+    })
+    .map(function (descriptor) {
+      return toAbsoluteUrl(descriptor.href);
+    })
+    .filter(Boolean);
+
+  window[routeWarmupStateKey] = {
+    publicHrefs: publicHrefs,
+    authHrefs: authHrefs,
+    isAuthenticated: isAuthenticated,
+    userCacheKey: userCacheKey
+  };
+
+  registerServiceWorker();
+  setupServiceWorkerBridge();
+
+  var warmRoutes = function () {
+    if (publicHrefs.length) {
+      postServiceWorkerMessage({
+        type: 'sw:warm-public',
+        hrefs: publicHrefs
+      });
+    }
+    if (isAuthenticated && userCacheKey && authHrefs.length) {
+      postServiceWorkerMessage({
+        type: 'sw:warm-user',
+        hrefs: authHrefs,
+        userCacheKey: userCacheKey
+      });
+    }
+  };
+
+  if (document.readyState === 'complete') {
+    warmRoutes();
+  } else {
+    window.addEventListener('load', warmRoutes, { once: true });
+  }
 
   var isWarmupConstrained = function () {
     var connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;

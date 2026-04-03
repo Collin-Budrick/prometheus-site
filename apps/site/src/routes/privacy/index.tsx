@@ -1,4 +1,4 @@
-import { $, component$ } from '@builder.io/qwik'
+import { component$ } from '@builder.io/qwik'
 import type { DocumentHead, RequestHandler } from '@builder.io/qwik-city'
 import { templateBranding } from '@prometheus/template-config'
 import { StaticRouteTemplate } from '@prometheus/ui'
@@ -38,11 +38,6 @@ export const head: DocumentHead = {
 }
 
 export default component$(() => {
-  const contactPrivacyTeam = $(() => {
-    if (typeof window === 'undefined') return
-    window.location.href = `mailto:${contactEmail}?subject=${encodeURIComponent(`${siteBrand.name} privacy request`)}`
-  })
-
   return (
     <StaticPageRoot>
       <StaticRouteTemplate
@@ -50,8 +45,8 @@ export default component$(() => {
         title="Privacy Policy"
         description={policyDescription}
         actionLabel="Contact privacy team"
+        actionDisabled
         closeLabel="Close"
-        onAction$={contactPrivacyTeam}
         size="big"
         {...buildStaticRouteTemplatePretextProps({
           cardMode: 'fallback',

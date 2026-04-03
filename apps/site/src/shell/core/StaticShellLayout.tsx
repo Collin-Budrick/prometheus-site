@@ -3,6 +3,7 @@ import type { Theme } from '@prometheus/ui'
 import { InSettings } from '@qwikest/icons/iconoir'
 import { emptyUiCopy, type LanguageSeedPayload } from '../../lang/selection'
 import type { Lang } from '../../lang'
+import type { AuthSessionState } from '../../features/auth/auth-session'
 import { supportedLanguages } from '../../lang/manifest'
 import { appConfig, siteTemplateConfig } from '../../site-config'
 import { AUTH_NAV_ITEMS, TOPBAR_NAV_ITEMS } from '../../shared/nav-order'
@@ -32,6 +33,7 @@ import type { StaticShellSeed } from './seed'
 type StaticShellLayoutProps = {
   currentPath: string
   isAuthenticated: boolean
+  authSession: AuthSessionState
   lang: Lang
   theme: Theme
   languageSeed: LanguageSeedPayload
@@ -146,6 +148,7 @@ const StaticShellSettingsOverlay = component$<{
 export const StaticShellLayout = component$<StaticShellLayoutProps>(({
   currentPath,
   isAuthenticated,
+  authSession,
   lang,
   theme,
   languageSeed,
@@ -162,6 +165,7 @@ export const StaticShellLayout = component$<StaticShellLayoutProps>(({
     bootstrapMode: routeConfig?.bootstrapMode ?? 'fragment-static',
     authPolicy: routeConfig?.authPolicy ?? 'public',
     isAuthenticated,
+    authSession,
     snapshotKey: routeConfig?.snapshotKey ?? currentPath,
     buildVersion
   }
@@ -270,7 +274,11 @@ export const StaticShellLayout = component$<StaticShellLayoutProps>(({
         dangerouslySetInnerHTML={buildRouteShellBootstrapScript({
           navigationDescriptors: routeBootstrapNavigationDescriptors,
           warmupDescriptors: routeBootstrapWarmupDescriptors,
-          isAuthenticated
+          isAuthenticated,
+          userCacheKey:
+            authSession.status === 'authenticated'
+              ? authSession.user.id ?? authSession.user.email ?? 'session'
+              : null
         })}
       />
     </div>

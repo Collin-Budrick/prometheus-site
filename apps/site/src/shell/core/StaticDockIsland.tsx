@@ -3,7 +3,7 @@ import { DockBar, DockIcon } from '@prometheus/ui'
 import { getUiCopy } from '../../lang/client'
 import type { Lang } from '../../lang'
 import { AUTH_NAV_ITEMS, TOPBAR_NAV_ITEMS } from '../../shared/nav-order'
-import { buildPublicSiteAuthUrl } from '../../shared/public-api-url'
+import { readSeededAuthSession } from './seed-client'
 import { DOCK_ICONS, isDockItemActive, withLangParam } from './dock'
 
 type StaticDockIslandProps = {
@@ -11,43 +11,14 @@ type StaticDockIslandProps = {
   lang: Lang
 }
 
-type SessionPayload = {
-  session?: {
-    userId?: string
-  }
-  user?: {
-    id?: string
-  }
-}
-
-const isAuthenticatedPayload = (payload: SessionPayload | null | undefined) =>
-  Boolean(payload?.user?.id || payload?.session?.userId)
-
 export const StaticDockIsland = component$<StaticDockIslandProps>(({ currentPath, lang }) => {
-  const authenticated = useSignal(false)
+  const authenticated = useSignal(readSeededAuthSession().status === 'authenticated')
   const copy = getUiCopy(lang)
   const navItems = useComputed$(() => (authenticated.value ? AUTH_NAV_ITEMS : TOPBAR_NAV_ITEMS))
 
   useVisibleTask$(
-    async (ctx) => {
-      let cancelled = false
-      ctx.cleanup(() => {
-        cancelled = true
-      })
-
-      try {
-        const response = await fetch(buildPublicSiteAuthUrl('/auth/session', window.location.origin), {
-          credentials: 'include',
-          headers: { accept: 'application/json' }
-        })
-        if (!response.ok) return
-        const payload = (await response.json()) as SessionPayload
-        if (!cancelled) {
-          authenticated.value = isAuthenticatedPayload(payload)
-        }
-      } catch {
-        // Leave the public dock in place when session checks fail.
-      }
+    () => {
+      authenticated.value = readSeededAuthSession().status === 'authenticated'
     },
     { strategy: 'document-idle' }
   )

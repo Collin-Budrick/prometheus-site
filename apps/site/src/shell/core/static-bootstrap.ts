@@ -48,6 +48,7 @@ import { createStaticFragmentRouteData } from "../fragments/static-fragment-mode
 import { scheduleStaticShellTask } from "./scheduler";
 import { runAfterClientIntentIdle } from "../../shared/client-boot";
 import {
+  readSeededAuthSession,
   staticDockRootNeedsSync,
   readStaticShellSeed,
   syncStaticDockRootState,
@@ -254,13 +255,11 @@ const syncStaticFragmentDockIfNeeded = async (
 const refreshStaticFragmentDockAuthIfNeeded = async (
   controller: StaticFragmentController,
 ) => {
-  const { loadClientAuthSession } = await loadStaticAuthClient();
-  const session = await loadClientAuthSession();
-  if (controller.destroyed) return;
+  const session = readSeededAuthSession();
   const isAuthenticated = session.status === "authenticated";
   if (controller.isAuthenticated === isAuthenticated) return;
   controller.isAuthenticated = isAuthenticated;
-  writeStaticShellSeed({ isAuthenticated });
+  writeStaticShellSeed({ isAuthenticated, authSession: session });
   await syncStaticFragmentDockIfNeeded(controller);
 };
 
@@ -1178,17 +1177,16 @@ const hydrateProtectedStaticFragments = async (
 const scheduleProtectedAuthUpgrade = (controller: StaticFragmentController) => {
   const runAuthUpgrade = async () => {
     try {
-      const { loadClientAuthSession, redirectProtectedStaticRouteToLogin } =
+      const { redirectProtectedStaticRouteToLogin } =
         await loadStaticAuthClient();
-      const session = await loadClientAuthSession();
-      if (controller.destroyed) return;
+      const session = readSeededAuthSession();
       if (session.status !== "authenticated") {
         redirectProtectedStaticRouteToLogin(controller.lang);
         return;
       }
       if (!controller.isAuthenticated) {
         controller.isAuthenticated = true;
-        writeStaticShellSeed({ isAuthenticated: true });
+        writeStaticShellSeed({ isAuthenticated: true, authSession: session });
         await syncStaticFragmentDockIfNeeded(controller);
       }
       if (!hasStaticFragmentRoot()) {
@@ -1326,24 +1324,6 @@ export const bootstrapStaticFragmentShell = async () => {
   controller.cleanupFns.push(() => controller.commitQueue?.destroy());
 
   await syncStaticFragmentDockIfNeeded(controller);
-  controller.cleanupFns.push(
-    scheduleStaticShellTask(
-      () => {
-        if (controller.destroyed || controller.authPolicy === "protected")
-          return;
-        void refreshStaticFragmentDockAuthIfNeeded(controller).catch(
-          (error) => {
-            console.error("Static fragment auth dock refresh failed:", error);
-          },
-        );
-      },
-      {
-        priority: "background",
-        timeoutMs: 600,
-        waitForPaint: true,
-      },
-    ),
-  );
   controller.cleanupFns.push(
     scheduleStaticShellTask(
       () => {

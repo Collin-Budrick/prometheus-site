@@ -1,9 +1,11 @@
 import type { AuthSessionState } from './auth-session'
 import { normalizeAuthSessionPayload } from './auth-session-payload'
 import { buildPublicSiteAuthUrl } from '@site/shared/public-api-url'
+import { readSeededAuthSession, writeSeededAuthSession } from '@site/shell/core/seed-client'
 
 type LoadClientAuthSessionOptions = {
   force?: boolean
+  allowNetwork?: boolean
 }
 
 const AUTH_SESSION_CACHE_TTL_MS = 10_000
@@ -14,6 +16,11 @@ let cachedAuthSessionAt = 0
 let authSessionPromise: Promise<AuthSessionState> | null = null
 
 const buildAnonymousSession = (): AuthSessionState => ({ status: 'anonymous' })
+
+const cloneAuthSession = (value: AuthSessionState): AuthSessionState =>
+  typeof structuredClone === 'function'
+    ? structuredClone(value)
+    : JSON.parse(JSON.stringify(value)) as AuthSessionState
 
 export const hasClientSiteSessionCookie = (cookieHeader?: string | null) => {
   const cookieSource =
@@ -30,9 +37,10 @@ const isCachedAuthSessionFresh = () =>
   Boolean(cachedAuthSession) && Date.now() - cachedAuthSessionAt < AUTH_SESSION_CACHE_TTL_MS
 
 const storeCachedAuthSession = (value: AuthSessionState) => {
-  cachedAuthSession = value
+  cachedAuthSession = cloneAuthSession(value)
   cachedAuthSessionAt = Date.now()
-  return value
+  writeSeededAuthSession(cachedAuthSession)
+  return cloneAuthSession(cachedAuthSession)
 }
 
 const resolveClientAuthSession = async () => {
@@ -65,18 +73,28 @@ export const clearClientAuthSessionCache = () => {
   cachedAuthSession = null
   cachedAuthSessionAt = 0
   authSessionPromise = null
+  writeSeededAuthSession(buildAnonymousSession())
 }
+
+export const setClientAuthSessionCache = (value: AuthSessionState) => storeCachedAuthSession(value)
 
 export const loadClientAuthSession = async (
   options: LoadClientAuthSessionOptions = {}
 ): Promise<AuthSessionState> => {
+  if (!options.force && isCachedAuthSessionFresh() && cachedAuthSession) {
+    return cloneAuthSession(cachedAuthSession)
+  }
+
+  const seededSession = readSeededAuthSession()
   if (!options.force) {
-    if (isCachedAuthSessionFresh() && cachedAuthSession) {
-      return cachedAuthSession
-    }
     if (authSessionPromise) {
       return authSessionPromise
     }
+    return storeCachedAuthSession(seededSession)
+  }
+
+  if (options.allowNetwork === false) {
+    return storeCachedAuthSession(seededSession)
   }
 
   const request = (async () => {
@@ -101,7 +119,7 @@ export const revalidateClientAuthSession = async () => {
   try {
     return storeCachedAuthSession(await resolveClientAuthSession())
   } catch {
-    return null
+    return storeCachedAuthSession(readSeededAuthSession())
   }
 }
 

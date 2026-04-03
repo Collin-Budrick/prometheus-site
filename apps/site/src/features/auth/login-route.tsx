@@ -1,12 +1,10 @@
 import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { FragmentCard } from '@prometheus/ui'
 import { appConfig } from '@site/site-config'
-import { runAfterClientIntentIdle } from '@site/shared/client-boot'
 import type { AuthFormState } from './auth-form-state'
 import authModuleStyles from './auth.module.css'
 import { loadClientAuthSession } from '@site/features/auth/auth-session-client'
 import {
-  ensureSpacetimeAuthSession,
   getHostedSocialProviderLabel,
   isHostedSocialProvider,
   isSpacetimeAuthConfigured,
@@ -115,7 +113,7 @@ export const LoginRoute = component$<{
   copy?: Partial<AuthCopy>
   apiBase?: string
   initialFormState?: AuthFormState
-}>(({ copy, apiBase }) => {
+}>(({ copy, apiBase: _apiBase }) => {
   const socialProviders = appConfig.authSocialProviders.filter(isHostedSocialProvider)
   const resolvedCopy = { ...defaultAuthCopy, ...copy }
   const statusMessage = useSignal<string | null>(null)
@@ -140,26 +138,6 @@ export const LoginRoute = component$<{
 
     configured.value = isSpacetimeAuthConfigured()
     ready.value = true
-
-    if (configured.value) {
-      let active = true
-      const cancelRestore = runAfterClientIntentIdle(() => {
-        void (async () => {
-          try {
-            const restored = await ensureSpacetimeAuthSession(apiBase)
-            if (!active || !restored) return
-            window.location.assign(nextPath.value)
-          } catch {
-            // Keep the login launcher available when refresh or cookie sync fails.
-          }
-        })()
-      })
-      ctx.cleanup(() => {
-        active = false
-        cancelRestore()
-      })
-      return
-    }
 
     if (!configured.value) {
       statusTone.value = 'error'

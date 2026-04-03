@@ -366,8 +366,13 @@ const requestStoreCartSync = async (origin: string) => {
   if (!('serviceWorker' in navigator)) return
   try {
     const registration = await navigator.serviceWorker.ready
-    if ('sync' in registration) {
-      await registration.sync.register('store-cart-queue')
+    const syncRegistration = registration as ServiceWorkerRegistration & {
+      sync?: {
+        register: (tag: string) => Promise<void>
+      }
+    }
+    if (syncRegistration.sync?.register) {
+      await syncRegistration.sync.register('store-cart-queue')
     }
   } catch {
     // ignore sync errors

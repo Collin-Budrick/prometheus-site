@@ -1,5 +1,6 @@
 import type { Lang } from '../../lang'
 import type { LanguageSeedPayload } from '../../lang/selection'
+import type { AuthSessionState } from '../../features/auth/auth-session'
 import type { StaticShellAuthPolicy, StaticShellBootstrapMode } from './constants'
 
 export type StaticShellSeed = {
@@ -9,6 +10,7 @@ export type StaticShellSeed = {
   bootstrapMode: StaticShellBootstrapMode
   authPolicy: StaticShellAuthPolicy
   isAuthenticated: boolean
+  authSession: AuthSessionState
   snapshotKey: string
   buildVersion?: string | null
 }

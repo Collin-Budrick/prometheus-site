@@ -133,11 +133,17 @@ describe('route navigation helpers', () => {
   it('returns idle warmup targets for the current auth mode', () => {
     expect(getIdleWarmupDescriptors('/', warmupDescriptors, false).map((entry) => entry.href)).toEqual([
       '/store',
-      '/lab'
+      '/lab',
+      '/login',
+      '/offline',
+      '/privacy'
     ])
     expect(getIdleWarmupDescriptors('/store', warmupDescriptors, false).map((entry) => entry.href)).toEqual([
       '/',
-      '/lab'
+      '/lab',
+      '/login',
+      '/offline',
+      '/privacy'
     ])
     expect(getIdleWarmupDescriptors('/dashboard', warmupDescriptors, true).map((entry) => entry.href)).toEqual([
       '/',
@@ -146,12 +152,16 @@ describe('route navigation helpers', () => {
       '/login',
       '/profile',
       '/chat',
-      '/settings'
+      '/settings',
+      '/offline',
+      '/privacy'
     ])
     expect(getIdleWarmupDescriptors('/privacy', warmupDescriptors, false).map((entry) => entry.href)).toEqual([
       '/',
       '/store',
-      '/lab'
+      '/lab',
+      '/login',
+      '/offline'
     ])
   })
 
@@ -171,7 +181,7 @@ describe('route navigation helpers', () => {
   it('classifies warmup audience by auth access', () => {
     expect(resolveRouteWarmupAudience('/')).toBe('public')
     expect(resolveRouteWarmupAudience('/store')).toBe('public')
-    expect(resolveRouteWarmupAudience('/login')).toBe('auth')
+    expect(resolveRouteWarmupAudience('/login')).toBe('public')
     expect(resolveRouteWarmupAudience('/profile')).toBe('auth')
     expect(resolveRouteWarmupAudience('/login/callback')).toBe('auth')
   })

@@ -894,6 +894,7 @@ export const signOutSpacetimeAuth = async (apiBase = appConfig.apiBase) => {
   clearStoredSpacetimeAuthSession()
   clearClientAuthSessionCache()
   await clearBootstrapSession()
+  navigator.serviceWorker?.controller?.postMessage({ type: 'sw:clear-user-cache' })
 
   return appConfig.authPostLogoutRedirectUri ?? appConfig.spacetimeAuthPostLogoutRedirectUri ?? `${origin}/`
 }

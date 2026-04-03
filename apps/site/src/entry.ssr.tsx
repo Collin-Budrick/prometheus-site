@@ -219,6 +219,7 @@ const promPerfDebugFlag = "__PROM_STATIC_SHELL_DEBUG_PERF__";
 const workerPrewarmMark = "prom:perf:worker-prewarm";
 const maxAnchorEntryAttempts = 4;
 const anchorEntryRetryBaseDelayMs = 250;
+const anchorEntryRetryQueryParam = "__anchor_retry";
 const importModule = (href) => import(/* @vite-ignore */ href);
 const getPromPerfNow = () =>
   typeof performance !== "undefined" && typeof performance.now === "function"
@@ -256,6 +257,19 @@ const recordPromPerfTimestamp = (field, markName) => {
 };
 let anchorEntryLoaded = false;
 let anchorEntryAttemptCount = 0;
+const resolveAnchorEntryImportHref = (attemptCount) => {
+  if (attemptCount <= 1) {
+    return anchorEntryHref;
+  }
+  try {
+    const url = new URL(anchorEntryHref, win.location.origin);
+    url.searchParams.set(anchorEntryRetryQueryParam, String(attemptCount));
+    return url.toString();
+  } catch {
+    const separator = anchorEntryHref.includes("?") ? "&" : "?";
+    return anchorEntryHref + separator + anchorEntryRetryQueryParam + "=" + String(attemptCount);
+  }
+};
 const scheduleAnchorEntryRetry = () => {
   if (anchorEntryLoaded || anchorEntryAttemptCount >= maxAnchorEntryAttempts) {
     return false;
@@ -269,7 +283,7 @@ const importAnchorEntry = () => {
     return;
   }
   anchorEntryAttemptCount += 1;
-  void importModule(anchorEntryHref)
+  void importModule(resolveAnchorEntryImportHref(anchorEntryAttemptCount))
     .then(() => {
       anchorEntryLoaded = true;
     })

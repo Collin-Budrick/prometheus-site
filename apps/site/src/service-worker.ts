@@ -1,23 +1,22 @@
 /// <reference lib="webworker" />
-import {
-  CacheFirst,
-  CacheableResponsePlugin,
-  ExpirationPlugin,
-  Serwist,
-  StaleWhileRevalidate
-} from 'serwist'
 import { templateBranding } from '@prometheus/template-config'
 
 declare const self: ServiceWorkerGlobalScope & {
   __SW_MANIFEST: (string | { url: string; revision?: string | null })[]
 }
 
+type SyncEventLike = ExtendableEvent & {
+  tag: string
+}
+
 const CACHE_PREFIX = templateBranding.ids.cachePrefix
-const CACHE_NAME = `${CACHE_PREFIX}-shell-v6`
-const DATA_CACHE_NAME = `${CACHE_PREFIX}-data-v1`
-const FRAGMENT_PLAN_CACHE_NAME = `${CACHE_PREFIX}-fragment-plan-v1`
-const FRAGMENT_BATCH_CACHE_NAME = `${CACHE_PREFIX}-fragment-batch-v1`
-const FRAGMENT_BATCH_TTL_SECONDS = 30
+const PUBLIC_SHELL_CACHE_NAME = `${CACHE_PREFIX}-public-shell-v1`
+const PUBLIC_DATA_CACHE_NAME = `${CACHE_PREFIX}-public-data-v1`
+const USER_SHELL_CACHE_PREFIX = `${CACHE_PREFIX}-user-shell-v1`
+const USER_DATA_CACHE_PREFIX = `${CACHE_PREFIX}-user-data-v1`
+const OUTBOX_CACHE_NAME = `${CACHE_PREFIX}-outbox-v1`
+const ACTIVE_USER_RESOURCE_KEY = 'meta:active-user'
+const MANUAL_REFRESH_HEADER = 'x-prometheus-manual-refresh'
 const scopeUrl = new URL(self.registration.scope)
 const scopePath = scopeUrl.pathname.endsWith('/') ? scopeUrl.pathname : `${scopeUrl.pathname}/`
 const SHELL_URL = new URL('./', scopeUrl).toString()
@@ -26,20 +25,26 @@ const FRAGMENT_STREAM_PATH = '/fragments/stream'
 const STATIC_DESTINATIONS = new Set(['style', 'script', 'font', 'image', 'worker', 'manifest'])
 const STATIC_EXTENSIONS = /\.(css|js|mjs|cjs|json|woff2?|ttf|otf|png|jpe?g|gif|svg|ico|webp|avif|txt|mp4|webm)$/i
 const HASHED_BUILD_ASSET = /\/build\/.*(?:[.-][a-f0-9]{8,})\./i
+const HTML_ASSET_PATH = /(?:^\/(?:build|assets)\/)|(?:manifest\.webmanifest$)|(?:favicon\.)|(?:apple-touch-icon)|(?:icon-.*\.png$)/i
 const OUTBOX_SYNC_TAG = 'p2p-outbox'
 const STORE_CART_SYNC_TAG = 'store-cart-queue'
 const INVITE_QUEUE_SYNC_TAG = 'contact-invites-queue'
+const PUBLIC_ROUTE_PATHS = new Set(['/', '/store', '/login', '/lab', '/offline', '/privacy'])
+const AUTH_ROUTE_PATHS = new Set(['/profile', '/settings', '/dashboard', '/chat'])
+
+const normalizePathname = (pathname: string) => {
+  if (!pathname || pathname === '/') return '/'
+  return pathname.endsWith('/') ? pathname.slice(0, -1) : pathname
+}
 
 const scopedPathname = (url: URL) => {
-  if (scopePath === '/' || !url.pathname.startsWith(scopePath)) return url.pathname
-  return `/${url.pathname.slice(scopePath.length)}`
+  if (scopePath === '/' || !url.pathname.startsWith(scopePath)) return normalizePathname(url.pathname)
+  return normalizePathname(`/${url.pathname.slice(scopePath.length)}`)
 }
 
-const isStoreCachePath = (url: URL) => {
-  const pathname = scopedPathname(url)
-  const normalized = pathname.startsWith('/api/') ? pathname.slice(4) : pathname
-  return normalized.startsWith('/store/items') || normalized.startsWith('/store/search')
-}
+const isPublicRoutePath = (pathname: string) => PUBLIC_ROUTE_PATHS.has(normalizePathname(pathname))
+
+const isAuthRoutePath = (pathname: string) => AUTH_ROUTE_PATHS.has(normalizePathname(pathname))
 
 const isNavigationRequest = (request: Request) =>
   request.mode === 'navigate' ||
@@ -54,15 +59,18 @@ const isHashedBuildAssetRequest = (request: Request, url: URL) =>
   scopedPathname(url).startsWith('/build/') &&
   HASHED_BUILD_ASSET.test(url.pathname)
 
-const isCacheableResponse = (response?: Response) =>
-  response && response.ok && (response.type === 'basic' || response.type === 'default')
-
 const isFragmentStreamPath = (url: URL) =>
   url.pathname === `${scopePath}fragments/stream` || url.pathname.endsWith(FRAGMENT_STREAM_PATH)
 
 const isFragmentPlanPath = (url: URL) => scopedPathname(url) === '/fragments/plan'
 
 const isFragmentBatchPath = (url: URL) => scopedPathname(url) === '/fragments/batch'
+
+const isStoreCachePath = (url: URL) => {
+  const pathname = scopedPathname(url)
+  const normalized = pathname.startsWith('/api/') ? pathname.slice(4) : pathname
+  return normalized.startsWith('/store/items') || normalized.startsWith('/store/search')
+}
 
 const isJsonRequest = (request: Request, url: URL) => {
   if (request.method !== 'GET') return false
@@ -73,156 +81,136 @@ const isJsonRequest = (request: Request, url: URL) => {
   return accept.includes('application/json') || url.pathname.endsWith('.json')
 }
 
-const handleJson = async ({ event, request }: { event: ExtendableEvent; request: Request }) => {
-  const cache = await caches.open(DATA_CACHE_NAME)
+const getUserShellCacheName = (userCacheKey: string) => `${USER_SHELL_CACHE_PREFIX}:${userCacheKey}`
+
+const getUserDataCacheName = (userCacheKey: string) => `${USER_DATA_CACHE_PREFIX}:${userCacheKey}`
+
+const buildResourceRequest = (resourceKey: string) =>
+  new Request(new URL(`./__sw/resource/${encodeURIComponent(resourceKey)}`, scopeUrl).toString())
+
+const buildResourceKey = (url: URL) => {
+  const pathname = scopedPathname(url)
+  if (isPublicRoutePath(pathname) || isAuthRoutePath(pathname)) {
+    return `route:${pathname}`
+  }
+  if (pathname === '/auth/session' || pathname === '/api/auth/get-session') {
+    return 'data:auth-session'
+  }
+  if (isStoreCachePath(url)) {
+    return 'data:store-items'
+  }
+  if (isFragmentPlanPath(url)) {
+    return `data:fragment-plan:${pathname}`
+  }
+  if (isFragmentBatchPath(url)) {
+    return `data:fragment-batch:${pathname}`
+  }
+  return `asset:${url.pathname}${url.search}`
+}
+
+const isCacheableResponse = (response?: Response) =>
+  Boolean(response && response.ok && (response.type === 'basic' || response.type === 'default'))
+
+const readJsonResponse = async <T>(response: Response | undefined) => {
+  if (!response) return null
+  try {
+    return (await response.json()) as T
+  } catch {
+    return null
+  }
+}
+
+const manifestEntryUrl = (entry: string | { url: string; revision?: string | null }) =>
+  typeof entry === 'string' ? entry : entry.url
+
+const precacheEntries = Array.isArray(self.__SW_MANIFEST) ? self.__SW_MANIFEST : []
+
+const precacheAsset = async (cache: Cache, entry: string | { url: string; revision?: string | null }) => {
+  const request = new Request(new URL(manifestEntryUrl(entry), scopeUrl).toString(), {
+    credentials: 'same-origin'
+  })
   try {
     const response = await fetch(request)
-    if (response.ok) {
-      const contentType = response.headers.get('content-type') ?? ''
-      if (contentType.includes('application/json')) {
-        event.waitUntil(cache.put(request, response.clone()))
-      }
+    if (!isCacheableResponse(response)) return
+    await cache.put(request, response.clone())
+  } catch {
+    // Ignore install-time precache misses and let runtime caching recover them later.
+  }
+}
+
+const installPrecache = async () => {
+  const cache = await caches.open(PUBLIC_SHELL_CACHE_NAME)
+  await Promise.all(precacheEntries.map((entry) => precacheAsset(cache, entry)))
+}
+
+const getActiveUserCacheKey = async () => {
+  const cache = await caches.open(PUBLIC_DATA_CACHE_NAME)
+  const response = await cache.match(buildResourceRequest(ACTIVE_USER_RESOURCE_KEY))
+  const payload = await readJsonResponse<{ userCacheKey?: string | null }>(response)
+  const userCacheKey = payload?.userCacheKey
+  return typeof userCacheKey === 'string' && userCacheKey.trim() ? userCacheKey.trim() : null
+}
+
+const setActiveUserCacheKey = async (userCacheKey: string | null) => {
+  const cache = await caches.open(PUBLIC_DATA_CACHE_NAME)
+  await cache.put(
+    buildResourceRequest(ACTIVE_USER_RESOURCE_KEY),
+    new Response(JSON.stringify({ userCacheKey }), {
+      headers: { 'content-type': 'application/json; charset=utf-8' }
+    })
+  )
+}
+
+const cacheResponseWithResourceKey = async ({
+  cacheName,
+  request,
+  response,
+  resourceKey
+}: {
+  cacheName: string
+  request: Request
+  response: Response
+  resourceKey: string
+}) => {
+  const cache = await caches.open(cacheName)
+  await cache.put(request, response.clone())
+  await cache.put(buildResourceRequest(resourceKey), response.clone())
+}
+
+const resolveShellCacheNameForUrl = async (url: URL) => {
+  if (isAuthRoutePath(scopedPathname(url))) {
+    const userCacheKey = await getActiveUserCacheKey()
+    if (userCacheKey) return getUserShellCacheName(userCacheKey)
+  }
+  return PUBLIC_SHELL_CACHE_NAME
+}
+
+const resolveDataCacheNameForUrl = async (url: URL) => {
+  if (isAuthRoutePath(scopedPathname(url)) || scopedPathname(url).startsWith('/auth/')) {
+    const userCacheKey = await getActiveUserCacheKey()
+    if (userCacheKey) return getUserDataCacheName(userCacheKey)
+  }
+  return PUBLIC_DATA_CACHE_NAME
+}
+
+const extractHtmlWarmupUrls = (html: string, baseUrl: URL) => {
+  const matches = new Set<string>()
+  const pattern = /\b(?:src|href)=["']([^"'#]+)["']/gi
+  let match: RegExpExecArray | null = null
+  while ((match = pattern.exec(html)) !== null) {
+    try {
+      const candidate = new URL(match[1], baseUrl)
+      if (candidate.origin !== self.location.origin) continue
+      if (!HTML_ASSET_PATH.test(candidate.pathname)) continue
+      matches.add(candidate.toString())
+    } catch {
+      // Ignore invalid asset references.
     }
-    return response
-  } catch {
-    const cached = await cache.match(request)
-    if (cached) return cached
-    return Response.error()
   }
-}
-
-const handleShell = async ({ event, request }: { event: ExtendableEvent; request: Request }) => {
-  const cache = await caches.open(CACHE_NAME)
-  const cached = await cache.match(request)
-
-  const networkPromise = fetch(request, { cache: 'reload' })
-    .then((response) => {
-      if (isCacheableResponse(response)) {
-        void cache.put(request, response.clone())
-      }
-      return response
-    })
-    .catch(() => undefined)
-
-  if (cached) {
-    event.waitUntil(networkPromise)
-    return cached
-  }
-
-  const networkResponse = await networkPromise
-  if (networkResponse) {
-    return networkResponse
-  }
-
-  const fallback = await cache.match(OFFLINE_FALLBACK_URL)
-  if (fallback) {
-    return fallback
-  }
-
-  const shell = await cache.match(SHELL_URL)
-  if (shell) {
-    return shell
-  }
-
-  const root = await cache.match(new Request(SHELL_URL))
-  if (root) {
-    return root
-  }
-
-  return Response.error()
-}
-
-const staticAssetStrategy = new StaleWhileRevalidate({
-  cacheName: CACHE_NAME,
-  plugins: [new CacheableResponsePlugin({ statuses: [0, 200] })]
-})
-
-const fragmentPlanStrategy = new StaleWhileRevalidate({
-  cacheName: FRAGMENT_PLAN_CACHE_NAME,
-  plugins: [new CacheableResponsePlugin({ statuses: [0, 200] })]
-})
-
-const fragmentBatchStrategy = new StaleWhileRevalidate({
-  cacheName: FRAGMENT_BATCH_CACHE_NAME,
-  plugins: [
-    new CacheableResponsePlugin({ statuses: [0, 200] }),
-    new ExpirationPlugin({
-      maxAgeSeconds: FRAGMENT_BATCH_TTL_SECONDS,
-      maxEntries: 50
-    })
-  ]
-})
-
-const hashedBuildAssetStrategy = new CacheFirst({
-  cacheName: CACHE_NAME,
-  plugins: [new CacheableResponsePlugin({ statuses: [0, 200] })]
-})
-
-const handleStaticAsset = async ({
-  event,
-  request,
-  url
-}: {
-  event: ExtendableEvent
-  request: Request
-  url: URL
-}) => {
-  try {
-    const response = await staticAssetStrategy.handle({ event, request, url })
-    if (response) return response
-  } catch {
-    // fall through to shell fallback
-  }
-
-  const cache = await caches.open(CACHE_NAME)
-  const shellFallback = await cache.match(SHELL_URL)
-  if (shellFallback) {
-    return shellFallback
-  }
-
-  return Response.error()
-}
-
-const handleHashedBuildAsset = async ({
-  event,
-  request,
-  url
-}: {
-  event: ExtendableEvent
-  request: Request
-  url: URL
-}) => {
-  const response = await hashedBuildAssetStrategy.handle({ event, request, url })
-  if (response) return response
-  return Response.error()
-}
-
-const handleFragmentPlan = async ({
-  event,
-  request,
-  url
-}: {
-  event: ExtendableEvent
-  request: Request
-  url: URL
-}) => {
-  const response = await fragmentPlanStrategy.handle({ event, request, url })
-  if (response) return response
-  return Response.error()
-}
-
-const handleFragmentBatch = async ({
-  event,
-  request,
-  url
-}: {
-  event: ExtendableEvent
-  request: Request
-  url: URL
-}) => {
-  const response = await fragmentBatchStrategy.handle({ event, request, url })
-  if (response) return response
-  return Response.error()
+  matches.add(new URL('./manifest.webmanifest', scopeUrl).toString())
+  matches.add(new URL('./favicon.svg', scopeUrl).toString())
+  matches.add(new URL('./favicon.ico', scopeUrl).toString())
+  return Array.from(matches)
 }
 
 const broadcastMessage = async (message: Record<string, unknown>) => {
@@ -233,13 +221,267 @@ const broadcastMessage = async (message: Record<string, unknown>) => {
 const clearRuntimeCaches = async () => {
   const keys = await caches.keys()
   const targets = keys.filter(
-      (key) =>
-      key.startsWith(`${CACHE_PREFIX}-shell`) ||
-      key.startsWith(`${CACHE_PREFIX}-data`) ||
-      key.startsWith(`${CACHE_PREFIX}-fragment-plan`) ||
-      key.startsWith(`${CACHE_PREFIX}-fragment-batch`)
+    (key) =>
+      key.startsWith(`${CACHE_PREFIX}-public-shell`) ||
+      key.startsWith(`${CACHE_PREFIX}-public-data`) ||
+      key.startsWith(`${CACHE_PREFIX}-user-shell`) ||
+      key.startsWith(`${CACHE_PREFIX}-user-data`) ||
+      key.startsWith(OUTBOX_CACHE_NAME)
   )
   await Promise.all(targets.map((key) => caches.delete(key)))
+}
+
+const deleteUserCaches = async (userCacheKey: string | null) => {
+  if (!userCacheKey) return
+  await Promise.all([
+    caches.delete(getUserShellCacheName(userCacheKey)),
+    caches.delete(getUserDataCacheName(userCacheKey))
+  ])
+}
+
+const handleNavigationRequest = async (request: Request) => {
+  const requestUrl = new URL(request.url)
+  const cache = await caches.open(await resolveShellCacheNameForUrl(requestUrl))
+  const cached = await cache.match(request)
+  if (cached) return cached
+
+  try {
+    const response = await fetch(request)
+    if (isCacheableResponse(response)) {
+      await cacheResponseWithResourceKey({
+        cacheName: await resolveShellCacheNameForUrl(requestUrl),
+        request,
+        response,
+        resourceKey: buildResourceKey(requestUrl)
+      })
+    }
+    return response
+  } catch {
+    const fallback = await cache.match(OFFLINE_FALLBACK_URL)
+    if (fallback) return fallback
+    const shell = await cache.match(SHELL_URL)
+    if (shell) return shell
+    const publicShell = await caches.open(PUBLIC_SHELL_CACHE_NAME)
+    const publicFallback = await publicShell.match(OFFLINE_FALLBACK_URL)
+    if (publicFallback) return publicFallback
+    return Response.error()
+  }
+}
+
+const handleJsonRequest = async (request: Request, url: URL) => {
+  const cacheName = await resolveDataCacheNameForUrl(url)
+  const cache = await caches.open(cacheName)
+  const manualRefresh = request.headers.get(MANUAL_REFRESH_HEADER) === '1'
+  if (!manualRefresh) {
+    const cached = await cache.match(request)
+    if (cached) return cached
+  }
+
+  try {
+    const response = await fetch(request)
+    if (isCacheableResponse(response) && (response.headers.get('content-type') ?? '').includes('application/json')) {
+      await cacheResponseWithResourceKey({
+        cacheName,
+        request,
+        response,
+        resourceKey: buildResourceKey(url)
+      })
+    }
+    return response
+  } catch {
+    const cached = await cache.match(request)
+    if (cached) return cached
+    return Response.error()
+  }
+}
+
+const handleStaticAssetRequest = async (request: Request, url: URL) => {
+  const cache = await caches.open(PUBLIC_SHELL_CACHE_NAME)
+  const manualRefresh = request.headers.get(MANUAL_REFRESH_HEADER) === '1'
+  if (!manualRefresh) {
+    const cached = await cache.match(request)
+    if (cached) return cached
+  }
+
+  try {
+    const response = await fetch(request)
+    if (isCacheableResponse(response)) {
+      await cacheResponseWithResourceKey({
+        cacheName: PUBLIC_SHELL_CACHE_NAME,
+        request,
+        response,
+        resourceKey: buildResourceKey(url)
+      })
+    }
+    return response
+  } catch {
+    const cached = await cache.match(request)
+    if (cached) return cached
+    const shell = await cache.match(SHELL_URL)
+    if (shell) return shell
+    return Response.error()
+  }
+}
+
+const warmAsset = async ({ href, cacheName, force = false }: { href: string; cacheName: string; force?: boolean }) => {
+  const cache = await caches.open(cacheName)
+  const request = new Request(href, {
+    credentials: 'include',
+    headers: force ? { [MANUAL_REFRESH_HEADER]: '1' } : undefined
+  })
+  if (!force) {
+    const cached = await cache.match(request)
+    if (cached) return
+  }
+  const response = await fetch(request)
+  if (!isCacheableResponse(response)) return
+  await cacheResponseWithResourceKey({
+    cacheName,
+    request,
+    response,
+    resourceKey: buildResourceKey(new URL(href))
+  })
+}
+
+const warmDocumentAndAssets = async ({
+  href,
+  cacheName,
+  force = false
+}: {
+  href: string
+  cacheName: string
+  force?: boolean
+}) => {
+  const request = new Request(href, {
+    credentials: 'include',
+    headers: force ? { [MANUAL_REFRESH_HEADER]: '1' } : undefined
+  })
+  const cache = await caches.open(cacheName)
+  if (!force) {
+    const cached = await cache.match(request)
+    if (cached) return
+  }
+  const response = await fetch(request)
+  if (!isCacheableResponse(response)) return
+  await cacheResponseWithResourceKey({
+    cacheName,
+    request,
+    response,
+    resourceKey: buildResourceKey(new URL(href))
+  })
+  const contentType = response.headers.get('content-type') ?? ''
+  if (!contentType.includes('text/html')) return
+  const html = await response.clone().text()
+  await Promise.all(
+    extractHtmlWarmupUrls(html, new URL(href)).map((assetHref) =>
+      warmAsset({ href: assetHref, cacheName, force })
+    )
+  )
+}
+
+const normalizeWarmHrefs = (value: unknown) =>
+  Array.isArray(value)
+    ? value
+        .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+        .map((entry) => new URL(entry, scopeUrl).toString())
+    : []
+
+const warmRoutes = async ({
+  hrefs,
+  cacheName,
+  force = false
+}: {
+  hrefs: string[]
+  cacheName: string
+  force?: boolean
+}) => {
+  await Promise.all(
+    hrefs.map(async (href) => {
+      try {
+        await warmDocumentAndAssets({ href, cacheName, force })
+      } catch {
+        // Ignore individual warmup failures.
+      }
+    })
+  )
+}
+
+const updateResource = async ({
+  resourceKey,
+  url,
+  userCacheKey,
+  body,
+  contentType
+}: {
+  resourceKey: string
+  url?: string | null
+  userCacheKey?: string | null
+  body?: unknown
+  contentType?: string | null
+}) => {
+  const cacheName =
+    userCacheKey && resourceKey.startsWith('route:')
+      ? getUserShellCacheName(userCacheKey)
+      : userCacheKey
+        ? getUserDataCacheName(userCacheKey)
+        : resourceKey.startsWith('route:') || resourceKey.startsWith('asset:')
+          ? PUBLIC_SHELL_CACHE_NAME
+          : PUBLIC_DATA_CACHE_NAME
+  const cache = await caches.open(cacheName)
+  const resourceRequest = buildResourceRequest(resourceKey)
+
+  if (typeof body !== 'undefined') {
+    const response = new Response(
+      typeof body === 'string' ? body : JSON.stringify(body),
+      {
+        headers: {
+          'content-type': contentType ?? 'application/json; charset=utf-8'
+        }
+      }
+    )
+    await cache.put(resourceRequest, response.clone())
+    if (url) {
+      await cache.put(new Request(url), response.clone())
+    }
+    await broadcastMessage({ type: 'sw:resource-updated', resourceKey, url, userCacheKey })
+    return
+  }
+
+  if (!url) return
+  const request = new Request(url, {
+    credentials: 'include',
+    headers: { [MANUAL_REFRESH_HEADER]: '1' }
+  })
+  const response = await fetch(request)
+  if (!isCacheableResponse(response)) return
+  await cache.put(request, response.clone())
+  await cache.put(resourceRequest, response.clone())
+  await broadcastMessage({ type: 'sw:resource-updated', resourceKey, url, userCacheKey })
+}
+
+const invalidateResource = async ({
+  resourceKey,
+  url,
+  userCacheKey
+}: {
+  resourceKey: string
+  url?: string | null
+  userCacheKey?: string | null
+}) => {
+  const cacheName =
+    userCacheKey && resourceKey.startsWith('route:')
+      ? getUserShellCacheName(userCacheKey)
+      : userCacheKey
+        ? getUserDataCacheName(userCacheKey)
+        : resourceKey.startsWith('route:') || resourceKey.startsWith('asset:')
+          ? PUBLIC_SHELL_CACHE_NAME
+          : PUBLIC_DATA_CACHE_NAME
+  const cache = await caches.open(cacheName)
+  await cache.delete(buildResourceRequest(resourceKey))
+  if (url) {
+    await cache.delete(new Request(url))
+  }
+  await broadcastMessage({ type: 'sw:resource-invalidated', resourceKey, url, userCacheKey })
 }
 
 const resolveOutboxTarget = async () => {
@@ -286,96 +528,178 @@ const flushContactInviteQueue = async (reason: string) => {
   await broadcastMessage({ type: 'contact-invites:flush-queue', reason })
 }
 
-const serwist = new Serwist({
-  precacheEntries: self.__SW_MANIFEST,
-  skipWaiting: true,
-  clientsClaim: true,
-  runtimeCaching: [
-    {
-      matcher: ({ request, url }) =>
-        url.origin === self.location.origin && !isFragmentStreamPath(url) && isNavigationRequest(request),
-      handler: handleShell
-    },
-    {
-      matcher: ({ request, url }) =>
-        request.method === 'GET' &&
-        url.origin === self.location.origin &&
-        !isFragmentStreamPath(url) &&
-        isFragmentPlanPath(url),
-      handler: handleFragmentPlan
-    },
-    {
-      matcher: ({ request, url }) =>
-        request.method === 'GET' &&
-        url.origin === self.location.origin &&
-        !isFragmentStreamPath(url) &&
-        isFragmentBatchPath(url),
-      handler: handleFragmentBatch
-    },
-    {
-      matcher: ({ request, url }) => isJsonRequest(request, url),
-      handler: handleJson
-    },
-    {
-      matcher: ({ request, url }) =>
-        url.origin === self.location.origin &&
-        !isFragmentStreamPath(url) &&
-        isHashedBuildAssetRequest(request, url),
-      handler: handleHashedBuildAsset
-    },
-    {
-      matcher: ({ request, url }) =>
-        url.origin === self.location.origin && !isFragmentStreamPath(url) && isStaticAssetRequest(request, url),
-      handler: handleStaticAsset
-    }
-  ]
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    Promise.all([
+      self.skipWaiting(),
+      installPrecache()
+    ])
+  )
 })
 
-serwist.addEventListeners()
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim())
+})
 
-self.addEventListener('sync', (event: SyncEvent) => {
-  if (event.tag === OUTBOX_SYNC_TAG) {
-    event.waitUntil(flushOutbox('sync'))
+self.addEventListener('fetch', (event) => {
+  const request = event.request
+  if (request.method !== 'GET') return
+  const url = new URL(request.url)
+  if (url.origin !== self.location.origin) return
+  if (isFragmentStreamPath(url)) return
+
+  if (isNavigationRequest(request)) {
+    event.respondWith(handleNavigationRequest(request))
     return
   }
-  if (event.tag === STORE_CART_SYNC_TAG) {
-    event.waitUntil(flushStoreCartQueue('sync'))
+
+  if (isFragmentPlanPath(url) || isFragmentBatchPath(url) || isJsonRequest(request, url)) {
+    event.respondWith(handleJsonRequest(request, url))
     return
   }
-  if (event.tag === INVITE_QUEUE_SYNC_TAG) {
-    event.waitUntil(flushContactInviteQueue('sync'))
+
+  if (isHashedBuildAssetRequest(request, url) || isStaticAssetRequest(request, url)) {
+    event.respondWith(handleStaticAssetRequest(request, url))
   }
 })
 
-self.addEventListener('message', (event) => {
-  const data = event.data as Record<string, unknown> | undefined
-  if (data?.type === 'store:cart:flush') {
-    event.waitUntil(flushStoreCartQueue('message'))
+self.addEventListener('sync', (event) => {
+  const syncEvent = event as SyncEventLike
+  if (syncEvent.tag === OUTBOX_SYNC_TAG) {
+    syncEvent.waitUntil(flushOutbox('sync'))
+    return
   }
-  if (data?.type === 'contact-invites:flush-queue') {
-    event.waitUntil(flushContactInviteQueue('message'))
+  if (syncEvent.tag === STORE_CART_SYNC_TAG) {
+    syncEvent.waitUntil(flushStoreCartQueue('sync'))
+    return
+  }
+  if (syncEvent.tag === INVITE_QUEUE_SYNC_TAG) {
+    syncEvent.waitUntil(flushContactInviteQueue('sync'))
   }
 })
 
 self.addEventListener('message', (event) => {
   const payload = event.data as Record<string, unknown> | null
   if (!payload || typeof payload.type !== 'string') return
+
+  if (payload.type === 'store:cart:flush') {
+    event.waitUntil(flushStoreCartQueue('message'))
+    return
+  }
+
+  if (payload.type === 'contact-invites:flush-queue') {
+    event.waitUntil(flushContactInviteQueue('message'))
+    return
+  }
+
   if (payload.type === 'p2p:flush-outbox') {
     const reason = typeof payload.reason === 'string' ? payload.reason : 'manual'
     event.waitUntil(flushOutbox(reason))
+    return
   }
-  if (payload.type === 'contact-invites:flush-queue') {
-    const reason = typeof payload.reason === 'string' ? payload.reason : 'manual'
-    event.waitUntil(flushContactInviteQueue(reason))
+
+  if (payload.type === 'sw:clear-user-cache') {
+    event.waitUntil(
+      (async () => {
+        const activeUserCacheKey = await getActiveUserCacheKey()
+        await deleteUserCaches(activeUserCacheKey)
+        await setActiveUserCacheKey(null)
+        await broadcastMessage({ type: 'sw:cache-cleared', scope: 'user' })
+      })()
+    )
+    return
   }
+
   if (payload.type === 'sw:refresh-cache') {
     event.waitUntil(
       clearRuntimeCaches().then(() => broadcastMessage({ type: 'sw:cache-refreshed' }))
     )
+    return
   }
+
   if (payload.type === 'sw:clear-cache') {
     event.waitUntil(
-      clearRuntimeCaches().then(() => broadcastMessage({ type: 'sw:cache-cleared' }))
+      (async () => {
+        const activeUserCacheKey = await getActiveUserCacheKey()
+        await clearRuntimeCaches()
+        await deleteUserCaches(activeUserCacheKey)
+        await setActiveUserCacheKey(null)
+        await broadcastMessage({ type: 'sw:cache-cleared' })
+      })()
+    )
+    return
+  }
+
+  if (payload.type === 'sw:warm-public') {
+    const hrefs = normalizeWarmHrefs(payload.hrefs)
+    event.waitUntil(
+      warmRoutes({ hrefs, cacheName: PUBLIC_SHELL_CACHE_NAME }).then(() =>
+        broadcastMessage({ type: 'sw:warm-complete', audience: 'public', count: hrefs.length })
+      )
+    )
+    return
+  }
+
+  if (payload.type === 'sw:warm-user') {
+    const hrefs = normalizeWarmHrefs(payload.hrefs)
+    const userCacheKey = typeof payload.userCacheKey === 'string' ? payload.userCacheKey.trim() : ''
+    if (!userCacheKey) return
+    event.waitUntil(
+      setActiveUserCacheKey(userCacheKey)
+        .then(() => warmRoutes({ hrefs, cacheName: getUserShellCacheName(userCacheKey) }))
+        .then(() =>
+          broadcastMessage({
+            type: 'sw:warm-complete',
+            audience: 'auth',
+            count: hrefs.length,
+            userCacheKey
+          })
+        )
+    )
+    return
+  }
+
+  if (payload.type === 'sw:manual-refresh') {
+    const publicHrefs = normalizeWarmHrefs(payload.publicHrefs)
+    const authHrefs = normalizeWarmHrefs(payload.authHrefs)
+    const userCacheKey = typeof payload.userCacheKey === 'string' ? payload.userCacheKey.trim() : ''
+    event.waitUntil(
+      Promise.all([
+        warmRoutes({ hrefs: publicHrefs, cacheName: PUBLIC_SHELL_CACHE_NAME, force: true }),
+        userCacheKey
+          ? setActiveUserCacheKey(userCacheKey).then(() =>
+              warmRoutes({
+                hrefs: authHrefs,
+                cacheName: getUserShellCacheName(userCacheKey),
+                force: true
+              })
+            )
+          : Promise.resolve()
+      ]).then(() => broadcastMessage({ type: 'sw:cache-refreshed', source: 'manual-refresh' }))
+    )
+    return
+  }
+
+  if (payload.type === 'sw:update-resource' && typeof payload.resourceKey === 'string') {
+    event.waitUntil(
+      updateResource({
+        resourceKey: payload.resourceKey,
+        url: typeof payload.url === 'string' ? payload.url : null,
+        userCacheKey: typeof payload.userCacheKey === 'string' ? payload.userCacheKey : null,
+        body: payload.body,
+        contentType: typeof payload.contentType === 'string' ? payload.contentType : null
+      })
+    )
+    return
+  }
+
+  if (payload.type === 'sw:invalidate-resource' && typeof payload.resourceKey === 'string') {
+    event.waitUntil(
+      invalidateResource({
+        resourceKey: payload.resourceKey,
+        url: typeof payload.url === 'string' ? payload.url : null,
+        userCacheKey: typeof payload.userCacheKey === 'string' ? payload.userCacheKey : null
+      })
     )
   }
 })
@@ -388,6 +712,7 @@ self.addEventListener('push', (event: PushEvent) => {
     data = undefined
   }
   const type = typeof data?.type === 'string' ? data.type : ''
+
   if (type === 'server:online') {
     event.waitUntil(
       (async () => {
@@ -414,6 +739,31 @@ self.addEventListener('push', (event: PushEvent) => {
     )
     return
   }
+
+  if (type === 'sw:update-resource' && typeof data?.resourceKey === 'string') {
+    event.waitUntil(
+      updateResource({
+        resourceKey: data.resourceKey,
+        url: typeof data.url === 'string' ? data.url : null,
+        userCacheKey: typeof data.userCacheKey === 'string' ? data.userCacheKey : null,
+        body: data.body,
+        contentType: typeof data.contentType === 'string' ? data.contentType : null
+      })
+    )
+    return
+  }
+
+  if (type === 'sw:invalidate-resource' && typeof data?.resourceKey === 'string') {
+    event.waitUntil(
+      invalidateResource({
+        resourceKey: data.resourceKey,
+        url: typeof data.url === 'string' ? data.url : null,
+        userCacheKey: typeof data.userCacheKey === 'string' ? data.userCacheKey : null
+      })
+    )
+    return
+  }
+
   const title = typeof data?.title === 'string' ? data.title : 'New message'
   const body = typeof data?.body === 'string' ? data.body : templateBranding.notifications.syncBody
   const url = typeof data?.url === 'string' ? data.url : '/'

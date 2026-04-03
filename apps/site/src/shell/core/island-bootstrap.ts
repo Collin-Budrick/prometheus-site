@@ -9,6 +9,7 @@ import { createStaticIslandRouteData } from './island-static-data'
 import { scheduleStaticShellTask } from './scheduler'
 import { runAfterClientIntentIdle } from '../../shared/client-boot'
 import {
+  readSeededAuthSession,
   staticDockRootNeedsSync,
   readStaticShellSeed,
   syncStaticDockRootState,
@@ -141,13 +142,11 @@ const syncStaticIslandDockIfNeeded = async (
 }
 
 const refreshStaticIslandDockAuthIfNeeded = async (controller: StaticIslandController) => {
-  const { loadClientAuthSession } = await loadStaticAuthClient()
-  const session = await loadClientAuthSession()
-  if (controller.destroyed) return
+  const session = readSeededAuthSession()
   const isAuthenticated = session.status === 'authenticated'
   if (controller.isAuthenticated === isAuthenticated) return
   controller.isAuthenticated = isAuthenticated
-  writeStaticShellSeed({ isAuthenticated })
+  writeStaticShellSeed({ isAuthenticated, authSession: session })
   await syncStaticIslandDockIfNeeded(controller)
 }
 
@@ -371,9 +370,8 @@ export const disposeStaticIslandShell = async () => {
 const scheduleProtectedAuthUpgrade = (controller: StaticIslandController) => {
   const runAuthUpgrade = async () => {
     try {
-      const { loadClientAuthSession, redirectProtectedStaticRouteToLogin } = await loadStaticAuthClient()
-      const session = await loadClientAuthSession()
-      if (controller.destroyed) return
+      const { redirectProtectedStaticRouteToLogin } = await loadStaticAuthClient()
+      const session = readSeededAuthSession()
       if (session.status !== 'authenticated') {
         redirectProtectedStaticRouteToLogin(controller.lang)
         return
@@ -381,7 +379,7 @@ const scheduleProtectedAuthUpgrade = (controller: StaticIslandController) => {
       controller.resolvedUser = session.user
       if (!controller.isAuthenticated) {
         controller.isAuthenticated = true
-        writeStaticShellSeed({ isAuthenticated: true })
+        writeStaticShellSeed({ isAuthenticated: true, authSession: session })
         await syncStaticIslandDockIfNeeded(controller)
       }
       await activateIslandController(controller, session.user)
@@ -470,21 +468,6 @@ export const bootstrapStaticIslandShell = async () => {
   }
 
   await syncStaticIslandDockIfNeeded(controller)
-  controller.cleanupFns.push(
-    scheduleStaticShellTask(
-      () => {
-        if (controller.destroyed || controller.authPolicy === 'protected') return
-        void refreshStaticIslandDockAuthIfNeeded(controller).catch((error) => {
-          console.error('Static island auth dock refresh failed:', error)
-        })
-      },
-      {
-        priority: 'background',
-        timeoutMs: 600,
-        waitForPaint: true
-      }
-    )
-  )
   bindShellControls(controller)
 
   const handlePageShow = (event: PageTransitionEvent) => {
@@ -503,9 +486,6 @@ export const bootstrapStaticIslandShell = async () => {
   controller.cleanupFns.push(() => window.removeEventListener('pageshow', handlePageShow))
 
   if (controller.authPolicy === 'protected') {
-    if (controller.routeData.island === 'profile' || controller.routeData.island === 'settings') {
-      await activateIslandController(controller, controller.resolvedUser)
-    }
     controller.cleanupFns.push(scheduleProtectedAuthUpgrade(controller))
     return
   }

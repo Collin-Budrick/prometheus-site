@@ -32,12 +32,14 @@ const PREFETCH_ONLY_ROUTES = new Set([
   '/store',
   '/lab',
   '/login',
+  '/offline',
+  '/privacy',
   '/profile',
   '/settings',
   '/dashboard',
   '/chat',
-  '/privacy'
 ])
+const ALWAYS_WARM_ROUTE_PATHS = ['/', '/store', '/login', '/lab', '/offline', '/privacy', '/profile', '/settings', '/dashboard', '/chat'] as const
 
 const routeDescriptorComparator = (left: DockRouteDescriptor, right: DockRouteDescriptor) =>
   left.index - right.index
@@ -86,7 +88,6 @@ export const resolveRouteWarmupAudience = (pathname: string): RouteWarmupAudienc
   const normalizedPath = normalizeRoutePath(pathname)
 
   if (
-    normalizedPath === '/login' ||
     normalizedPath === '/profile' ||
     normalizedPath === '/settings' ||
     normalizedPath === '/dashboard' ||
@@ -123,6 +124,15 @@ export const createRouteWarmupDescriptors = (
         safety: resolveRouteSafetyMode(href),
         warmupAudience: resolveRouteWarmupAudience(href)
       })
+    })
+  })
+
+  ALWAYS_WARM_ROUTE_PATHS.forEach((href) => {
+    if (descriptors.has(href)) return
+    descriptors.set(href, {
+      href,
+      safety: resolveRouteSafetyMode(href),
+      warmupAudience: resolveRouteWarmupAudience(href)
     })
   })
 

@@ -26,7 +26,10 @@ describe("entry.ssr static bootstrap injection", () => {
     expect(source).toContain("scheduleAnchorEntry");
     expect(source).toContain("const maxAnchorEntryAttempts = 4;");
     expect(source).toContain("const anchorEntryRetryBaseDelayMs = 250;");
+    expect(source).toContain('const anchorEntryRetryQueryParam = "__anchor_retry";');
+    expect(source).toContain("const resolveAnchorEntryImportHref = (attemptCount) => {");
     expect(source).toContain("scheduleAnchorEntryRetry");
+    expect(source).toContain("void importModule(resolveAnchorEntryImportHref(anchorEntryAttemptCount))");
     expect(source).toContain('console.warn("Static home anchor entry import failed; retrying.", error);');
     expect(source).toContain('requestId: "static-home-anchor-bootstrap"');
     expect(source).toContain('console.error("Static home anchor entry failed:", error);');

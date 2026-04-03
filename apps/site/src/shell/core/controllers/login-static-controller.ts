@@ -3,7 +3,6 @@ import { getUiCopy } from '../../../lang/client'
 import { appConfig } from '../../../site-config'
 import { loadClientAuthSession } from '../../auth/auth-client'
 import {
-  ensureSpacetimeAuthSession,
   getHostedSocialProviderLabel,
   getSpacetimeAuthMode,
   isHostedSocialProvider,
@@ -325,18 +324,6 @@ export const mountStaticLoginController = ({ lang }: MountStaticLoginControllerO
         setStatus(root, 'error', copy.authNotConfigured)
         applyBusy()
         return
-      }
-
-      if (runtimeMode === 'hosted') {
-        try {
-          const restored = await ensureSpacetimeAuthSession(appConfig.apiBase)
-          if (restored) {
-            redirectToProfile()
-            return
-          }
-        } catch {
-          // Keep the launcher interactive when refresh or cookie sync fails.
-        }
       }
 
       busy = false

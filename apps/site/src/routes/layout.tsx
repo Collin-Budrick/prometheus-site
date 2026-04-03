@@ -17,13 +17,11 @@ import { AUTH_NAV_ITEMS, TOPBAR_NAV_ITEMS } from '../shared/nav-order'
 import { applyLang, resolveLangParam, supportedLangs, type Lang } from '../shared/lang-store'
 import { runLangViewTransition } from '../shared/view-transitions'
 import { loadAuthSession, type AuthSessionState } from '../features/auth/auth-session'
-import { didAuthSessionChange, revalidateClientAuthSession } from '../features/auth/auth-session-client'
 import { resolveRequestLang } from './fragment-resource'
 import { appConfig } from '../site-config'
 import { buildFragmentCssLinks } from '../fragment/fragment-css'
 import { FRAGMENT_WIDGET_RUNTIME_ASSET_PATH } from '../fragment/ui/fragment-widget-runtime-loader'
 import { fragmentPlanCache } from '../fragment/plan-cache'
-import { createRouteFragmentWarmupManager } from '../fragment/route-warmup'
 import type { FragmentPlan } from '../fragment/types'
 import { resolveStaticAssetPublicHref, shouldUseStaticShellSourceModules } from '../shell/core/static-asset-url'
 import { setPreference } from '../native/preferences'
@@ -61,17 +59,9 @@ import {
   expandStaticShellPreloadPaths
 } from '../shell/core/build-manifest.server'
 import {
-  createRouteWarmupController,
   createDockRouteDescriptors,
   createRouteWarmupDescriptors,
-  getIdleWarmupDescriptors,
-  isRouteWarmupConstrained,
-  resolveComparableRouteKey,
   resolveDockOwner,
-  resolveRouteSafetyMode,
-  resolveWarmableAnchor,
-  resolveWarmableRouteUrl,
-  shouldWarmRouteOnTrigger,
 } from '../shared/route-navigation'
 import {
   buildRouteShellBootstrapScript,
@@ -1262,90 +1252,6 @@ const InteractiveShellLayout = component$(() => {
     (ctx) => {
       if (typeof window === 'undefined') return
       const pathName = ctx.track(() => location.url.pathname)
-      const pathSearch = ctx.track(() => location.url.search)
-      const currentLang = ctx.track(() => langSignal.value)
-      const authenticated = ctx.track(() => authSession.value.status === 'authenticated')
-
-      const warmupDescriptors = createRouteWarmupDescriptors(TOPBAR_NAV_ITEMS, AUTH_NAV_ITEMS).map((descriptor) => ({
-        href: withLangParam(descriptor.href, currentLang),
-        safety: descriptor.safety,
-        warmupAudience: descriptor.warmupAudience
-      }))
-      const controller = createRouteWarmupController({
-        documentRef: document,
-        nonce
-      })
-      const fragmentWarmupManager = createRouteFragmentWarmupManager({
-        origin: window.location.origin
-      })
-      const idleApi = window as Window & {
-        requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number
-        cancelIdleCallback?: (handle: number) => void
-      }
-      const constrained = isRouteWarmupConstrained()
-      const currentComparableKey = resolveComparableRouteKey(`${pathName}${pathSearch || ''}`, window.location.origin)
-      let idleHandle: number | null = null
-      let timeoutHandle: number | null = null
-
-      const setIdleWarmups = () => {
-        const idleWarmups = getIdleWarmupDescriptors(pathName, warmupDescriptors, authenticated)
-        controller.setIdlePrefetchUrls(idleWarmups.map((descriptor) => descriptor.href))
-        fragmentWarmupManager.warmIdleRoutes(idleWarmups.map((descriptor) => descriptor.href))
-      }
-
-      const warmFromEvent = (target: EventTarget | null, trigger: 'pointer' | 'focus') => {
-        const anchor = resolveWarmableAnchor(target)
-        if (!anchor) return
-        const url = resolveWarmableRouteUrl(anchor, window.location.origin)
-        if (!url) return
-        if (resolveComparableRouteKey(url, window.location.origin) === currentComparableKey) {
-          return
-        }
-        if (!shouldWarmRouteOnTrigger(url.pathname, authenticated, trigger, constrained)) {
-          return
-        }
-        controller.warmTarget(url.toString(), resolveRouteSafetyMode(url.pathname) === 'prerender-ok')
-        void fragmentWarmupManager.warmRoute(url.toString())
-      }
-
-      const handlePointerWarmup = (event: Event) => {
-        warmFromEvent(event.target, 'pointer')
-      }
-      const handleFocusWarmup = (event: Event) => {
-        warmFromEvent(event.target, 'focus')
-      }
-
-      if (!constrained) {
-        if (typeof idleApi.requestIdleCallback === 'function') {
-          idleHandle = idleApi.requestIdleCallback(setIdleWarmups, { timeout: 1600 })
-        } else {
-          timeoutHandle = window.setTimeout(setIdleWarmups, 220)
-        }
-      }
-
-      document.addEventListener('pointerover', handlePointerWarmup, true)
-      document.addEventListener('focusin', handleFocusWarmup, true)
-
-      ctx.cleanup(() => {
-        document.removeEventListener('pointerover', handlePointerWarmup, true)
-        document.removeEventListener('focusin', handleFocusWarmup, true)
-        if (idleHandle !== null) {
-          idleApi.cancelIdleCallback?.(idleHandle)
-        }
-        if (timeoutHandle !== null) {
-          window.clearTimeout(timeoutHandle)
-        }
-        fragmentWarmupManager.dispose()
-        controller.dispose()
-      })
-    },
-    { strategy: 'document-idle' }
-  )
-
-  useVisibleTask$(
-    (ctx) => {
-      if (typeof window === 'undefined') return
-      const pathName = ctx.track(() => location.url.pathname)
       const currentLang = ctx.track(() => langSignal.value)
       const selection = mergeLanguageSelections(shellLanguageSelection, resolveRouteLanguageSelection(pathName))
       const otherLangs = supportedLangs.filter((value) => value !== currentLang)
@@ -1374,38 +1280,6 @@ const InteractiveShellLayout = component$(() => {
       })
     },
     { strategy: 'document-idle' }
-  )
-
-  useVisibleTask$(
-    (ctx) => {
-      if (typeof window === 'undefined') return
-      const initialSession = ctx.track(() => authSession.value)
-      let revalidating = false
-
-      const handlePageShow = (event: PageTransitionEvent) => {
-        if (!event.persisted || revalidating) return
-        revalidating = true
-        void revalidateClientAuthSession()
-          .then((restoredSession) => {
-            if (!restoredSession) return
-            if (didAuthSessionChange(initialSession, restoredSession)) {
-              window.location.reload()
-            }
-          })
-          .catch((error) => {
-            console.warn('Failed to revalidate auth session after bfcache restore:', error)
-          })
-          .finally(() => {
-            revalidating = false
-          })
-      }
-
-      window.addEventListener('pageshow', handlePageShow)
-      ctx.cleanup(() => {
-        window.removeEventListener('pageshow', handlePageShow)
-      })
-    },
-    { strategy: 'document-ready' }
   )
 
   const applyLangChoice = $(async (next: Lang) => {
@@ -1572,7 +1446,11 @@ const InteractiveShellLayout = component$(() => {
         dangerouslySetInnerHTML={buildRouteShellBootstrapScript({
           navigationDescriptors: routeBootstrapNavigationDescriptors,
           warmupDescriptors: routeBootstrapWarmupDescriptors,
-          isAuthenticated
+          isAuthenticated,
+          userCacheKey:
+            authSession.value.status === 'authenticated'
+              ? authSession.value.user.id ?? authSession.value.user.email ?? 'session'
+              : null
         })}
       />
     </div>
@@ -1591,6 +1469,7 @@ export default component$(() => {
       <StaticShellLayout
         currentPath={location.url.pathname}
         isAuthenticated={authSession.value.status === 'authenticated'}
+        authSession={authSession.value}
         lang={shellPreferences.value.lang}
         theme={shellPreferences.value.theme}
         languageSeed={shellPreferences.value.languageSeed}

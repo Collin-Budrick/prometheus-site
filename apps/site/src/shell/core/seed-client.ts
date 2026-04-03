@@ -1,4 +1,5 @@
 import type { Lang } from '../../lang/types'
+import type { AuthSessionState } from '../../features/auth/auth-session'
 import {
   STATIC_DOCK_ROOT_ATTR,
   STATIC_SHELL_SEED_SCRIPT_ID
@@ -93,6 +94,21 @@ export const writeStaticShellSeed = (patch: Partial<StaticShellSeed>) => {
   }
   return cloneStaticShellSeed(next)
 }
+
+const anonymousAuthSession: AuthSessionState = { status: 'anonymous' }
+
+export const readSeededAuthSession = (
+  doc: StaticShellSeedDocument = typeof document !== 'undefined' ? document : null
+) => {
+  const seed = readStaticShellSeed(doc)
+  return seed?.authSession ?? anonymousAuthSession
+}
+
+export const writeSeededAuthSession = (authSession: AuthSessionState) =>
+  writeStaticShellSeed({
+    authSession,
+    isAuthenticated: authSession.status === 'authenticated'
+  })
 
 export const resetStaticShellSeedCacheForTests = () => {
   const host = getSeedCacheHost()

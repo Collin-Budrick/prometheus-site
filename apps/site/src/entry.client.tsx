@@ -1,6 +1,7 @@
 import type { RenderOptions } from '@builder.io/qwik'
 import { getServerBackoffMs, markServerFailure, markServerSuccess } from './shared/server-backoff'
-import { buildPublicApiUrl, resolvePublicApiHost } from './shared/public-api-url'
+import { resolvePublicApiHost } from './shared/public-api-url'
+import { asTrustedScriptUrl } from './security/client'
 import { appConfig } from './site-config'
 import {
   CLEANUP_VERSION_KEY,
@@ -29,11 +30,24 @@ declare global {
 }
 
 const OUTBOX_SYNC_TAG = 'p2p-outbox'
-const HEALTH_CHECK_TIMEOUT_MS = 4000
 const pwaEnabled = appConfig.template.features.pwa
 const serviceWorkerSeed = readServiceWorkerSeedFromDocument()
+const ROUTE_WARMUP_STATE_KEY = '__PROMETHEUS_ROUTE_WARMUP__'
+type BackgroundSyncRegistration = ServiceWorkerRegistration & {
+  sync?: {
+    register: (tag: string) => Promise<void>
+  }
+}
 
 type StaticRouteBootstrapKind = 'home' | 'fragment' | 'island'
+type RouteWarmupWindow = Window & typeof globalThis & {
+  [ROUTE_WARMUP_STATE_KEY]?: {
+    publicHrefs?: string[]
+    authHrefs?: string[]
+    isAuthenticated?: boolean
+    userCacheKey?: string | null
+  }
+}
 
 const resolveStaticRouteBootstrapKind = () => {
   if (typeof document === 'undefined') return null
@@ -164,7 +178,6 @@ export default function (opts: RenderOptions) {
   runAfterClientIntentIdle(() => {
     setupWebSocketBackoffMonitor()
     setupOfflineErrorFilters()
-    setupServerHealthProbe()
   })
 
   if (!nativeRuntime && 'serviceWorker' in navigator && !pwaEnabled) {
@@ -336,6 +349,15 @@ function setupServiceWorkerBridge() {
     if (payload.type === 'sw:cache-cleared') {
       dispatchSwEvent('prom:sw-cache-cleared', { source: 'sw' })
     }
+    if (payload.type === 'sw:warm-complete') {
+      dispatchSwEvent('prom:sw-warm-complete', payload)
+    }
+    if (payload.type === 'sw:resource-updated') {
+      dispatchSwEvent('prom:sw-resource-updated', payload)
+    }
+    if (payload.type === 'sw:resource-invalidated') {
+      dispatchSwEvent('prom:sw-resource-invalidated', payload)
+    }
     if (payload.type === 'sw:status') {
       if (payload.online === true) {
         markServerSuccess(resolveServerKey())
@@ -356,8 +378,44 @@ function setupServiceWorkerBridge() {
   window.addEventListener('prom:sw-manual-sync', () => {
     void triggerManualSync()
   })
+  window.addEventListener('prom:sw-manual-refresh', () => {
+    void manualRefreshServiceWorkerResources()
+  })
+  window.addEventListener('prom:sw-warm-public', () => {
+    const warmup = resolveRouteWarmupState()
+    if (!warmup?.publicHrefs?.length) return
+    void postServiceWorkerMessage({
+      type: 'sw:warm-public',
+      hrefs: warmup.publicHrefs
+    })
+  })
+  window.addEventListener('prom:sw-warm-user', () => {
+    const warmup = resolveRouteWarmupState()
+    if (!warmup?.authHrefs?.length || !warmup.userCacheKey) return
+    void postServiceWorkerMessage({
+      type: 'sw:warm-user',
+      hrefs: warmup.authHrefs,
+      userCacheKey: warmup.userCacheKey
+    })
+  })
+  window.addEventListener('prom:sw-update-resource', (event) => {
+    const detail = event instanceof CustomEvent ? (event.detail as Record<string, unknown> | undefined) : undefined
+    if (!detail) return
+    void postServiceWorkerMessage({
+      type: 'sw:update-resource',
+      ...detail
+    })
+  })
+  window.addEventListener('prom:sw-invalidate-resource', (event) => {
+    const detail = event instanceof CustomEvent ? (event.detail as Record<string, unknown> | undefined) : undefined
+    if (!detail) return
+    void postServiceWorkerMessage({
+      type: 'sw:invalidate-resource',
+      ...detail
+    })
+  })
   window.addEventListener('prom:sw-refresh-cache', () => {
-    void refreshServiceWorkerCache()
+    void manualRefreshServiceWorkerResources()
   })
   window.addEventListener('prom:sw-clear-cache', () => {
     void clearServiceWorkerCacheAndUnregister()
@@ -369,67 +427,18 @@ function setupServiceWorkerBridge() {
   })
 }
 
-function setupServerHealthProbe() {
-  if (typeof window === 'undefined') return
-  const serverKey = resolveServerKey()
-  const healthUrl = resolveHealthUrl()
-  if (!healthUrl) return
-  let inFlight = false
-
-  const probe = async () => {
-    if (inFlight) return
-    if (!isOnline()) return
-    if (getServerBackoffMs(serverKey) <= 0) return
-    inFlight = true
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT_MS)
-    try {
-      const response = await fetch(healthUrl, {
-        method: 'GET',
-        cache: 'no-store',
-        signal: controller.signal
-      })
-      if (response.ok) {
-        markServerSuccess(serverKey)
-      } else {
-        markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
-      }
-    } catch (error) {
-      console.warn('Server health probe failed:', error)
-      markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
-    } finally {
-      clearTimeout(timeout)
-      inFlight = false
-    }
-  }
-
-  window.addEventListener('online', () => {
-    void probe()
-  })
-
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
-      void probe()
-    }
-  })
-}
-
 function resolveServerKey() {
   if (typeof window === 'undefined') return 'default'
   return resolvePublicApiHost(window.location.origin)
 }
 
-function resolveHealthUrl() {
-  if (typeof window === 'undefined') return ''
-  return buildPublicApiUrl('/health', window.location.origin)
-}
-
 async function triggerManualSync() {
   const registration = await getActiveRegistration()
   if (!registration) return
-  if ('sync' in registration) {
+  const syncRegistration = registration as BackgroundSyncRegistration
+  if (syncRegistration.sync?.register) {
     try {
-      await registration.sync.register(OUTBOX_SYNC_TAG)
+      await syncRegistration.sync.register(OUTBOX_SYNC_TAG)
       dispatchSwEvent('prom:sw-sync-requested', { method: 'sync' })
       return
     } catch (error) {
@@ -440,19 +449,39 @@ async function triggerManualSync() {
   dispatchSwEvent('prom:sw-sync-requested', { method: 'message' })
 }
 
-async function refreshServiceWorkerCache() {
+function resolveRouteWarmupState() {
+  if (typeof window === 'undefined') return null
+  return (window as RouteWarmupWindow)[ROUTE_WARMUP_STATE_KEY] ?? null
+}
+
+async function postServiceWorkerMessage(message: Record<string, unknown>) {
   const registration = await getActiveRegistration()
   if (registration?.active) {
-    registration.active.postMessage({ type: 'sw:refresh-cache' })
-  } else {
-    await clearServiceWorkerCaches()
-    dispatchSwEvent('prom:sw-cache-refreshed', { source: 'window' })
+    registration.active.postMessage(message)
+    return
   }
+  navigator.serviceWorker.controller?.postMessage(message)
+}
+
+async function refreshServiceWorkerCache() {
+  const registration = await getActiveRegistration()
   try {
     await registration?.update()
   } catch (error) {
     console.warn('Service worker update failed:', error)
   }
+}
+
+async function manualRefreshServiceWorkerResources() {
+  const warmup = resolveRouteWarmupState()
+  await postServiceWorkerMessage({
+    type: 'sw:manual-refresh',
+    publicHrefs: warmup?.publicHrefs ?? [],
+    authHrefs: warmup?.authHrefs ?? [],
+    userCacheKey: warmup?.userCacheKey ?? null
+  })
+  dispatchSwEvent('prom:sw-cache-refreshed', { source: 'window' })
+  void refreshServiceWorkerCache()
 }
 
 async function clearServiceWorkerCacheAndUnregister() {
@@ -467,7 +496,13 @@ async function registerServiceWorker() {
   if (!pwaEnabled) return
   const { swUrl, scope } = resolveServiceWorkerLocation()
   try {
-    await navigator.serviceWorker.register(swUrl, { scope })
+    const trustedSwUrl = asTrustedScriptUrl(swUrl)
+    const register =
+      navigator.serviceWorker.register as unknown as (
+        scriptUrl: typeof trustedSwUrl,
+        options?: RegistrationOptions
+      ) => Promise<ServiceWorkerRegistration>
+    await register.call(navigator.serviceWorker, trustedSwUrl, { scope })
   } catch (error) {
     console.error('Service worker registration failed:', error)
   }
@@ -591,7 +626,7 @@ async function clearServiceWorkerCaches() {
   const keys = await caches.keys()
   await Promise.all(
     keys
-      .filter((key) => key.startsWith('fragment-prime-shell') || key.startsWith('fragment-prime-data'))
+      .filter((key) => key.startsWith('fragment-prime-'))
       .map((key) => caches.delete(key))
   )
 }
