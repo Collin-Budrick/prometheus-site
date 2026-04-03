@@ -27,4 +27,21 @@ describe('fragment widget markup', () => {
     const html = renderToHtml(marker)
     expect(html).not.toContain('data-fragment-widget-props="true"')
   })
+
+  it('emits resident metadata when a widget is marked resident', () => {
+    const marker = createFragmentWidgetMarkerNode({
+      kind: 'preact-island',
+      id: 'fragment://page/home/island@v1::preact-island::shell',
+      residentKey: 'fragment://page/home/island@v1::preact-island::resident',
+      residentMode: 'live',
+      shell: { type: 'element', tag: 'div', children: [] }
+    })
+
+    const html = renderToHtml(marker)
+    expect(html).toContain('data-fragment-resident="true"')
+    expect(html).toContain(
+      'data-fragment-resident-key="fragment://page/home/island@v1::preact-island::resident"'
+    )
+    expect(html).toContain('data-fragment-resident-mode="live"')
+  })
 })

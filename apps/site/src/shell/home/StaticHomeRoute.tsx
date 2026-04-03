@@ -54,6 +54,11 @@ import {
 } from './home-bootstrap-data'
 import { isSiteFeatureEnabled, siteBrand, siteTemplateConfig } from '../../site-config'
 import {
+  buildResidentFragmentAttrs,
+  resolveResidentFragmentKey,
+  resolveResidentFragmentMode
+} from '../../shared/resident-fragment-manager'
+import {
   buildPretextCardAttrs,
   buildPretextTextAttrs,
   PRETEXT_BODY_SPEC,
@@ -108,6 +113,8 @@ type StaticHomeRenderedCard = {
   id: string
   order: number
   critical: boolean
+  residentKey?: string | null
+  residentMode?: 'park' | 'live' | null
   size: string | undefined
   html: string
   column: '1' | '2'
@@ -332,6 +339,8 @@ export const buildStaticHomeRouteState = ({
       id: entry.id,
       order: index,
       critical: Boolean(entry.critical),
+      residentKey: resolveResidentFragmentKey(entry.resident, entry.id),
+      residentMode: resolveResidentFragmentMode(entry.resident),
       size: entry.layout.size,
       html,
       column: placement === 'hero' ? (fragmentKind === 'dock' ? '2' : '1') : '1',
@@ -527,6 +536,7 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
         data-draggable="false"
         data-size={card.size}
         style={style}
+        {...buildResidentFragmentAttrs(card.residentKey, card.residentMode ?? 'park')}
         {...{
           ...buildPretextCardAttrs({ mode: card.pretextCardMode }),
           [STATIC_FRAGMENT_CARD_ATTR]: 'true',

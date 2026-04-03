@@ -1,6 +1,7 @@
 import { loadFragmentBootstrapRuntime } from './runtime-loaders'
 import { loadFragmentWidgetRuntime } from '../../fragment/ui/fragment-widget-runtime-loader'
 import '../../fragment/route-warmup-bridge-auto'
+import '../core/static-route-navigation'
 import { appConfig } from '../../site-config'
 import { installTrustedTypesFunctionBridge } from '../../security/client'
 import { releaseQueuedReadyStaggerWithin } from '@prometheus/ui/ready-stagger'

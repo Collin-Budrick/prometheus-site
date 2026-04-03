@@ -637,6 +637,7 @@ describe('renderHomeStaticFragmentHtml', () => {
     expect(ledgerCard?.previewVisible).toBe(true)
     expect(islandCard?.html).toContain('preact-island-ui')
     expect(islandCard?.html).toContain('data-fragment-widget="preact-island"')
+    expect(islandCard?.html).toContain('data-fragment-resident-mode="live"')
     expect(islandCard?.patchState).toBe('pending')
     expect(islandCard?.revealPhase).toBe('visible')
     expect(islandCard?.previewVisible).toBe(true)

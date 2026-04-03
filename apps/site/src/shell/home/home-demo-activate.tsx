@@ -1,5 +1,6 @@
 import type { Lang, PlannerDemoCopy, ReactBinaryDemoCopy, WasmRendererDemoCopy } from '../../lang'
 import { setTrustedInnerHtml } from '../../security/client'
+import { createResidentFragmentExecutionGate } from '../../shared/resident-fragment-execution-gate'
 import {
   getStaticHomeFragmentTextCopy,
   getStaticHomePlannerDemoCopy,
@@ -443,7 +444,7 @@ const activatePlannerDemo = (root: HTMLElement): HomeDemoActivationResult => {
   let timeoutHandle = 0
   let disposed = false
   let cacheState = randomPlannerCache(copy.fragments)
-  let viewportActive = true
+  const executionGate = createResidentFragmentExecutionGate({ root })
 
   const stopTimer = () => {
     if (!timeoutHandle) return
@@ -452,7 +453,7 @@ const activatePlannerDemo = (root: HTMLElement): HomeDemoActivationResult => {
   }
 
   const scheduleSequenceStep = () => {
-    if (disposed || timeoutHandle || !isRunning || !viewportActive || document.visibilityState !== 'visible') {
+    if (disposed || timeoutHandle || !isRunning || !executionGate.isActive()) {
       return
     }
     timeoutHandle = window.setTimeout(() => {
@@ -611,17 +612,12 @@ const activatePlannerDemo = (root: HTMLElement): HomeDemoActivationResult => {
     update()
   }
 
-  const handleVisibilityChange = () => {
-    if (document.visibilityState === 'visible') {
-      scheduleSequenceStep()
-      return
-    }
-    stopTimer()
-  }
-
   const viewportPlayback = bindHomeDemoViewportPlayback(root, (active) => {
-    viewportActive = active
-    if (!active) {
+    executionGate.setViewportActive(active)
+  })
+
+  const unsubscribeExecution = executionGate.subscribe((isActive) => {
+    if (!isActive) {
       stopTimer()
       return
     }
@@ -629,16 +625,16 @@ const activatePlannerDemo = (root: HTMLElement): HomeDemoActivationResult => {
   })
 
   surface.addEventListener('click', handleClick)
-  document.addEventListener('visibilitychange', handleVisibilityChange)
   update()
 
   return {
     cleanup: () => {
       disposed = true
       stopTimer()
+      unsubscribeExecution()
+      executionGate.destroy()
       viewportPlayback.cleanup()
       surface.removeEventListener('click', handleClick)
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
     },
     setViewportActive: viewportPlayback.setViewportActive
   }
@@ -832,10 +828,10 @@ const activateReactBinaryDemo = (root: HTMLElement): HomeDemoActivationResult =>
   const bitsGroup = surface.querySelector<HTMLElement>('.react-binary-bits')
   const bitElements = Array.from(surface.querySelectorAll<HTMLElement>('.react-binary-bit'))
   const domTokenElements = Array.from(surface.querySelectorAll<HTMLElement>('.react-binary-dom-token'))
+  const executionGate = createResidentFragmentExecutionGate({ root })
   let stageIndex = 0
   let binaryChunks = [...initialBinaryChunks]
   let timeoutHandle = 0
-  let viewportActive = true
 
   const stopTimer = () => {
     if (!timeoutHandle) return
@@ -852,8 +848,7 @@ const activateReactBinaryDemo = (root: HTMLElement): HomeDemoActivationResult =>
 
   const schedule = () => {
     if (timeoutHandle) return
-    if (document.visibilityState !== 'visible') return
-    if (!viewportActive) return
+    if (!executionGate.isActive()) return
     if (copy.stages[stageIndex]?.id !== 'binary') return
     timeoutHandle = window.setTimeout(() => {
       timeoutHandle = 0
@@ -977,17 +972,12 @@ const activateReactBinaryDemo = (root: HTMLElement): HomeDemoActivationResult =>
     }
   }
 
-  const handleVisibilityChange = () => {
-    if (document.visibilityState === 'visible') {
-      schedule()
-    } else {
-      stopTimer()
-    }
-  }
-
   const viewportPlayback = bindHomeDemoViewportPlayback(root, (active) => {
-    viewportActive = active
-    if (!active) {
+    executionGate.setViewportActive(active)
+  })
+
+  const unsubscribeExecution = executionGate.subscribe((isActive) => {
+    if (!isActive) {
       stopTimer()
       return
     }
@@ -995,15 +985,15 @@ const activateReactBinaryDemo = (root: HTMLElement): HomeDemoActivationResult =>
   })
 
   surface.addEventListener('click', handleClick)
-  document.addEventListener('visibilitychange', handleVisibilityChange)
   update()
 
   return {
     cleanup: () => {
       stopTimer()
+      unsubscribeExecution()
+      executionGate.destroy()
       viewportPlayback.cleanup()
       surface.removeEventListener('click', handleClick)
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
     },
     setViewportActive: viewportPlayback.setViewportActive
   }
@@ -1027,10 +1017,10 @@ const activatePreactIslandDemo = (
   const actionButton = surface.querySelector<HTMLButtonElement>('.preact-island-action')
   const progressCircle = surface.querySelector<SVGCircleElement>('.preact-island-dial-progress')
   const dialHand = surface.querySelector<SVGLineElement>('.preact-island-dial-hand')
+  const executionGate = createResidentFragmentExecutionGate({ root })
   let remaining = preactCountdownSeconds
   let timeoutHandle = 0
   let cancelDeferredTick: () => void = () => undefined
-  let viewportActive = true
 
   const clearTick = () => {
     if (!timeoutHandle) return
@@ -1040,8 +1030,7 @@ const activatePreactIslandDemo = (
 
   const scheduleTick = () => {
     if (timeoutHandle) return
-    if (document.visibilityState !== 'visible') return
-    if (!viewportActive) return
+    if (!executionGate.isActive()) return
     if (remaining <= 0) return
     timeoutHandle = window.setTimeout(() => {
       timeoutHandle = 0
@@ -1092,17 +1081,12 @@ const activatePreactIslandDemo = (
     scheduleTick()
   }
 
-  const handleVisibilityChange = () => {
-    if (document.visibilityState === 'visible') {
-      scheduleTick()
-    } else {
-      clearTick()
-    }
-  }
-
   const viewportPlayback = bindHomeDemoViewportPlayback(root, (active) => {
-    viewportActive = active
-    if (!active) {
+    executionGate.setViewportActive(active)
+  })
+
+  const unsubscribeExecution = executionGate.subscribe((isActive) => {
+    if (!isActive) {
       clearTick()
       return
     }
@@ -1110,7 +1094,6 @@ const activatePreactIslandDemo = (
   })
 
   surface.addEventListener('click', handleClick)
-  document.addEventListener('visibilitychange', handleVisibilityChange)
   update()
   cancelDeferredTick = scheduleHomeDemoEnhancement(() => {
     scheduleTick()
@@ -1120,9 +1103,10 @@ const activatePreactIslandDemo = (
     cleanup: () => {
       cancelDeferredTick()
       clearTick()
+      unsubscribeExecution()
+      executionGate.destroy()
       viewportPlayback.cleanup()
       surface.removeEventListener('click', handleClick)
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
     },
     setViewportActive: viewportPlayback.setViewportActive
   }

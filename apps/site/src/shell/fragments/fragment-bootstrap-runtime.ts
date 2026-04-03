@@ -1,1 +1,1 @@
-export { bootstrapStaticFragmentShell } from '../core/static-bootstrap'
+export { bootstrapStaticFragmentShell, disposeStaticFragmentShell } from '../core/static-bootstrap'

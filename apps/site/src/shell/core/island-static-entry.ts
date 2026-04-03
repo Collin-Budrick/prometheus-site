@@ -1,5 +1,6 @@
 import { loadIslandBootstrapRuntime } from './runtime-loaders'
 import '../../fragment/route-warmup-bridge-auto'
+import './static-route-navigation'
 import {
   ISLAND_STATIC_ROUTE_KIND,
   STATIC_ISLAND_DATA_SCRIPT_ID,

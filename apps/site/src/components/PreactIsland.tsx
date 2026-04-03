@@ -1,6 +1,7 @@
 import { component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { effect } from '@preact/signals-core'
 import { getPreactIslandCopy } from '../lang/client'
+import { createResidentFragmentExecutionGate } from '../shared/resident-fragment-execution-gate'
 import { lang } from '../shared/lang-store'
 
 type PreactIslandProps = {
@@ -21,6 +22,7 @@ export const PreactIsland = component$(({ label }: PreactIslandProps) => {
 
       const target = host.value
       if (!target || !active) return
+      const executionGate = createResidentFragmentExecutionGate({ root: target })
 
       const getCopy = (value: string) => getPreactIslandCopy(value)
 
@@ -55,7 +57,7 @@ export const PreactIsland = component$(({ label }: PreactIslandProps) => {
 
         const scheduleTick = () => {
           if (timeoutRef.current !== null) return
-          if (document.visibilityState !== 'visible') return
+          if (!executionGate.isActive()) return
           if (remainingRef.current <= 0) return
           timeoutRef.current = window.setTimeout(() => {
             timeoutRef.current = null
@@ -73,16 +75,15 @@ export const PreactIsland = component$(({ label }: PreactIslandProps) => {
         }, [remaining])
 
         useEffect(() => {
-          const handleVisibilityChange = () => {
-            if (document.visibilityState === 'visible') {
+          const unsubscribe = executionGate.subscribe((isActive) => {
+            if (isActive) {
               scheduleTick()
-            } else {
-              clearTick()
+              return
             }
-          }
-          document.addEventListener('visibilitychange', handleVisibilityChange)
+            clearTick()
+          })
           return () => {
-            document.removeEventListener('visibilitychange', handleVisibilityChange)
+            unsubscribe()
             clearTick()
           }
         }, [])
@@ -170,7 +171,10 @@ export const PreactIsland = component$(({ label }: PreactIslandProps) => {
       }
 
       render(h(Island, null), target)
-      dispose = () => render(null, target)
+      dispose = () => {
+        executionGate.destroy()
+        render(null, target)
+      }
     }
 
     void mount()

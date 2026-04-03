@@ -170,6 +170,25 @@ pub struct FragmentPlanEntryLayout {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FragmentResidentMode {
+    Park,
+    Live,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum FragmentResidentMeta {
+    Enabled(bool),
+    Options {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        key: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        mode: Option<FragmentResidentMode>,
+    },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FragmentPlanEntry {
     pub id: String,
     pub critical: bool,
@@ -180,6 +199,8 @@ pub struct FragmentPlanEntry {
     pub depends_on: Option<Vec<String>>,
     #[serde(rename = "bootMode", skip_serializing_if = "Option::is_none")]
     pub boot_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resident: Option<FragmentResidentMeta>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cache: Option<FragmentCacheStatus>,
 }
@@ -406,7 +427,13 @@ impl FragmentService {
                 904,
                 Some(vec![HOME_PLANNER_ID.to_string()]),
             ));
-            entries.push(home_entry(HOME_ISLAND_ID, false, "span 5", None, 489, None));
+            entries.push(
+                home_entry(HOME_ISLAND_ID, false, "span 5", None, 489, None)
+                    .with_resident_mode_key(
+                        format!("{HOME_ISLAND_ID}::preact-island::shell"),
+                        FragmentResidentMode::Live,
+                    ),
+            );
             entries.push(home_entry(
                 HOME_REACT_ID,
                 false,
@@ -516,6 +543,8 @@ impl FragmentService {
                 "planner-demo",
                 "visible",
                 None,
+                None,
+                None,
                 demo_shell(
                     "planner",
                     &self.translate(lang, "Planner", &[]),
@@ -546,6 +575,8 @@ impl FragmentService {
                 HOME_LEDGER_ID,
                 "wasm-renderer-demo",
                 "visible",
+                None,
+                None,
                 None,
                 demo_shell(
                     "wasm-renderer",
@@ -594,6 +625,8 @@ impl FragmentService {
                 "preact-island",
                 "visible",
                 Some(serde_json::json!({ "label": self.translate(lang, "Isolated island", &[]) })),
+                Some(&format!("{HOME_ISLAND_ID}::preact-island::shell")),
+                Some(FragmentResidentMode::Live),
                 demo_shell(
                     "preact-island",
                     &self.translate(lang, "Isolated island", &[]),
@@ -615,6 +648,8 @@ impl FragmentService {
                 HOME_REACT_ID,
                 "react-binary-demo",
                 "visible",
+                None,
+                None,
                 None,
                 demo_shell(
                     "react-binary",
@@ -646,6 +681,8 @@ impl FragmentService {
                     "placeholder": self.translate(lang, "Write something. Everyone here sees it live.", &[]),
                     "ariaLabel": self.translate(lang, "Shared collaborative text box", &[])
                 })),
+                None,
+                None,
                 el(
                     "div",
                     map_attrs(vec![
@@ -1966,6 +2003,7 @@ fn home_entry(
         render_html: Some(true),
         depends_on,
         boot_mode: None,
+        resident: None,
         cache: None,
     }
 }
@@ -1992,11 +2030,37 @@ fn chat_plan_entries() -> Vec<FragmentPlanEntry> {
 
 trait FragmentPlanEntryExt {
     fn with_render_html(self, render_html: bool) -> Self;
+    fn with_resident_key(self, resident_key: String) -> Self;
+    fn with_resident_mode_key(
+        self,
+        resident_key: String,
+        resident_mode: FragmentResidentMode,
+    ) -> Self;
 }
 
 impl FragmentPlanEntryExt for FragmentPlanEntry {
     fn with_render_html(mut self, render_html: bool) -> Self {
         self.render_html = Some(render_html);
+        self
+    }
+
+    fn with_resident_key(mut self, resident_key: String) -> Self {
+        self.resident = Some(FragmentResidentMeta::Options {
+            key: Some(resident_key),
+            mode: None,
+        });
+        self
+    }
+
+    fn with_resident_mode_key(
+        mut self,
+        resident_key: String,
+        resident_mode: FragmentResidentMode,
+    ) -> Self {
+        self.resident = Some(FragmentResidentMeta::Options {
+            key: Some(resident_key),
+            mode: Some(resident_mode),
+        });
         self
     }
 }
@@ -2165,6 +2229,66 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn home_island_plan_entry_emits_resident_metadata() {
+        let service = FragmentService::new(FeatureFlags {
+            auth: true,
+            store: true,
+            messaging: true,
+            realtime: true,
+        });
+        let entry = service
+            .home_plan_entries()
+            .into_iter()
+            .find(|entry| entry.id == HOME_ISLAND_ID)
+            .expect("home island entry");
+
+        match entry.resident {
+            Some(FragmentResidentMeta::Options {
+                key: Some(key),
+                mode: Some(FragmentResidentMode::Live),
+            }) => {
+                assert_eq!(key, format!("{HOME_ISLAND_ID}::preact-island::shell"));
+            }
+            other => panic!("expected resident metadata, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn home_island_widget_marker_emits_resident_attributes() {
+        let service = FragmentService::new(FeatureFlags {
+            auth: true,
+            store: true,
+            messaging: true,
+            realtime: true,
+        });
+        let entry = service
+            .render_fragment(HOME_ISLAND_ID, "en")
+            .expect("home island fragment");
+
+        assert!(
+            entry
+                .html
+                .contains("data-fragment-resident=\"true\""),
+            "resident flag missing from island html: {}",
+            entry.html
+        );
+        assert!(
+            entry
+                .html
+                .contains("data-fragment-resident-key=\"fragment://page/home/island@v1::preact-island::shell\""),
+            "resident key missing from island html: {}",
+            entry.html
+        );
+        assert!(
+            entry
+                .html
+                .contains("data-fragment-resident-mode=\"live\""),
+            "resident mode missing from island html: {}",
+            entry.html
+        );
+    }
 }
 
 fn pill(value: String) -> RenderNode {
@@ -2216,6 +2340,8 @@ fn widget_marker(
     kind: &str,
     priority: &str,
     props: Option<serde_json::Value>,
+    resident_key: Option<&str>,
+    resident_mode: Option<FragmentResidentMode>,
     shell: RenderNode,
 ) -> RenderNode {
     let widget_id = format!("{id}::{kind}::shell");
@@ -2237,16 +2363,24 @@ fn widget_marker(
             vec![text(props.to_string())],
         ));
     }
-    el(
-        "div",
-        map_attrs(vec![
-            ("data-fragment-widget", kind),
-            ("data-fragment-widget-id", &widget_id),
-            ("data-fragment-widget-priority", priority),
-            ("data-fragment-widget-hydrated", "false"),
-        ]),
-        children,
-    )
+    let mut attrs = vec![
+        ("data-fragment-widget", kind),
+        ("data-fragment-widget-id", widget_id.as_str()),
+        ("data-fragment-widget-priority", priority),
+        ("data-fragment-widget-hydrated", "false"),
+    ];
+    if let Some(resident_key) = resident_key {
+        attrs.push(("data-fragment-resident", "true"));
+        attrs.push(("data-fragment-resident-key", resident_key));
+        attrs.push((
+            "data-fragment-resident-mode",
+            match resident_mode.unwrap_or(FragmentResidentMode::Park) {
+                FragmentResidentMode::Park => "park",
+                FragmentResidentMode::Live => "live",
+            },
+        ));
+    }
+    el("div", map_attrs(attrs), children)
 }
 
 fn render_home_demo_section(

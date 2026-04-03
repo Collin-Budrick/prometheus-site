@@ -1,4 +1,5 @@
 import { loadHomeAnchorCore } from './runtime-loaders'
+import '../core/static-route-navigation'
 
 export const installHomeStaticAnchorEntry = (
   options?: Record<string, unknown>

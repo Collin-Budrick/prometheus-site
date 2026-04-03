@@ -28,6 +28,11 @@ import {
 } from './fragment-shell-utils'
 import { getFragmentCssHref } from '../fragment-css'
 import type { FragmentRuntimeCardSizing } from '../runtime/protocol'
+import {
+  buildResidentFragmentAttrs,
+  resolveResidentFragmentKey,
+  resolveResidentFragmentMode
+} from '../../shared/resident-fragment-manager'
 
 type FragmentShellCopy = {
   fragmentClose: string
@@ -225,6 +230,12 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
           const motionDelay = hasCache || isCritical || inInitialViewport ? 0 : index * 120
           const fragmentCssHref = entry ? getFragmentCssHref(entry.id) : null
           const fragmentHasCss = skipCssGuard ? false : Boolean(fragment?.css || fragmentCssHref)
+          const residentKey = entry
+            ? resolveResidentFragmentKey(entry.resident, entry.id)
+            : null
+          const residentMode = entry
+            ? resolveResidentFragmentMode(entry.resident)
+            : null
           const gridMetrics = getGridstackSlotMetrics(slot, index)
           const workerCardSizing = entry ? workerSizing.value[entry.id] : null
           const minHeight =
@@ -321,6 +332,7 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
                       fullWidth={entry.fullWidth}
                       draggable={!isStaticHome}
                       dragState={dragState}
+                      rootAttrs={buildResidentFragmentAttrs(residentKey, residentMode ?? 'park')}
                     >
                       {renderedHtml ? (
                         <div

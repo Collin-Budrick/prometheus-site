@@ -1,5 +1,7 @@
+import type { FragmentResidentMode } from '@core/fragments'
 import { h } from '@core/fragment/tree'
 import type { RenderNode } from '@core/fragment/types'
+import { buildResidentFragmentAttrs } from '../shared/resident-fragment-manager'
 
 export type FragmentWidgetPriority = 'critical' | 'visible' | 'deferred'
 
@@ -8,6 +10,8 @@ export type FragmentWidgetMarkerNodeOptions = {
   id: string
   priority?: FragmentWidgetPriority
   props?: Record<string, unknown>
+  residentKey?: string | null
+  residentMode?: FragmentResidentMode
   shell: RenderNode
   mountInShell?: boolean
 }
@@ -31,6 +35,8 @@ export const createFragmentWidgetMarkerNode = ({
   id,
   priority = 'visible',
   props,
+  residentKey = null,
+  residentMode = 'park',
   shell,
   mountInShell = true
 }: FragmentWidgetMarkerNodeOptions): RenderNode =>
@@ -40,7 +46,8 @@ export const createFragmentWidgetMarkerNode = ({
       'data-fragment-widget': kind,
       'data-fragment-widget-id': id,
       'data-fragment-widget-priority': priority,
-      'data-fragment-widget-hydrated': 'false'
+      'data-fragment-widget-hydrated': 'false',
+      ...buildResidentFragmentAttrs(residentKey, residentMode)
     },
     [
       h(

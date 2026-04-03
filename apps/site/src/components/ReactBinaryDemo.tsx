@@ -1,5 +1,6 @@
 import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { getFragmentTextCopy, getReactBinaryDemoCopy } from '../lang/client'
+import { createResidentFragmentExecutionGate } from '../shared/resident-fragment-execution-gate'
 import { useLangSignal } from '../shared/lang-bridge'
 
 const randomBits = (length = 4) => {
@@ -16,6 +17,7 @@ const domNodes = ['<section>', '<h2>', '<p>', '<div.badge>']
 
 export const ReactBinaryDemo = component$(() => {
   const langSignal = useLangSignal()
+  const rootRef = useSignal<HTMLElement>()
   const copy = getReactBinaryDemoCopy(langSignal.value)
   const fragmentText = getFragmentTextCopy(langSignal.value)
   const stageIndex = useSignal(0)
@@ -46,10 +48,13 @@ export const ReactBinaryDemo = component$(() => {
 
   useVisibleTask$((ctx) => {
     const active = ctx.track(() => copy.stages[stageIndex.value]?.id === 'binary')
+    const root = ctx.track(() => rootRef.value)
     if (!active) return
+    if (!root) return
 
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     if (prefersReducedMotion) return
+    const executionGate = createResidentFragmentExecutionGate({ root })
 
     const update = () => {
       binaryChunks.value = binaryChunks.value.map((chunk) => randomBits(chunk.length))
@@ -66,7 +71,7 @@ export const ReactBinaryDemo = component$(() => {
 
     const schedule = () => {
       if (timeout !== null) return
-      if (document.visibilityState !== 'visible') return
+      if (!executionGate.isActive()) return
       timeout = window.setTimeout(() => {
         timeout = null
         update()
@@ -74,26 +79,26 @@ export const ReactBinaryDemo = component$(() => {
       }, 700)
     }
 
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
+    const unsubscribe = executionGate.subscribe((isActive) => {
+      if (isActive) {
         schedule()
-      } else {
-        clear()
+        return
       }
-    }
+      clear()
+    })
 
     update()
     schedule()
-    document.addEventListener('visibilitychange', handleVisibilityChange)
 
     ctx.cleanup(() => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      unsubscribe()
+      executionGate.destroy()
       clear()
     })
   })
 
   return (
-    <div class="react-binary-demo" data-stage={stage.id} onClick$={handleClick}>
+    <div ref={rootRef} class="react-binary-demo" data-stage={stage.id} onClick$={handleClick}>
       <div class="react-binary-header">
         <div class="react-binary-controls">
           <div class="react-binary-title">{copy.title}</div>

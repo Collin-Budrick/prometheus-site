@@ -42,6 +42,11 @@ import {
   STATIC_ROUTE_ATTR
 } from './shell/core/constants'
 import { clearStaticShellSessionSnapshots } from './shell/core/snapshot-client'
+import {
+  destroyAllResidentFragments,
+  destroyResidentFragmentScope,
+  invalidateResidentFragments
+} from './shared/resident-fragment-manager'
 
 declare global {
   interface Window {
@@ -440,11 +445,17 @@ function setupServiceWorkerBridge() {
     const payload = event.data as Record<string, unknown> | null
     if (!payload || typeof payload.type !== 'string') return
     if (payload.type === 'sw:cache-refreshed') {
+      destroyAllResidentFragments({ parkedOnly: true })
       clearStaticShellSessionSnapshots()
       clearFragmentShellCache()
       dispatchSwEvent('prom:sw-cache-refreshed', { source: 'sw' })
     }
     if (payload.type === 'sw:cache-cleared') {
+      if (payload.scope === 'user' && typeof payload.userCacheKey === 'string') {
+        destroyResidentFragmentScope(buildUserFragmentCacheScope(payload.userCacheKey))
+      } else {
+        destroyAllResidentFragments()
+      }
       void clearScopedFragmentCaches(
         payload.scope === 'user' && typeof payload.userCacheKey === 'string'
           ? buildUserFragmentCacheScope(payload.userCacheKey)
@@ -475,6 +486,13 @@ function setupServiceWorkerBridge() {
           scopeKey: nextPayload.scopeKey,
           lang: nextPayload.lang
         })
+        invalidateResidentFragments({
+          scopeKey: nextPayload.scopeKey,
+          path: nextPayload.path,
+          lang: nextPayload.lang,
+          fragmentId: nextPayload.fragmentId,
+          parkedOnly: true
+        })
       })()
       dispatchSwEvent('prom:sw-resource-updated', payload)
     }
@@ -497,6 +515,13 @@ function setupServiceWorkerBridge() {
         clearFragmentShellCache(parsedKey.path, {
           scopeKey,
           lang: parsedKey.lang
+        })
+        invalidateResidentFragments({
+          scopeKey,
+          path: parsedKey.path,
+          lang: parsedKey.lang,
+          fragmentId: parsedKey.fragmentId,
+          parkedOnly: true
         })
       }
       dispatchSwEvent('prom:sw-resource-invalidated', payload)

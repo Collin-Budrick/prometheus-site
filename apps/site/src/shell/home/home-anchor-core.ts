@@ -12,6 +12,7 @@ import {
 } from './home-shared-runtime'
 import { HOME_FIRST_ANCHOR_PATCH_EVENT } from './home-anchor-patch-event'
 import { bootstrapStaticHomeAnchor } from './home-bootstrap-anchor'
+import { HOME_STATIC_ROUTE_KIND, STATIC_ROUTE_ATTR } from '../core/constants'
 
 const HOME_FRAGMENT_CARD_SELECTOR = '[data-static-fragment-card]'
 const HOME_BOOTSTRAP_INTENT_EVENTS = ['pointerdown', 'touchstart'] as const
@@ -116,6 +117,13 @@ export const installHomeStaticAnchorEntry = ({
     typeof liveDoc.querySelector === 'function'
       ? liveDoc.querySelector<HTMLElement>('.topbar-settings')
       : null
+  const isHomeRouteActive = () =>
+    Boolean(
+      readStaticHomeBootstrapData({ doc: liveDoc }) ||
+      liveDoc.querySelector?.(
+        `[${STATIC_ROUTE_ATTR}="${HOME_STATIC_ROUTE_KIND}"]`
+      )
+    )
 
   markStaticShellUserTiming('prom:home:static-entry-install')
   liveWin.__PROM_STATIC_HOME_ANCHOR_ENTRY__ = true
@@ -153,6 +161,9 @@ export const installHomeStaticAnchorEntry = ({
   }
 
   const startHomeWorkerRuntime = () => {
+    if (!isHomeRouteActive()) {
+      return
+    }
     const data = readStaticHomeBootstrapData({ doc: liveDoc })
     if (!data || !data.runtimePlanEntries.length) {
       return
@@ -176,22 +187,10 @@ export const installHomeStaticAnchorEntry = ({
   }
 
   const scheduleHomeWorkerRuntime = () => {
-    if (cancelWorkerRuntimeStart) {
+    if (cancelWorkerRuntimeStart || !isHomeRouteActive()) {
       return
     }
-
-    cancelWorkerRuntimeStart = scheduleTask(
-      () => {
-        cancelWorkerRuntimeStart = null
-        startHomeWorkerRuntime()
-      },
-      {
-        priority: 'background',
-        timeoutMs: 1800,
-        preferIdle: true,
-        waitForPaint: true
-      }
-    )
+    startHomeWorkerRuntime()
   }
 
   const isSettingsTriggerTarget = (target: EventTarget | null) => {
@@ -232,6 +231,9 @@ export const installHomeStaticAnchorEntry = ({
   }
 
   const startDeferredEntry = () => {
+    if (!isHomeRouteActive()) {
+      return Promise.resolve()
+    }
     if (deferredEntryPromise) {
       return deferredEntryPromise
     }
@@ -262,7 +264,7 @@ export const installHomeStaticAnchorEntry = ({
   }
 
   const scheduleDeferredEntryFallback = () => {
-    if (cancelDeferredEntryFallback || deferredEntryStarted) {
+    if (cancelDeferredEntryFallback || deferredEntryStarted || !isHomeRouteActive()) {
       return
     }
 
@@ -283,6 +285,9 @@ export const installHomeStaticAnchorEntry = ({
   }
 
   const startBootstrap = () => {
+    if (!isHomeRouteActive()) {
+      return
+    }
     if (startedBootstrap || liveWin.__PROM_STATIC_HOME_BOOTSTRAP__) return
     startedBootstrap = true
     liveWin.__PROM_STATIC_HOME_BOOTSTRAP__ = true
@@ -296,6 +301,9 @@ export const installHomeStaticAnchorEntry = ({
   }
 
   const requestBootstrap = () => {
+    if (!isHomeRouteActive()) {
+      return
+    }
     bootstrapRequested = true
     void prewarmBootstrapRuntime().catch((error) => {
       bootstrapRuntimePromise = null
@@ -318,6 +326,9 @@ export const installHomeStaticAnchorEntry = ({
   }
 
   function handlePointerDown(event: Event) {
+    if (!isHomeRouteActive()) {
+      return
+    }
     if (!resolveInteractionCard(event.target)) {
       return
     }
@@ -325,6 +336,9 @@ export const installHomeStaticAnchorEntry = ({
   }
 
   function handleFocusIn(event: Event) {
+    if (!isHomeRouteActive()) {
+      return
+    }
     if (!resolveInteractionCard(event.target)) {
       return
     }
@@ -332,6 +346,9 @@ export const installHomeStaticAnchorEntry = ({
   }
 
   function handleKeyDown() {
+    if (!isHomeRouteActive()) {
+      return
+    }
     if (!resolveInteractionCard(liveDoc.activeElement)) {
       return
     }
@@ -339,6 +356,9 @@ export const installHomeStaticAnchorEntry = ({
   }
 
   function handleSettingsEntryInteraction(event: Event) {
+    if (!isHomeRouteActive()) {
+      return
+    }
     const settingsTarget = resolveSettingsReplayTarget(event.target)
     if (!settingsTarget) {
       return

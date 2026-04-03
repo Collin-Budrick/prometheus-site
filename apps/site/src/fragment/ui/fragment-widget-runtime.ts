@@ -1,5 +1,10 @@
 import type { AttachHomeCollabRootOptions } from '../../shell/home/home-collab-entry'
 import type { HomeDemoKind } from '../../shell/home/home-demo-activate'
+import {
+  isResidentFragmentElement,
+  isResidentFragmentTracked,
+  registerResidentFragmentCleanup
+} from '../../shared/resident-fragment-manager'
 
 const FRAGMENT_WIDGET_SELECTOR = '[data-fragment-widget]'
 const FRAGMENT_WIDGET_PROPS_SELECTOR =
@@ -185,6 +190,10 @@ const normalizeWidgetCleanup = async (cleanup: WidgetCleanup) => {
   await cleanup
 }
 
+const createWidgetCleanup = (cleanup: WidgetCleanup) => () => {
+  void normalizeWidgetCleanup(cleanup)
+}
+
 const resolveHomeDemoKind = (value: string): HomeDemoKind | null => {
   switch (value) {
     case 'planner-demo':
@@ -367,11 +376,11 @@ export const createFragmentWidgetRuntime = ({
 
   const pruneDetached = () => {
     Array.from(attached.entries()).forEach(([element, cleanup]) => {
-      if (element.isConnected) {
+      if (element.isConnected || (isResidentFragmentElement(element) && isResidentFragmentTracked(element))) {
         return
       }
       attached.delete(element)
-      void normalizeWidgetCleanup(cleanup)
+      cleanup()
     })
     Array.from(attaching.keys()).forEach((element) => {
       if (!element.isConnected) {
@@ -420,9 +429,11 @@ export const createFragmentWidgetRuntime = ({
           target,
         })
         element.dataset.fragmentWidgetHydrated = 'true'
-        attached.set(element, () => {
-          void normalizeWidgetCleanup(cleanup)
-        })
+        const cleanupFn = createWidgetCleanup(cleanup)
+        attached.set(element, cleanupFn)
+        if (isResidentFragmentElement(element)) {
+          registerResidentFragmentCleanup(element, cleanupFn)
+        }
       } catch (error) {
         console.error('Fragment widget attach failed:', error)
       } finally {
@@ -577,7 +588,11 @@ export const createFragmentWidgetRuntime = ({
       eagerQueue.clear()
       Array.from(attached.entries()).forEach(([element, cleanup]) => {
         attached.delete(element)
-        void normalizeWidgetCleanup(cleanup)
+        if (isResidentFragmentElement(element)) {
+          registerResidentFragmentCleanup(element, cleanup)
+          return
+        }
+        cleanup()
       })
       attaching.clear()
     },

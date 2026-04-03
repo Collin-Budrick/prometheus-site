@@ -2,6 +2,8 @@ import type { NoSerialize } from '@builder.io/qwik'
 export {
   type FragmentMeta,
   type FragmentCacheStatus,
+  type FragmentResidentMode,
+  type FragmentResidentOption,
   type HeadOp,
   type RenderNode,
   type FragmentPayload,

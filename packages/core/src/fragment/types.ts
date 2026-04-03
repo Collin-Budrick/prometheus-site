@@ -16,6 +16,13 @@ export type FragmentCacheStatus = {
 }
 
 export type FragmentBootMode = 'html' | 'binary' | 'stream'
+export type FragmentResidentMode = 'park' | 'live'
+export type FragmentResidentOption =
+  | boolean
+  | {
+      key?: string | null
+      mode?: FragmentResidentMode
+    }
 
 export type HeadOp =
   | { op: 'title'; value: string }
@@ -72,6 +79,7 @@ export type FragmentHeightProfile = {
 export type FragmentPlanEntry = {
   id: string
   critical: boolean
+  resident?: FragmentResidentOption
   layout: {
     column: string
     inlineSpan?: number

@@ -7,6 +7,11 @@ import { loadHomeSettingsInteractionRuntime } from './runtime-loaders'
 import { ensureHomePostAnchorPreconnects } from './home-post-anchor-preconnect'
 import { bindHomeServerReachabilityStatus } from './home-bootstrap-ui'
 import {
+  HOME_STATIC_ROUTE_KIND,
+  STATIC_HOME_DATA_SCRIPT_ID,
+  STATIC_ROUTE_ATTR
+} from '../core/constants'
+import {
   markStaticShellUserTiming,
   measureStaticShellUserTiming
 } from './static-shell-performance'
@@ -188,6 +193,7 @@ export const installHomeStaticEntry = ({
   let widgetRuntime:
     | import('../../fragment/ui/fragment-widget-runtime').FragmentWidgetRuntime
     | null = null
+  let widgetRuntimeRoot: ParentNode | null = null
   let cancelWidgetRuntimeStart: (() => void) | null = null
   let deferredRuntimePromise: Promise<void> | null = null
   let cancelDeferredGlobalStylesheetStart: (() => void) | null = null
@@ -205,6 +211,13 @@ export const installHomeStaticEntry = ({
     liveDoc.querySelector<HTMLElement>('[data-static-shell-region="main"]') ??
     liveDoc.querySelector<HTMLElement>('[data-static-home-root]')
   const settingsRoot = liveDoc.querySelector<HTMLElement>('.topbar-settings')
+  const isHomeRouteActive = () =>
+    Boolean(
+      liveDoc.getElementById?.(STATIC_HOME_DATA_SCRIPT_ID) ||
+      liveDoc.querySelector?.(
+        `[${STATIC_ROUTE_ATTR}="${HOME_STATIC_ROUTE_KIND}"]`
+      )
+    )
   const isSettingsTriggerTarget = (target: EventTarget | null) => {
     if (!(target instanceof Element)) {
       return false
@@ -246,6 +259,9 @@ export const installHomeStaticEntry = ({
     eagerLifecycleRuntime?: boolean
     postLcpIntentTarget?: EventTarget | null
   }) => {
+    if (!isHomeRouteActive()) {
+      return Promise.resolve()
+    }
     if (deferredRuntimePromise) {
       return deferredRuntimePromise
     }
@@ -278,6 +294,9 @@ export const installHomeStaticEntry = ({
   }
 
   function handleEarlySettingsInteraction(event: Event) {
+    if (!isHomeRouteActive()) {
+      return
+    }
     const settingsTarget = resolveSettingsReplayTarget(event.target)
     if (!settingsTarget) {
       return
@@ -292,6 +311,9 @@ export const installHomeStaticEntry = ({
   primeHomeSettingsInteractionHandler = async (
     target: EventTarget | null = null
   ) => {
+    if (!isHomeRouteActive()) {
+      return
+    }
     const settingsTarget = resolveSettingsReplayTarget(target)
     void startDeferredRuntime({
       eagerLifecycleRuntime: true,
@@ -301,7 +323,7 @@ export const installHomeStaticEntry = ({
   }
 
   const scheduleDeferredRuntime = () => {
-    if (cancelDeferredRuntimeStart || deferredRuntimePromise) {
+    if (cancelDeferredRuntimeStart || deferredRuntimePromise || !isHomeRouteActive()) {
       return
     }
 
@@ -320,7 +342,7 @@ export const installHomeStaticEntry = ({
   }
 
   const scheduleDeferredGlobalStylesheet = () => {
-    if (cancelDeferredGlobalStylesheetStart) {
+    if (cancelDeferredGlobalStylesheetStart || !isHomeRouteActive()) {
       return
     }
 
@@ -347,12 +369,24 @@ export const installHomeStaticEntry = ({
   }
 
   const startWidgetRuntime = (target: EventTarget | null = null) =>
-    prewarmWidgetRuntime()
+    !isHomeRouteActive()
+      ? Promise.resolve()
+      : prewarmWidgetRuntime()
       .then((module) => {
+        const nextRoot = readWidgetRoot()
+        if (!nextRoot) {
+          return
+        }
+        if (widgetRuntime && widgetRuntimeRoot !== nextRoot) {
+          widgetRuntime.destroy()
+          widgetRuntime = null
+          widgetRuntimeRoot = null
+        }
         widgetRuntime ??= module.createFragmentWidgetRuntime({
-          root: readWidgetRoot(),
+          root: nextRoot,
           observeMutations: true
         })
+        widgetRuntimeRoot = nextRoot
         if (target) {
           widgetRuntime.handleInteraction(target)
         }
@@ -363,7 +397,7 @@ export const installHomeStaticEntry = ({
       })
 
   const scheduleWidgetRuntime = () => {
-    if (cancelWidgetRuntimeStart || widgetRuntimePromise || widgetRuntime) {
+    if (cancelWidgetRuntimeStart || widgetRuntimePromise || widgetRuntime || !isHomeRouteActive()) {
       return
     }
 
@@ -456,6 +490,9 @@ export const installHomeStaticEntry = ({
   }
 
   function handlePointerDown(event: Event) {
+    if (!isHomeRouteActive()) {
+      return
+    }
     if (!resolveInteractionCard(event.target)) {
       return
     }
@@ -464,6 +501,9 @@ export const installHomeStaticEntry = ({
   }
 
   function handleFocusIn(event: Event) {
+    if (!isHomeRouteActive()) {
+      return
+    }
     if (!resolveInteractionCard(event.target)) {
       return
     }
@@ -471,6 +511,9 @@ export const installHomeStaticEntry = ({
   }
 
   function handleKeyDown() {
+    if (!isHomeRouteActive()) {
+      return
+    }
     if (!resolveInteractionCard(liveDoc.activeElement)) {
       return
     }
@@ -548,6 +591,7 @@ export const installHomeStaticEntry = ({
     cleanupServerReachability()
     widgetRuntime?.destroy()
     widgetRuntime = null
+    widgetRuntimeRoot = null
     liveWin.__PROM_STATIC_HOME_ENTRY__ = false
   }
 }

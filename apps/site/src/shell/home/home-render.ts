@@ -1,3 +1,4 @@
+import type { FragmentResidentMode } from '@core/fragments'
 import { h, renderToHtml, t } from '@core/fragment/tree'
 import type { RenderNode } from '@core/fragment/types'
 import type {
@@ -41,6 +42,8 @@ type DemoWidgetNodeOptions = {
   fragmentId?: string
   widgetId?: string
   priority?: FragmentWidgetPriority
+  residentKey?: string
+  residentMode?: FragmentResidentMode
 }
 
 const HOME_FRAGMENT_KIND_BY_ID: Record<string, HomeStaticFragmentKind> = {
@@ -174,25 +177,49 @@ const toDemoWidgetKind = (kind: DemoKind): DemoWidgetKind => {
   }
 }
 
+const resolveDemoResidentKey = (
+  kind: DemoKind,
+  fragmentId: string | undefined,
+  widgetId: string | undefined
+) => {
+  if (kind !== 'preact-island') {
+    return null
+  }
+  return widgetId ?? (fragmentId ? buildFragmentWidgetId(fragmentId, toDemoWidgetKind(kind), 'resident') : null)
+}
+
+const toFragmentResidentMode = (value?: string): FragmentResidentMode | undefined => {
+  if (value === 'park' || value === 'live') {
+    return value
+  }
+  return undefined
+}
+
 const buildDemoWidgetNode = (
   kind: DemoKind,
   shell: RenderNode,
   options: DemoWidgetNodeOptions = {},
   props?: Record<string, unknown>
-) =>
-  createFragmentWidgetMarkerNode({
+) => {
+  const widgetId =
+    options.widgetId ??
+    buildFragmentWidgetId(
+      options.fragmentId ?? 'fragment://page/home/unknown@v1',
+      toDemoWidgetKind(kind),
+      'shell'
+    )
+
+  return createFragmentWidgetMarkerNode({
     kind: toDemoWidgetKind(kind),
-    id:
-      options.widgetId ??
-      buildFragmentWidgetId(
-        options.fragmentId ?? 'fragment://page/home/unknown@v1',
-        toDemoWidgetKind(kind),
-        'shell'
-      ),
+    id: widgetId,
     priority: options.priority ?? 'critical',
+    residentKey:
+      options.residentKey ?? resolveDemoResidentKey(kind, options.fragmentId, widgetId),
+    residentMode: options.residentMode,
     props,
     shell
   })
+}
 
 const buildPlannerPreviewNode = (copy: HomeStaticCopyBundle, options: DemoWidgetNodeOptions = {}) =>
   buildDemoWidgetNode(
@@ -710,7 +737,12 @@ const getDemoWidgetNodeOptions = (
 ): DemoWidgetNodeOptions => ({
   fragmentId,
   widgetId: node.type === 'element' ? node.attrs?.['data-fragment-widget-id'] : undefined,
-  priority: node.type === 'element' ? toFragmentWidgetPriority(node.attrs?.['data-fragment-widget-priority']) : undefined
+  priority: node.type === 'element' ? toFragmentWidgetPriority(node.attrs?.['data-fragment-widget-priority']) : undefined,
+  residentKey: node.type === 'element' ? node.attrs?.['data-fragment-resident-key'] : undefined,
+  residentMode:
+    node.type === 'element'
+      ? toFragmentResidentMode(node.attrs?.['data-fragment-resident-mode'])
+      : undefined
 })
 
 const isHomePreviewDemoBoundaryNode = (node: RenderNode) =>

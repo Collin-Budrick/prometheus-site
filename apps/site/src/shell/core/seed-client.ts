@@ -76,6 +76,27 @@ export const readStaticShellSeed = (
   return cloneStaticShellSeed(parsed)
 }
 
+export const syncStaticShellSeedFromDocument = (
+  doc: StaticShellSeedDocument = typeof document !== 'undefined' ? document : null
+) => {
+  const resolvedDoc = resolveSeedDocument(doc)
+  if (!resolvedDoc || typeof resolvedDoc.getElementById !== 'function') {
+    return null
+  }
+
+  const parsed = readStaticShellSeedScript(resolvedDoc)
+  if (!parsed) return null
+
+  if (canUseSeedCache(resolvedDoc)) {
+    const host = getSeedCacheHost()
+    if (host) {
+      host[STATIC_SHELL_SEED_CACHE_KEY] = cloneStaticShellSeed(parsed)
+    }
+  }
+
+  return cloneStaticShellSeed(parsed)
+}
+
 export const writeStaticShellSeed = (patch: Partial<StaticShellSeed>) => {
   if (typeof document === 'undefined' || typeof document.getElementById !== 'function') {
     return null

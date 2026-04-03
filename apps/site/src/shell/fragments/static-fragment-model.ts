@@ -1,3 +1,4 @@
+import type { FragmentResidentMode } from '@core/fragments'
 import { getFragmentCssHref } from '../../fragment/fragment-css'
 import type {
   FragmentPayload,
@@ -14,6 +15,10 @@ import { renderStaticFragmentPayloadHtml } from './static-fragment-render'
 import { resolveEffectiveMainGridEntries } from '../../fragment/ui/fragment-shell-layout'
 import { getStaticShellRouteConfig } from '../core/constants'
 import {
+  resolveResidentFragmentKey,
+  resolveResidentFragmentMode
+} from '../../shared/resident-fragment-manager'
+import {
   buildFragmentHeightPlanSignature,
   buildFragmentHeightVersionSignature,
   readFragmentHeightCookieHeights,
@@ -28,6 +33,8 @@ const DEFAULT_RESERVED_CARD_HEIGHT = 180
 export type StaticFragmentRouteEntryModel = {
   id: string
   critical?: boolean
+  residentKey?: string | null
+  residentMode?: FragmentResidentMode | null
   size?: FragmentPlanEntry['layout']['size']
   layout: FragmentPlanEntry['layout']
   reservedHeight: number
@@ -199,6 +206,8 @@ export const buildStaticFragmentRouteModel = ({
     return {
       id: entry.id,
       critical: entry.critical || undefined,
+      residentKey: resolveResidentFragmentKey(entry.resident, entry.id),
+      residentMode: resolveResidentFragmentMode(entry.resident),
       size: entry.layout.size,
       layout: entry.layout,
       reservedHeight,

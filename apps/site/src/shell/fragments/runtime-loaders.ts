@@ -7,6 +7,7 @@ const FRAGMENT_HEIGHT_PATCH_RUNTIME_ASSET_PATH =
 
 export type FragmentBootstrapRuntimeModule = {
   bootstrapStaticFragmentShell: () => Promise<void>
+  disposeStaticFragmentShell?: () => Promise<void>
 }
 
 export type FragmentHeightPatchRuntimeModule = {

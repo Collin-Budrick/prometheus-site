@@ -95,6 +95,11 @@ import {
   readStaticShellTheme,
 } from "./settings-overlay-dom";
 import { acquirePretextDomController } from "../pretext/pretext-dom";
+import {
+  buildResidentFragmentAttrs,
+  parkResidentSubtreesWithin,
+  restoreResidentSubtreesWithin,
+} from "../../shared/resident-fragment-manager";
 
 const loadStaticAuthClient = () => import("../auth/auth-client");
 const loadStaticSettingsController = () =>
@@ -1222,6 +1227,15 @@ const destroyController = async (
   controller.cleanupFns.splice(0).forEach((cleanup) => cleanup());
 };
 
+export const disposeStaticFragmentShell = async () => {
+  if (!activeController) {
+    return;
+  }
+  const controller = activeController;
+  activeController = null;
+  await destroyController(controller);
+};
+
 const buildStaticFragmentMarkup = (model: StaticFragmentRouteModel) => {
   const nonce = getCspNonce();
   const nonceAttr = nonce ? ` nonce="${escapeHtmlAttr(nonce)}"` : "";
@@ -1247,7 +1261,12 @@ const buildStaticFragmentMarkup = (model: StaticFragmentRouteModel) => {
         entry.mobileWidthBucket && entry.mobileWidthBucket !== entry.desktopWidthBucket
           ? ` ${STATIC_FRAGMENT_WIDTH_BUCKET_MOBILE_ATTR}="${escapeHtmlAttr(entry.mobileWidthBucket)}"`
           : "";
-      return `<article class="fragment-card fragment-card-static-home" data-fragment-id="${entry.id}" data-fragment-height-hint="${entry.reservedHeight}"${layoutAttr}${criticalAttr} data-fragment-loaded="true" data-fragment-ready="true" data-fragment-stage="ready" data-reveal-phase="visible" data-reveal-locked="false" data-draggable="false" data-ready-stagger-state="done"${sizeAttr}${versionAttr}${desktopWidthBucketAttr}${mobileWidthBucketAttr} ${STATIC_FRAGMENT_CARD_ATTR}="true" style="--fragment-reserved-height:${entry.reservedHeight}px;grid-column:${column};"><div class="fragment-card-body" ${STATIC_FRAGMENT_BODY_ATTR}="${entry.id}"><div class="fragment-html">${entry.html}</div></div></article>`;
+      const residentAttrs = Object.entries(
+        buildResidentFragmentAttrs(entry.residentKey, entry.residentMode ?? 'park')
+      )
+        .map(([key, value]) => ` ${key}="${escapeHtmlAttr(value)}"`)
+        .join("");
+      return `<article class="fragment-card fragment-card-static-home" data-fragment-id="${entry.id}" data-fragment-height-hint="${entry.reservedHeight}"${layoutAttr}${criticalAttr} data-fragment-loaded="true" data-fragment-ready="true" data-fragment-stage="ready" data-reveal-phase="visible" data-reveal-locked="false" data-draggable="false" data-ready-stagger-state="done"${sizeAttr}${versionAttr}${desktopWidthBucketAttr}${mobileWidthBucketAttr}${residentAttrs} ${STATIC_FRAGMENT_CARD_ATTR}="true" style="--fragment-reserved-height:${entry.reservedHeight}px;grid-column:${column};"><div class="fragment-card-body" ${STATIC_FRAGMENT_BODY_ATTR}="${entry.id}"><div class="fragment-html">${entry.html}</div></div></article>`;
     })
     .join("");
 
@@ -1291,7 +1310,9 @@ const hydrateProtectedStaticFragments = async (
     `[${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_MAIN_REGION}"]`,
   );
   if (!mainRegion) return;
+  parkResidentSubtreesWithin(mainRegion);
   setTrustedInnerHtml(mainRegion, buildStaticFragmentMarkup(model), "server");
+  restoreResidentSubtreesWithin(mainRegion);
   controller.routeData = model.routeData;
 };
 
@@ -1415,7 +1436,7 @@ export const bootstrapStaticFragmentShell = async () => {
 
   seedLanguageResources(shellSeed.lang, shellSeed.languageSeed ?? {});
   setDocumentLang(shellSeed.lang);
-  await destroyController(activeController);
+  await disposeStaticFragmentShell();
 
   const routeData = readRouteData(shellSeed);
   const controller: StaticFragmentController = {

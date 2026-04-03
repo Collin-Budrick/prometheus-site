@@ -453,4 +453,14 @@ describe('snapshot-client', () => {
       }
     ])
   })
+
+  it('scrubs hydrated widget markers from captured snapshot HTML', () => {
+    regions.get(STATIC_SHELL_MAIN_REGION)!.innerHTML =
+      `<main ${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_MAIN_REGION}"><section data-fragment-widget="preact-island" data-fragment-widget-hydrated="true" data-fragment-resident="true" data-fragment-resident-key="resident:home" data-fragment-resident-state="attached"></section></main>`
+
+    const snapshot = captureCurrentStaticShellSnapshot('/', 'ja')
+
+    expect(snapshot?.regions.main).toContain('data-fragment-widget-hydrated="false"')
+    expect(snapshot?.regions.main).not.toContain('data-fragment-resident-state=')
+  })
 })

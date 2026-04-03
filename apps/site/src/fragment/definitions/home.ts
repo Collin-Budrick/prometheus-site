@@ -1,3 +1,4 @@
+import type { FragmentResidentMode } from '@core/fragments'
 import { buildFragmentPlan } from '@core/fragment/planner'
 import { registerFragmentDefinitions, setFragmentPlanBuilder } from '@core/fragment/registry'
 import { h, t as textNode } from '@core/fragment/tree'
@@ -83,12 +84,16 @@ const renderHomeWidgetMarker = (
   kind: 'planner-demo' | 'wasm-renderer-demo' | 'react-binary-demo' | 'preact-island' | 'home-collab',
   shell: ReturnType<typeof h>,
   props?: Record<string, unknown>,
+  residentKey?: string | null,
+  residentMode: FragmentResidentMode = 'park',
   priority: 'critical' | 'visible' | 'deferred' = 'critical'
 ) =>
   createFragmentWidgetMarkerNode({
     kind,
     id: buildFragmentWidgetId(fragmentId, kind, 'shell'),
     priority,
+    residentKey,
+    residentMode,
     props,
     shell
   })
@@ -191,7 +196,9 @@ const island: FragmentDefinition = {
           text(preactDemo.preview?.meta ?? preactDemo.title),
           preactDemo.preview?.props ? { ...preactDemo.preview.props, label: t(preactDemo.preview.props.label ?? preactDemo.title) } : undefined
         ),
-        preactDemo.preview?.props ? { ...preactDemo.preview.props, label: t(preactDemo.preview.props.label ?? preactDemo.title) } : undefined
+        preactDemo.preview?.props ? { ...preactDemo.preview.props, label: t(preactDemo.preview.props.label ?? preactDemo.title) } : undefined,
+        buildFragmentWidgetId(preactDemo.fragmentId, 'preact-island', 'shell'),
+        'live'
       )
     ])
   }

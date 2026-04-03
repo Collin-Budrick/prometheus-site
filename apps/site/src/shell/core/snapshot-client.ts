@@ -22,10 +22,16 @@ import {
 } from './snapshot'
 import type { StaticDockState } from './seed-client'
 import { replayStaticSnapshotReadyStagger } from './snapshot-ready-stagger'
+import {
+  parkResidentSubtreesWithin,
+  restoreResidentSubtreesWithin
+} from '../../shared/resident-fragment-manager'
 
 const STATIC_LANG_STORAGE_KEYS = ['prometheus-lang', 'prometheus:pref:locale'] as const
 const STATIC_LANG_COOKIE_KEY = 'prometheus-lang'
 const SESSION_SNAPSHOT_STORAGE_PREFIX = 'prometheus:static-shell:session-snapshot:v1:'
+const HYDRATED_WIDGET_ATTR_RE = /\sdata-fragment-widget-hydrated=(["'])true\1/gi
+const RESIDENT_STATE_ATTR_RE = /\sdata-fragment-resident-state=(["'])[^"']*\1/gi
 
 let snapshotManifestPromise: Promise<StaticShellSnapshotManifest> | null = null
 const snapshotCache = new Map<string, Promise<StaticShellSnapshot>>()
@@ -239,6 +245,11 @@ const serializeDocumentType = (doc: Document) => {
   return `${serialized}>`
 }
 
+const sanitizeStaticShellSnapshotHtml = (html: string) =>
+  html
+    .replace(HYDRATED_WIDGET_ATTR_RE, ' data-fragment-widget-hydrated="false"')
+    .replace(RESIDENT_STATE_ATTR_RE, '')
+
 const buildCurrentStaticShellDocumentHtml = (doc: Document | null) => {
   if (!doc) {
     return null
@@ -249,7 +260,9 @@ const buildCurrentStaticShellDocumentHtml = (doc: Document | null) => {
     return null
   }
 
-  return `${serializeDocumentType(doc)}\n${root.outerHTML}`
+  return sanitizeStaticShellSnapshotHtml(
+    `${serializeDocumentType(doc)}\n${root.outerHTML}`
+  )
 }
 
 const postStaticShellDocumentToServiceWorker = ({
@@ -461,9 +474,11 @@ export const applyStaticShellSnapshot = (
     dockState?: StaticDockState
   } = {}
 ) => {
+  parkResidentSubtreesWithin(typeof document !== 'undefined' ? document : null)
   replaceStaticShellRegionHtml(STATIC_SHELL_HEADER_REGION, snapshot.regions.header)
   replaceStaticShellRegionHtml(STATIC_SHELL_MAIN_REGION, snapshot.regions.main)
   replaceStaticShellDockRegion(snapshot.regions.dock, options.dockState)
+  restoreResidentSubtreesWithin(typeof document !== 'undefined' ? document : null)
   document.title = snapshot.title
   replayStaticSnapshotReadyStagger()
 }
@@ -489,9 +504,9 @@ export const captureCurrentStaticShellSnapshot = (
     lang,
     title: doc.title,
     regions: {
-      header: header.outerHTML,
-      main: main.outerHTML,
-      dock: dock.outerHTML
+      header: sanitizeStaticShellSnapshotHtml(header.outerHTML),
+      main: sanitizeStaticShellSnapshotHtml(main.outerHTML),
+      dock: sanitizeStaticShellSnapshotHtml(dock.outerHTML)
     }
   }
   liveSessionSnapshotCache.set(buildSessionSnapshotCacheKey(snapshotKey, lang), snapshot)
