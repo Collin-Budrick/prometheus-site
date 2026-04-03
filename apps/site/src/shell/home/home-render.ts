@@ -516,6 +516,18 @@ const buildPreactIslandActiveNode = (
           h('div', { class: 'preact-island-stage-time', 'aria-live': 'polite' }, [t('1:00')]),
           h('div', { class: 'preact-island-stage-sub' }, [t(copy.preactIsland.activeSub)])
         ]),
+        h('div', { class: 'preact-island-controls' }, [
+          h(
+            'button',
+            { class: 'preact-island-adjust', type: 'button', 'data-adjust-seconds': '-10' },
+            [t('-10s')]
+          ),
+          h(
+            'button',
+            { class: 'preact-island-adjust', type: 'button', 'data-adjust-seconds': '10' },
+            [t('+10s')]
+          )
+        ]),
         h('button', { class: 'preact-island-action', type: 'button' }, [t(copy.preactIsland.reset)])
       ]
     ),

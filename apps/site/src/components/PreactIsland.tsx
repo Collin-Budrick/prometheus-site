@@ -1,8 +1,19 @@
 import { component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { effect } from '@preact/signals-core'
 import { getPreactIslandCopy } from '../lang/client'
+import {
+  PREACT_COUNTDOWN_DEFAULT_SECONDS,
+  PREACT_COUNTDOWN_STEP_SECONDS,
+  adjustPreactIslandCountdown,
+  formatPreactIslandClock,
+  resolvePreactIslandProgress,
+  resolvePreactIslandRemainingSeconds,
+  resolvePreactIslandTickDelayMs,
+  showPreactIslandCompletionNotification
+} from '../shared/preact-island-countdown'
 import { createResidentFragmentExecutionGate } from '../shared/resident-fragment-execution-gate'
 import { lang } from '../shared/lang-store'
+import { requestNativeNotificationPermission } from '../native/notifications'
 
 type PreactIslandProps = {
   label?: string
@@ -42,11 +53,14 @@ export const PreactIsland = component$(({ label }: PreactIslandProps) => {
       const Island = () => {
         const langValue = useLangValue()
         const copy = getCopy(langValue)
-        const totalSeconds = 60
-        const [remaining, setRemaining] = useState(totalSeconds)
+        const [limitSeconds, setLimitSeconds] = useState(PREACT_COUNTDOWN_DEFAULT_SECONDS)
+        const [remaining, setRemaining] = useState(PREACT_COUNTDOWN_DEFAULT_SECONDS)
         const [resetKey, setResetKey] = useState(0)
         const timeoutRef = useRef<number | null>(null)
         const remainingRef = useRef(remaining)
+        const limitRef = useRef(limitSeconds)
+        const deadlineRef = useRef<number | null>(Date.now() + PREACT_COUNTDOWN_DEFAULT_SECONDS * 1000)
+        const notifiedRef = useRef(false)
 
         const clearTick = () => {
           if (timeoutRef.current !== null) {
@@ -59,11 +73,37 @@ export const PreactIsland = component$(({ label }: PreactIslandProps) => {
           if (timeoutRef.current !== null) return
           if (!executionGate.isActive()) return
           if (remainingRef.current <= 0) return
+          if (!deadlineRef.current) {
+            deadlineRef.current = Date.now() + remainingRef.current * 1000
+          }
+          const delayMs = resolvePreactIslandTickDelayMs(deadlineRef.current)
+          if (delayMs <= 0) {
+            const nextRemaining = resolvePreactIslandRemainingSeconds(deadlineRef.current)
+            remainingRef.current = nextRemaining
+            setRemaining(nextRemaining)
+            if (nextRemaining === 0 && !notifiedRef.current) {
+              notifiedRef.current = true
+              void showPreactIslandCompletionNotification(label ?? copy.label, copy, window.location.href)
+            }
+            return
+          }
           timeoutRef.current = window.setTimeout(() => {
             timeoutRef.current = null
-            setRemaining((value: number) => (value > 0 ? value - 1 : 0))
-          }, 1000)
+            const nextRemaining = resolvePreactIslandRemainingSeconds(deadlineRef.current)
+            remainingRef.current = nextRemaining
+            setRemaining(nextRemaining)
+            if (nextRemaining === 0 && !notifiedRef.current) {
+              notifiedRef.current = true
+              void showPreactIslandCompletionNotification(label ?? copy.label, copy, window.location.href)
+              return
+            }
+            scheduleTick()
+          }, delayMs)
         }
+
+        useEffect(() => {
+          limitRef.current = limitSeconds
+        }, [limitSeconds])
 
         useEffect(() => {
           remainingRef.current = remaining
@@ -80,6 +120,12 @@ export const PreactIsland = component$(({ label }: PreactIslandProps) => {
               scheduleTick()
               return
             }
+            if (deadlineRef.current && remainingRef.current > 0) {
+              const pausedRemaining = resolvePreactIslandRemainingSeconds(deadlineRef.current)
+              deadlineRef.current = null
+              remainingRef.current = pausedRemaining
+              setRemaining(pausedRemaining)
+            }
             clearTick()
           })
           return () => {
@@ -88,14 +134,36 @@ export const PreactIsland = component$(({ label }: PreactIslandProps) => {
           }
         }, [])
 
+        useEffect(() => {
+          void requestNativeNotificationPermission()
+        }, [])
+
+        const applyCountdownState = (nextLimit: number, nextRemaining: number) => {
+          clearTick()
+          limitRef.current = nextLimit
+          remainingRef.current = nextRemaining
+          deadlineRef.current = nextRemaining > 0 ? Date.now() + nextRemaining * 1000 : null
+          notifiedRef.current = nextRemaining === 0
+          setLimitSeconds(nextLimit)
+          setRemaining(nextRemaining)
+          if (nextRemaining > 0) {
+            scheduleTick()
+          }
+        }
+
         const handleReset = () => {
-          setRemaining(totalSeconds)
+          const nextLimit = Math.max(0, limitRef.current)
+          applyCountdownState(nextLimit, nextLimit)
           setResetKey((value: number) => value + 1)
         }
 
-        const minutes = Math.floor(remaining / 60)
-        const seconds = String(remaining % 60).padStart(2, '0')
-        const progress = remaining / totalSeconds
+        const handleAdjust = (deltaSeconds: number) => {
+          const next = adjustPreactIslandCountdown(limitRef.current, remainingRef.current, deltaSeconds)
+          applyCountdownState(next.limitSeconds, next.remainingSeconds)
+        }
+
+        const countdownLabel = formatPreactIslandClock(remaining)
+        const progress = resolvePreactIslandProgress(remaining, limitSeconds)
         const radius = 48
         const circumference = Math.round(2 * Math.PI * radius)
         const offset = Math.round(circumference * (1 - progress))
@@ -107,7 +175,7 @@ export const PreactIsland = component$(({ label }: PreactIslandProps) => {
           h(
             'div',
             { class: 'preact-island-timer', 'aria-live': 'polite' },
-            remaining === 0 ? copy.ready : `${minutes}:${seconds}`
+            remaining === 0 ? copy.ready : countdownLabel
           ),
           h(
             'div',
@@ -154,15 +222,36 @@ export const PreactIsland = component$(({ label }: PreactIslandProps) => {
               h(
                 'div',
                 { class: 'preact-island-stage-time', 'aria-live': 'polite' },
-                remaining === 0 ? '0:00' : `${minutes}:${seconds}`
+                remaining === 0 ? '0:00' : countdownLabel
               ),
               h('div', { class: 'preact-island-stage-sub' }, remaining === 0 ? copy.readySub : copy.activeSub)
             ]
           ),
+          h('div', { class: 'preact-island-controls' }, [
+            h(
+              'button',
+              {
+                class: 'preact-island-adjust',
+                type: 'button',
+                onClick: () => handleAdjust(-PREACT_COUNTDOWN_STEP_SECONDS)
+              },
+              '-10s'
+            ),
+            h(
+              'button',
+              {
+                class: 'preact-island-adjust',
+                type: 'button',
+                onClick: () => handleAdjust(PREACT_COUNTDOWN_STEP_SECONDS)
+              },
+              '+10s'
+            )
+          ]),
           h(
             'button',
             {
               class: 'preact-island-action',
+              type: 'button',
               onClick: handleReset
             },
             copy.reset

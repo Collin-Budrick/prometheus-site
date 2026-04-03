@@ -1,5 +1,9 @@
-import { afterEach, describe, expect, it } from 'bun:test'
-import { handleNativeNotificationOpen, requestNativeNotificationPermission } from './notifications'
+import { afterEach, describe, expect, it, mock } from 'bun:test'
+import {
+  handleNativeNotificationOpen,
+  requestNativeNotificationPermission,
+  showNativeNotification
+} from './notifications'
 
 type TestWindow = EventTarget & {
   location: {
@@ -12,6 +16,11 @@ type TestWindow = EventTarget & {
   }
   navigator: {
     userAgent: string
+    serviceWorker?: {
+      ready?: Promise<{
+        showNotification: (title: string, options?: NotificationOptions) => Promise<void>
+      }>
+    }
   }
   history: {
     pushState: (_state: unknown, _title: string, path: string) => void
@@ -84,5 +93,39 @@ describe('native notifications', () => {
     const handled = handleNativeNotificationOpen({ url: 'prometheus://open/chat?thread=1' })
     expect(handled).toBe(true)
     expect(win.location.pathname).toBe('/chat')
+  })
+
+  it('uses service worker notifications when permission is granted', async () => {
+    installWindow()
+    const showNotification = mock(async () => undefined)
+    ;(
+      globalThis as unknown as {
+        Notification: { permission: string }
+      }
+    ).Notification = { permission: 'granted' }
+    ;(
+      globalThis as unknown as {
+        window: TestWindow
+      }
+    ).window.navigator.serviceWorker = {
+      ready: Promise.resolve({
+        showNotification
+      })
+    }
+
+    const shown = await showNativeNotification({
+      title: 'Mission clock',
+      body: 'Countdown · 0:00 · Ready',
+      url: 'https://prometheus.dev/'
+    })
+
+    expect(shown).toBe(true)
+    expect(showNotification).toHaveBeenCalledWith('Mission clock', {
+      body: 'Countdown · 0:00 · Ready',
+      data: { url: 'https://prometheus.dev/' },
+      requireInteraction: undefined,
+      silent: undefined,
+      tag: undefined
+    })
   })
 })

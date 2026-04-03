@@ -396,8 +396,14 @@ const buildPreactIslandDemoTree = (root: MockElement) => {
     createElement(root, 'div', 'preact-island-stage-time'),
     createElement(root, 'div', 'preact-island-stage-sub')
   )
+  const controls = createElement(root, 'div', 'preact-island-controls')
+  const decrease = createElement(root, 'button', 'preact-island-adjust')
+  decrease.setAttribute('data-adjust-seconds', '-10')
+  const increase = createElement(root, 'button', 'preact-island-adjust')
+  increase.setAttribute('data-adjust-seconds', '10')
+  controls.append(decrease, increase)
   const action = createElement(root, 'button', 'preact-island-action')
-  root.replaceChildren(label, timer, stage, action)
+  root.replaceChildren(label, timer, stage, controls, action)
 }
 
 const shellSeed = {
@@ -927,6 +933,39 @@ describe('home-demo-activate', () => {
     result.setViewportActive?.(true)
     await new Promise((resolve) => setTimeout(resolve, 1100))
     expect(stageTime?.textContent).toBe('0:58')
+
+    result.cleanup()
+  })
+
+  it('adjusts the preact countdown in ten-second increments without going below zero', async () => {
+    const doc = new MockDocument()
+    installBootstrapScripts(doc)
+    installDomGlobals(doc)
+    const root = doc.createElement('div')
+    root.setAttribute('data-home-preview', 'compact')
+
+    const result = await activateHomeDemo({
+      root: root as never,
+      kind: 'preact-island',
+      props: {}
+    })
+
+    const stageTime = root.querySelector('.preact-island-stage-time')
+    const adjustButtons = root.querySelectorAll('.preact-island-adjust')
+    const decreaseButton = adjustButtons.find((button) => button.getAttribute('data-adjust-seconds') === '-10')
+    const increaseButton = adjustButtons.find((button) => button.getAttribute('data-adjust-seconds') === '10')
+
+    decreaseButton?.dispatchEvent(new Event('click'))
+    expect(stageTime?.textContent).toBe('0:50')
+
+    increaseButton?.dispatchEvent(new Event('click'))
+    expect(stageTime?.textContent).toBe('1:00')
+
+    for (let index = 0; index < 7; index += 1) {
+      decreaseButton?.dispatchEvent(new Event('click'))
+    }
+
+    expect(stageTime?.textContent).toBe('0:00')
 
     result.cleanup()
   })

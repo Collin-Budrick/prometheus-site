@@ -1,5 +1,15 @@
 import type { Lang, PlannerDemoCopy, ReactBinaryDemoCopy, WasmRendererDemoCopy } from '../../lang'
+import { requestNativeNotificationPermission } from '../../native/notifications'
 import { setTrustedInnerHtml } from '../../security/client'
+import {
+  PREACT_COUNTDOWN_DEFAULT_SECONDS,
+  adjustPreactIslandCountdown,
+  formatPreactIslandClock,
+  resolvePreactIslandProgress,
+  resolvePreactIslandRemainingSeconds,
+  resolvePreactIslandTickDelayMs,
+  showPreactIslandCompletionNotification
+} from '../../shared/preact-island-countdown'
 import { createResidentFragmentExecutionGate } from '../../shared/resident-fragment-execution-gate'
 import {
   getStaticHomeFragmentTextCopy,
@@ -33,7 +43,6 @@ type PreparedHomeDemoMarkup = Record<HomeDemoKind, string>
 
 const initialBinaryChunks = ['0101', '1100', '0011', '1010', '0110', '1001', '0001', '1110']
 const plannerStepDelayMs = 720
-const preactCountdownSeconds = 60
 const reactNodeLabels = ['Fragment', 'Card', 'Title', 'Copy', 'Badge']
 const reactDomPreviewTokens = ['<section>', '<h2>', '<p>', '<div.badge>']
 let didWarnMissingReactBinaryCopy = false
@@ -392,6 +401,10 @@ const renderPreactIslandDemoMarkup = () => `
     <div class="preact-island-stage-title"></div>
     <div class="preact-island-stage-time" aria-live="polite"></div>
     <div class="preact-island-stage-sub"></div>
+  </div>
+  <div class="preact-island-controls">
+    <button class="preact-island-adjust" data-adjust-seconds="-10" type="button">-10s</button>
+    <button class="preact-island-adjust" data-adjust-seconds="10" type="button">+10s</button>
   </div>
   <button class="preact-island-action" type="button"></button>
 `
@@ -1018,7 +1031,10 @@ const activatePreactIslandDemo = (
   const progressCircle = surface.querySelector<SVGCircleElement>('.preact-island-dial-progress')
   const dialHand = surface.querySelector<SVGLineElement>('.preact-island-dial-hand')
   const executionGate = createResidentFragmentExecutionGate({ root })
-  let remaining = preactCountdownSeconds
+  let limitSeconds = PREACT_COUNTDOWN_DEFAULT_SECONDS
+  let remaining = PREACT_COUNTDOWN_DEFAULT_SECONDS
+  let deadlineAtMs: number | null = Date.now() + PREACT_COUNTDOWN_DEFAULT_SECONDS * 1000
+  let didNotifyCompletion = false
   let timeoutHandle = 0
   let cancelDeferredTick: () => void = () => undefined
 
@@ -1032,18 +1048,45 @@ const activatePreactIslandDemo = (
     if (timeoutHandle) return
     if (!executionGate.isActive()) return
     if (remaining <= 0) return
+    if (!deadlineAtMs) {
+      deadlineAtMs = Date.now() + remaining * 1000
+    }
+    const delayMs = resolvePreactIslandTickDelayMs(deadlineAtMs)
+    if (delayMs <= 0) {
+      remaining = resolvePreactIslandRemainingSeconds(deadlineAtMs)
+      update()
+      if (remaining === 0 && !didNotifyCompletion) {
+        didNotifyCompletion = true
+        void showPreactIslandCompletionNotification(label, copy, window.location.href)
+      }
+      return
+    }
     timeoutHandle = window.setTimeout(() => {
       timeoutHandle = 0
-      remaining = Math.max(0, remaining - 1)
+      remaining = resolvePreactIslandRemainingSeconds(deadlineAtMs)
       update()
+      if (remaining === 0 && !didNotifyCompletion) {
+        didNotifyCompletion = true
+        void showPreactIslandCompletionNotification(label, copy, window.location.href)
+        return
+      }
       scheduleTick()
-    }, 1000)
+    }, delayMs)
+  }
+
+  const applyCountdownState = (nextLimit: number, nextRemaining: number) => {
+    clearTick()
+    limitSeconds = nextLimit
+    remaining = nextRemaining
+    deadlineAtMs = nextRemaining > 0 ? Date.now() + nextRemaining * 1000 : null
+    didNotifyCompletion = nextRemaining === 0
+    update()
+    scheduleTick()
   }
 
   const update = () => {
-    const minutes = Math.floor(remaining / 60)
-    const seconds = String(remaining % 60).padStart(2, '0')
-    const progress = remaining / preactCountdownSeconds
+    const countdownLabel = formatPreactIslandClock(remaining)
+    const progress = resolvePreactIslandProgress(remaining, limitSeconds)
     const circumference = Math.round(2 * Math.PI * 48)
     const offset = Math.round(circumference * (1 - progress))
     const rotation = Math.round((1 - progress) * -360)
@@ -1052,8 +1095,8 @@ const activatePreactIslandDemo = (
     surface.dataset.running = remaining > 0 ? 'true' : 'false'
     labelElement && (labelElement.textContent = label)
     stageTitle && (stageTitle.textContent = copy.countdown)
-    timer && (timer.textContent = remaining === 0 ? copy.ready : `${minutes}:${seconds}`)
-    stageTime && (stageTime.textContent = remaining === 0 ? '0:00' : `${minutes}:${seconds}`)
+    timer && (timer.textContent = remaining === 0 ? copy.ready : countdownLabel)
+    stageTime && (stageTime.textContent = remaining === 0 ? '0:00' : countdownLabel)
     stageSub && (stageSub.textContent = remaining === 0 ? copy.readySub : copy.activeSub)
 
     if (actionButton) {
@@ -1076,9 +1119,18 @@ const activatePreactIslandDemo = (
   const handleClick = (event: Event) => {
     const button = (event.target as HTMLElement | null)?.closest('button') as HTMLButtonElement | null
     if (!button || !surface.contains(button)) return
-    remaining = preactCountdownSeconds
-    update()
-    scheduleTick()
+    void requestNativeNotificationPermission()
+    if (button.classList.contains('preact-island-adjust')) {
+      const deltaSeconds = Number(button.getAttribute('data-adjust-seconds') ?? '0')
+      const next = adjustPreactIslandCountdown(
+        limitSeconds,
+        remaining,
+        Number.isFinite(deltaSeconds) ? deltaSeconds : 0
+      )
+      applyCountdownState(next.limitSeconds, next.remainingSeconds)
+      return
+    }
+    applyCountdownState(limitSeconds, limitSeconds)
   }
 
   const viewportPlayback = bindHomeDemoViewportPlayback(root, (active) => {
@@ -1087,6 +1139,11 @@ const activatePreactIslandDemo = (
 
   const unsubscribeExecution = executionGate.subscribe((isActive) => {
     if (!isActive) {
+      if (deadlineAtMs && remaining > 0) {
+        remaining = resolvePreactIslandRemainingSeconds(deadlineAtMs)
+        deadlineAtMs = null
+        update()
+      }
       clearTick()
       return
     }
@@ -1096,6 +1153,7 @@ const activatePreactIslandDemo = (
   surface.addEventListener('click', handleClick)
   update()
   cancelDeferredTick = scheduleHomeDemoEnhancement(() => {
+    void requestNativeNotificationPermission()
     scheduleTick()
   })
 

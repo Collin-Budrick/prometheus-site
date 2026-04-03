@@ -59,6 +59,53 @@ const requestBrowserPermission = async () => {
 
 export const requestNativeNotificationPermission = async () => requestBrowserPermission()
 
+type NativeNotificationOptions = {
+  title: string
+  body?: string
+  tag?: string
+  url?: string
+  requireInteraction?: boolean
+  silent?: boolean
+}
+
+export const showNativeNotification = async ({
+  title,
+  body,
+  tag,
+  url,
+  requireInteraction,
+  silent
+}: NativeNotificationOptions) => {
+  if (typeof window === 'undefined' || typeof Notification === 'undefined') return false
+  if (Notification.permission !== 'granted') return false
+
+  const data = url ? { url } : undefined
+  const options: NotificationOptions = {
+    body,
+    tag,
+    data,
+    requireInteraction,
+    silent
+  }
+
+  try {
+    const registration = await window.navigator.serviceWorker?.ready
+    if (registration?.showNotification) {
+      await registration.showNotification(title, options)
+      return true
+    }
+  } catch {
+    // Fall back to the page Notification API when the service worker path is unavailable.
+  }
+
+  try {
+    new Notification(title, options)
+    return true
+  } catch {
+    return false
+  }
+}
+
 export const initNativeNotifications = async () => {
   if (initialized || typeof window === 'undefined') return
   initialized = true

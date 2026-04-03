@@ -145,6 +145,15 @@
     color: rgb(var(--ink));
   }
 
+  .preact-island-controls {
+    display: inline-flex;
+    gap: 10px;
+    grid-column: 1 / -1;
+    justify-self: center;
+    flex-wrap: wrap;
+  }
+
+  .preact-island-adjust,
   .preact-island-action {
     @apply bg-white mt-1 px-4 py-2 border border-slate-200 rounded-full;
     @apply font-mono text-[11px] text-slate-600 uppercase tracking-[0.35em];
@@ -152,8 +161,6 @@
     align-items: center;
     justify-content: center;
     line-height: 1;
-    grid-column: 1 / -1;
-    justify-self: center;
     transition:
       border-color 160ms ease,
       transform 160ms ease,
@@ -164,6 +171,12 @@
     color: rgb(var(--muted));
   }
 
+  .preact-island-action {
+    grid-column: 1 / -1;
+    justify-self: center;
+  }
+
+  .preact-island-adjust:hover,
   .preact-island-action:hover {
     @apply border-teal-300 text-teal-700;
     transform: translateY(-1px);
@@ -200,6 +213,8 @@
       linear-gradient(160deg, rgb(var(--surface) / 0.48), rgb(var(--surface-soft) / 0.28));
   }
 
+  .preact-island-adjust,
+  .preact-island-adjust:hover,
   .preact-island-action,
   .preact-island-action:hover {
     background:

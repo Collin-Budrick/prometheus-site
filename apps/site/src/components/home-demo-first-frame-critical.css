@@ -466,6 +466,15 @@
     stroke-width: 2;
   }
 
+  .preact-island-controls {
+    display: inline-flex;
+    gap: 10px;
+    grid-column: 1 / -1;
+    justify-self: center;
+    flex-wrap: wrap;
+  }
+
+  .preact-island-adjust,
   .preact-island-action {
     grid-column: 1 / -1;
     justify-self: center;
