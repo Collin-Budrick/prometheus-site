@@ -41,18 +41,24 @@ type DecodeWorkerState = {
   worker: Worker
 }
 
+type WorkerScriptUrlTransformer = (url: string) => unknown
+
 let decodeWorkerState: DecodeWorkerState | null = null
 let decoderPromise: Promise<DecodeFragmentPayload> | null = null
 
 const canUseDecodeWorker = () =>
   typeof window !== 'undefined' && typeof Worker === 'function'
 
-const getDecodeWorkerState = (): DecodeWorkerState | null => {
+const getDecodeWorkerState = (
+  transformWorkerScriptUrl?: WorkerScriptUrlTransformer
+): DecodeWorkerState | null => {
   if (!canUseDecodeWorker()) return null
   if (decodeWorkerState) return decodeWorkerState
 
   try {
-    const worker = new Worker(new URL('./decode.worker.ts', import.meta.url), { type: 'module' })
+    const workerUrl = new URL('./decode.worker.ts', import.meta.url)
+    const scriptUrl = transformWorkerScriptUrl?.(workerUrl.toString()) ?? workerUrl
+    const worker = new Worker(scriptUrl as string, { type: 'module' })
     const state: DecodeWorkerState = {
       nextId: 1,
       pending: new Map(),
@@ -91,7 +97,10 @@ const decodeFragmentDirectly = async (fragmentId: string, bytes: Uint8Array) => 
   return { ...payload, id: fragmentId }
 }
 
-const loadDecoder = async (preferDecodeWorker = true): Promise<DecodeFragmentPayload> => {
+const loadDecoder = async (
+  preferDecodeWorker = true,
+  transformWorkerScriptUrl?: WorkerScriptUrlTransformer
+): Promise<DecodeFragmentPayload> => {
   if (!preferDecodeWorker) {
     return decodeFragmentDirectly
   }
@@ -100,7 +109,7 @@ const loadDecoder = async (preferDecodeWorker = true): Promise<DecodeFragmentPay
     return decoderPromise
   }
 
-  const workerState = getDecodeWorkerState()
+  const workerState = getDecodeWorkerState(transformWorkerScriptUrl)
   if (!workerState) {
     decoderPromise = Promise.resolve(decodeFragmentDirectly)
     return decoderPromise
@@ -177,6 +186,7 @@ const recordFragmentNetworkDebug = (
 export type FragmentClientConfig = {
   getApiBase: () => string
   getCspNonce?: () => string | null
+  transformWorkerScriptUrl?: WorkerScriptUrlTransformer
   getWebTransportBase?: () => string
   getFragmentProtocol?: () => 1 | 2
   isFragmentCompressionPreferred?: () => boolean
@@ -424,7 +434,10 @@ export const createFragmentClient = (
     )
     recordFragmentNetworkDebug({ id, bytes: bytes.byteLength, source: 'single' })
     const cacheUpdatedAt = parseCacheUpdatedAt(response.headers)
-    const decodeFragmentPayload = await loadDecoder(isDecodeWorkerPreferred())
+    const decodeFragmentPayload = await loadDecoder(
+      isDecodeWorkerPreferred(),
+      config.transformWorkerScriptUrl
+    )
     const payload = await decodeFragmentPayload(id, bytes)
     return { ...payload, cacheUpdatedAt }
   }
@@ -489,7 +502,10 @@ export const createFragmentClient = (
       throw new Error(`Fragment batch fetch failed: ${response.status}`)
     }
 
-    const decodeFragmentPayload = await loadDecoder(isDecodeWorkerPreferred())
+    const decodeFragmentPayload = await loadDecoder(
+      isDecodeWorkerPreferred(),
+      config.transformWorkerScriptUrl
+    )
     const encodedBytes = new Uint8Array(await response.arrayBuffer())
     const responseBytes = await decompressResponseBytes(
       encodedBytes,
@@ -761,7 +777,10 @@ export const createFragmentClient = (
     }
     const canDecompress = Boolean(encoding && acceptedEncodings.includes(encoding as NativeFragmentCompressionEncoding))
     const reader = buildFragmentDecompressionReader(response.body, encoding, canDecompress)
-    const decodePayload = await loadDecoder(isDecodeWorkerPreferred())
+    const decodePayload = await loadDecoder(
+      isDecodeWorkerPreferred(),
+      config.transformWorkerScriptUrl
+    )
 
     try {
       const status = await readFragmentStream(
@@ -822,7 +841,10 @@ export const createFragmentClient = (
       await transport.ready
       const datagramReader =
         preferDatagrams && supportsDatagrams ? transport.datagrams?.readable?.getReader() ?? null : null
-      const decodePayload = await loadDecoder(isDecodeWorkerPreferred())
+    const decodePayload = await loadDecoder(
+      isDecodeWorkerPreferred(),
+      config.transformWorkerScriptUrl
+    )
       const datagramTask = datagramReader
         ? readFragmentStream(
             datagramReader,

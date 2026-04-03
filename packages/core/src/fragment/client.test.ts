@@ -38,8 +38,13 @@ const definition: FragmentDefinition = {
 }
 
 class MockWorker {
+  static urls: unknown[] = []
   private messageListener: ((event: MessageEvent) => void) | null = null
   private errorListener: ((event: Event) => void) | null = null
+
+  constructor(url?: unknown) {
+    MockWorker.urls.push(url)
+  }
 
   addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
     if (type === 'message' && typeof listener === 'function') {
@@ -119,11 +124,14 @@ afterEach(() => {
   mutableGlobals.Worker = originalWorker
   mutableGlobals.WebTransport = originalWebTransport
   mutableGlobals.DecompressionStream = originalDecompressionStream
+  MockWorker.urls = []
 })
 
 describe('fragment client V2 decoding', () => {
   it('decodes protocol 2 batch payloads through the worker path', async () => {
     const bytes = encodeFragmentPayloadFromTree(definition, tree)
+    const trustedWorkerUrl = { __trustedScriptUrl: true }
+    let transformedWorkerUrl = ''
 
     mutableGlobals.window = {} as Window & typeof globalThis
     mutableGlobals.Worker = MockWorker as unknown as typeof Worker
@@ -135,11 +143,17 @@ describe('fragment client V2 decoding', () => {
 
     const client = createFragmentClient({
       getApiBase: () => 'http://api.test',
-      getFragmentProtocol: () => 2
+      getFragmentProtocol: () => 2,
+      transformWorkerScriptUrl: (url) => {
+        transformedWorkerUrl = url
+        return trustedWorkerUrl
+      }
     })
 
     const payloads = await client.fetchFragmentBatch([{ id: definition.id }])
 
+    expect(transformedWorkerUrl).toContain('decode.worker.ts')
+    expect(MockWorker.urls[0]).toBe(trustedWorkerUrl)
     expect(payloads[definition.id]?.id).toBe(definition.id)
     expect(payloads[definition.id]?.tree).toEqual(tree)
   })

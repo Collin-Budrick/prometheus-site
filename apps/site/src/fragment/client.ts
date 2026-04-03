@@ -3,7 +3,7 @@ import type { FragmentPayload } from './types'
 import { fragmentPlanCache } from './plan-cache'
 import { resolveCurrentFragmentCacheScope } from './cache-scope'
 import { getFragmentCssHref } from './fragment-css'
-import { getCspNonce } from '../security/client'
+import { asTrustedScriptUrl, getCspNonce } from '../security/client'
 import {
   getPublicFragmentApiBase,
   getPublicWebTransportBase,
@@ -23,9 +23,11 @@ const client = createFragmentClient(
   {
     getApiBase: getPublicFragmentApiBase,
     getCspNonce,
+    transformWorkerScriptUrl: asTrustedScriptUrl,
     getWebTransportBase: getPublicWebTransportBase,
     getFragmentProtocol: () => 2,
     isFragmentCompressionPreferred: isPublicFragmentCompressionPreferred,
+    isDecodeWorkerPreferred: () => false,
     isWebTransportDatagramsPreferred: isPublicWebTransportDatagramsPreferred,
     isWebTransportPreferred: isPublicWebTransportPreferred
   },
