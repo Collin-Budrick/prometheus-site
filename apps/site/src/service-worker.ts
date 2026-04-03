@@ -10,7 +10,8 @@ import {
 } from './shared/server-health'
 import {
   type ResidentNotificationRecord,
-  buildResidentNotificationTag
+  buildResidentNotificationTag,
+  resolveResidentNotificationDeliveryMode
 } from './shared/resident-notifications'
 
 declare const self: ServiceWorkerGlobalScope & {
@@ -329,6 +330,15 @@ const showResidentNotificationNow = async (
   await broadcastResidentNotificationDelivered(record, deliveredAt)
 }
 
+const deferResidentNotification = async (record: ResidentNotificationRecord) => {
+  const tag = getResidentNotificationTag(record)
+  await closeResidentNotifications(tag)
+  residentNotificationStates.set(record.id, {
+    deliveredAt: null,
+    updatedAt: record.updatedAt
+  })
+}
+
 const upsertResidentNotification = async (
   record: ResidentNotificationRecord,
   options: {
@@ -345,30 +355,36 @@ const upsertResidentNotification = async (
 
   const deliverAtMs =
     record.kind === 'scheduled' && typeof record.deliverAtMs === 'number' ? record.deliverAtMs : null
+  const showTrigger = deliverAtMs !== null ? buildResidentNotificationTrigger(deliverAtMs) : null
+  const deliveryMode = resolveResidentNotificationDeliveryMode({
+    kind: record.kind,
+    deliverAtMs,
+    deliverNow: options.deliverNow === true,
+    nowMs: Date.now(),
+    supportsTrigger: showTrigger !== null
+  })
 
-  if (
-    !options.deliverNow &&
-    deliverAtMs !== null &&
-    deliverAtMs > Date.now()
-  ) {
-    const showTrigger = buildResidentNotificationTrigger(deliverAtMs)
-    if (showTrigger) {
-      const tag = getResidentNotificationTag(record)
-      await closeResidentNotifications(tag)
-      await self.registration.showNotification(record.title, {
-        body: record.body,
-        data: buildResidentNotificationData(record),
-        tag,
-        requireInteraction: false,
-        silent: false,
-        showTrigger
-      } as NotificationOptionsWithTrigger)
-      residentNotificationStates.set(record.id, {
-        deliveredAt: null,
-        updatedAt: record.updatedAt
-      })
-      return
-    }
+  if (deliveryMode === 'schedule-trigger' && showTrigger) {
+    const tag = getResidentNotificationTag(record)
+    await closeResidentNotifications(tag)
+    await self.registration.showNotification(record.title, {
+      body: record.body,
+      data: buildResidentNotificationData(record),
+      tag,
+      requireInteraction: false,
+      silent: false,
+      showTrigger
+    } as NotificationOptionsWithTrigger)
+    residentNotificationStates.set(record.id, {
+      deliveredAt: null,
+      updatedAt: record.updatedAt
+    })
+    return
+  }
+
+  if (deliveryMode === 'pending') {
+    await deferResidentNotification(record)
+    return
   }
 
   await showResidentNotificationNow(record)

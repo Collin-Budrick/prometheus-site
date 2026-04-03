@@ -30,6 +30,11 @@ export type ResidentNotificationStoreFilters = Partial<
   Pick<ResidentNotificationRecord, 'fragmentId' | 'lang' | 'path' | 'residentKey' | 'scopeKey'>
 >
 
+export type ResidentNotificationDeliveryMode =
+  | 'display-now'
+  | 'schedule-trigger'
+  | 'pending'
+
 export type ResidentNotificationBroadcastMessage =
   | { type: 'intent-upserted'; record: ResidentNotificationRecord }
   | { type: 'intent-cleared'; id: string }
@@ -46,3 +51,33 @@ export const buildResidentNotificationTag = (notificationId: string) =>
 
 export const normalizeResidentNotificationKey = (value: string) => value.trim()
 
+export const resolveResidentNotificationDeliveryMode = ({
+  kind,
+  deliverAtMs,
+  deliverNow,
+  nowMs,
+  supportsTrigger
+}: {
+  kind: ResidentNotificationIntentKind
+  deliverAtMs: number | null
+  deliverNow: boolean
+  nowMs: number
+  supportsTrigger: boolean
+}): ResidentNotificationDeliveryMode => {
+  if (deliverNow) {
+    return 'display-now'
+  }
+  if (kind !== 'scheduled') {
+    return 'display-now'
+  }
+  if (typeof deliverAtMs !== 'number' || !Number.isFinite(deliverAtMs)) {
+    return 'display-now'
+  }
+  if (deliverAtMs <= nowMs) {
+    return 'display-now'
+  }
+  if (supportsTrigger) {
+    return 'schedule-trigger'
+  }
+  return 'pending'
+}
