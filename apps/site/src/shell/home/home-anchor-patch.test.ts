@@ -6,11 +6,15 @@ import {
   STATIC_HOME_STAGE_ATTR
 } from '../core/constants'
 import { HOME_FIRST_ANCHOR_PATCH_EVENT } from './home-anchor-patch-event'
-import { promoteSatisfiedStaticHomeAnchorBatch } from './home-anchor-patch'
+import {
+  promoteSatisfiedStaticHomeAnchorBatch,
+  promoteSatisfiedStaticHomeCards
+} from './home-anchor-patch'
 
 class MockElement {
   dataset: Record<string, string> = {}
   private attrs = new Map<string, string>()
+  private body: { innerHTML: string } | null = { innerHTML: '<div class="fragment-html">preview</div>' }
 
   constructor(fragmentId: string) {
     this.dataset.fragmentId = fragmentId
@@ -24,6 +28,13 @@ class MockElement {
 
   getAttribute(name: string) {
     return this.attrs.get(name) ?? null
+  }
+
+  querySelector<T>(selector: string) {
+    if (selector === '[data-static-fragment-body]') {
+      return this.body as T | null
+    }
+    return null
   }
 }
 
@@ -134,5 +145,32 @@ describe('promoteSatisfiedStaticHomeAnchorBatch', () => {
     expect(firstPromotion).toBe(true)
     expect(secondPromotion).toBe(true)
     expect(doc.dispatchedEvents).toEqual([HOME_FIRST_ANCHOR_PATCH_EVENT])
+  })
+})
+
+describe('promoteSatisfiedStaticHomeCards', () => {
+  it('promotes satisfied deferred preview cards to ready without requiring a network patch', () => {
+    const plannerCard = createCard('fragment://page/home/planner@v1', {
+      stage: 'deferred',
+      version: 11,
+      patchState: 'pending',
+      previewVisible: true
+    })
+    const root = new MockRoot([plannerCard])
+
+    const didPromote = promoteSatisfiedStaticHomeCards({
+      ids: ['fragment://page/home/planner@v1'],
+      knownVersions: {
+        'fragment://page/home/planner@v1': 11
+      },
+      root: root as never
+    })
+
+    expect(didPromote).toBe(true)
+    expect(plannerCard.getAttribute(STATIC_HOME_PATCH_STATE_ATTR)).toBe('ready')
+    expect(plannerCard.dataset.fragmentStage).toBe('ready')
+    expect(plannerCard.dataset.fragmentReady).toBe('true')
+    expect(plannerCard.dataset.fragmentLoaded).toBe('true')
+    expect(plannerCard.dataset.revealPhase).toBe('visible')
   })
 })

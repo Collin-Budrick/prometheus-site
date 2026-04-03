@@ -22,7 +22,7 @@ import {
   recordPromPerfTimestamp
 } from '../../shell/home/static-shell-performance'
 import { resolveCurrentFragmentCacheScope } from '../cache-scope'
-import { clearFragmentPlanCache } from '../plan-cache'
+import { clearFragmentPlanCache, fragmentPlanCache } from '../plan-cache'
 import { clearFragmentShellCache } from './shell-cache'
 import { resolveFragments, resolvePlan } from './utils'
 import type { Lang } from '../../shared/lang-store'
@@ -32,6 +32,7 @@ import {
   buildFragmentBootstrapHref,
   consumePrimedFragmentBootstrapBytes
 } from '../bootstrap-cache'
+import { mergeFragmentPayloadSources } from '../../shell/fragments/route-snapshot'
 import type {
   FragmentRuntimeCardSizing,
   FragmentRuntimePlanEntry,
@@ -266,6 +267,32 @@ export const FragmentStreamController = component$(
           return { ...payload, cacheUpdatedAt }
         }
 
+        const rememberSnapshotPayloads = (payloads: FragmentPayload[]) => {
+          if (!payloads.length) {
+            return
+          }
+
+          const cachedEntry = fragmentPlanCache.get(path, activeLang, {
+            scopeKey: fragmentScopeKey
+          })
+
+          fragmentPlanCache.set(
+            path,
+            activeLang,
+            {
+              etag: cachedEntry?.etag ?? '',
+              plan: cachedEntry?.plan ?? planValue,
+              initialFragments: mergeFragmentPayloadSources(
+                cachedEntry?.initialFragments,
+                payloads
+              ),
+              initialHtml: cachedEntry?.initialHtml,
+              earlyHints: cachedEntry?.earlyHints
+            },
+            { scopeKey: fragmentScopeKey }
+          )
+        }
+
         if (!fragments.value || !Object.keys(fragments.value).length) {
           const resolvedInitial = resolveFragments(initialFragments) ?? {}
           fragments.value = Object.values(resolvedInitial).reduce<FragmentPayloadMap>((acc, payload) => {
@@ -349,6 +376,7 @@ export const FragmentStreamController = component$(
         const queuePayload = (payload: FragmentPayload) => {
           if (!active) return
           const normalized = normalizePayload(payload)
+          rememberSnapshotPayloads([normalized])
           if (refreshIds.has(payload.id)) {
             refreshIds.delete(payload.id)
             refreshQueue.add(payload.id)
@@ -618,7 +646,10 @@ export const FragmentStreamController = component$(
             if (hmrClearCachesPending) {
               hmrClearCachesPending = false
               clearFragmentPlanCache()
-              clearFragmentShellCache(path)
+              clearFragmentShellCache(path, {
+                scopeKey: fragmentScopeKey,
+                lang: activeLang
+              })
             }
             planValue.fragments.forEach((entry) => refreshIds.add(entry.id))
             pending.clear()

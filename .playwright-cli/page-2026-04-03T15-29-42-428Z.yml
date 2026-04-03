@@ -1,0 +1,239 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e6]:
+      - strong [ref=e7]: Prometheus
+      - generic [ref=e8]: Binary Fragment Platform · full preset
+    - generic [ref=e11]:
+      - status "Idle" [ref=e12]
+      - button "Settings" [ref=e14]:
+        - img [ref=e15]
+  - main [ref=e18]:
+    - generic [ref=e19]:
+      - article [ref=e22]:
+        - generic [ref=e23]:
+          - generic [ref=e24]:
+            - generic [ref=e25]: full preset
+            - generic [ref=e26]:
+              - heading "Prometheus template surface" [level=1] [ref=e27]
+              - generic [ref=e28]: Binary-first rendering, fragment-native delivery.
+              - generic [ref=e29]: Audit the shared fragment shell, route flows, and auth/settings behavior before you fork the preset.
+            - list [ref=e30]:
+              - listitem [ref=e31]:
+                - link "Browse store" [ref=e32] [cursor=pointer]:
+                  - /url: /store?lang=en
+              - listitem [ref=e33]:
+                - link "Review auth" [ref=e34] [cursor=pointer]:
+                  - /url: /login?lang=en
+              - listitem [ref=e35]:
+                - link "Offline state" [ref=e36] [cursor=pointer]:
+                  - /url: /offline?lang=en
+              - listitem [ref=e37]: Binary Fragment Platform
+          - generic [ref=e39]:
+            - heading "Field brief" [level=2] [ref=e40]
+            - generic [ref=e42]: Binary fragments patch fixed shells in place.
+            - list [ref=e43]:
+              - listitem [ref=e44]: Edge-first planning
+              - listitem [ref=e45]: Hydration-free client DOM
+              - listitem [ref=e46]: WebTransport-ready streams
+      - generic [ref=e47]:
+        - generic [ref=e48]:
+          - article [ref=e49]:
+            - generic [ref=e52]:
+              - generic [ref=e53]: fragment manifesto
+              - heading "The render tree is the artifact." [level=2] [ref=e54]
+              - paragraph [ref=e55]: HTML remains the fallback surface.Deterministic binary fragments handle replay, caching, and instant patching.
+          - article [ref=e56]:
+            - generic [ref=e59]:
+              - generic [ref=e60]: fragment planner
+              - heading "Planner executes before rendering." [level=2] [ref=e61]
+              - paragraph [ref=e62]: Dependency resolution, cache hit checks, and runtime selection happen up front.Rendering only occurs on cache miss; revalidation runs asynchronously.
+              - generic [ref=e65]:
+                - generic [ref=e66]:
+                  - generic [ref=e67]: Planner simulation
+                  - generic [ref=e68]:
+                    - button "Run plan" [ref=e69]
+                    - button "Shuffle cache" [ref=e70]
+                - generic [ref=e71]: Waiting on planner execution.
+                - list [ref=e72]:
+                  - listitem [ref=e73]: Resolve deps
+                  - listitem [ref=e74]: Cache check
+                  - listitem [ref=e75]: Select runtime
+                  - listitem [ref=e76]: Render misses
+                  - listitem [ref=e77]: Async revalidate
+                - generic [ref=e78]:
+                  - generic [ref=e79]:
+                    - text: Hero shell
+                    - generic [ref=e80]: Dependencies root Pending
+                    - generic [ref=e81]:
+                      - text: Cache
+                      - button "Hit" [ref=e82]
+                      - text: Waiting
+                    - generic [ref=e83]: Runtime Selecting Selecting
+                    - generic [ref=e84]: Await render
+                    - generic [ref=e85]: Await revalidate
+                    - text: hero
+                  - generic [ref=e86]:
+                    - text: Planner core
+                    - generic [ref=e87]: Dependencies hero Pending
+                    - generic [ref=e88]:
+                      - text: Cache
+                      - button "Hit" [ref=e89]
+                      - text: Waiting
+                    - generic [ref=e90]: Runtime Selecting Selecting
+                    - generic [ref=e91]: Await render
+                    - generic [ref=e92]: Await revalidate
+                    - text: planner
+                  - generic [ref=e93]:
+                    - text: Ledger stream
+                    - generic [ref=e94]: Dependencies planner Pending
+                    - generic [ref=e95]:
+                      - text: Cache
+                      - button "Hit" [ref=e96]
+                      - text: Waiting
+                    - generic [ref=e97]: Runtime Selecting Selecting
+                    - generic [ref=e98]: Await render
+                    - generic [ref=e99]: Await revalidate
+                    - text: ledger
+                  - generic [ref=e100]:
+                    - text: React authoring
+                    - generic [ref=e101]: Dependencies planner Pending
+                    - generic [ref=e102]:
+                      - text: Cache
+                      - button "Hit" [ref=e103]
+                      - text: Waiting
+                    - generic [ref=e104]: Runtime Selecting Selecting
+                    - generic [ref=e105]: Await render
+                    - generic [ref=e106]: Await revalidate
+                    - text: react
+          - article [ref=e107]:
+            - generic [ref=e110]:
+              - generic [ref=e111]: wasm renderer
+              - heading "Hot-path fragments rendered by WASM." [level=2] [ref=e112]
+              - paragraph [ref=e113]: Critical transforms run inside WebAssembly for deterministic, edge-safe execution.Numeric outputs feed fragment composition without touching HTML.
+              - generic [ref=e116]:
+                - generic [ref=e117]:
+                  - generic [ref=e118]: WASM transform demo
+                  - button "Run WASM" [ref=e119]
+                - generic [ref=e120]: Deterministic WebAssembly outputs drive fragment composition without touching HTML.
+                - generic [ref=e121]:
+                  - generic [ref=e122]:
+                    - generic [ref=e123]: Inputs
+                    - generic [ref=e124]:
+                      - generic [ref=e125]: A
+                      - button "Decrease A" [ref=e126]: "-"
+                      - generic [ref=e127]: "128"
+                      - button "Increase A" [ref=e128]: +
+                    - generic [ref=e129]:
+                      - generic [ref=e130]: B
+                      - button "Decrease B" [ref=e131]: "-"
+                      - generic [ref=e132]: "256"
+                      - button "Increase B" [ref=e133]: +
+                    - generic [ref=e134]: Edge-safe numeric inputs.
+                  - generic [ref=e135]:
+                    - generic [ref=e136]: WASM transform
+                    - generic [ref=e137]:
+                      - generic [ref=e138]: "384"
+                      - generic [ref=e139]: hash 53368980
+                    - generic [ref=e140]: "000110000000"
+                    - generic [ref=e141]: Deterministic output for same inputs.
+                  - generic [ref=e142]:
+                    - generic [ref=e143]: Fragment composition
+                    - generic [ref=e144]:
+                      - group "Burst 224 op/s" [ref=e145]
+                      - group "Hot-path 84 pts" [ref=e146]
+                    - generic [ref=e150]: "384"
+                    - generic [ref=e151]: Outputs feed layout metrics, not HTML.
+                - generic [ref=e152]:
+                  - generic [ref=e153]: Edge-safe
+                  - generic [ref=e154]: Deterministic
+                  - generic [ref=e155]: "HTML: untouched"
+        - generic [ref=e156]:
+          - article [ref=e157]:
+            - generic [ref=e162]:
+              - generic [ref=e163]: live collaborative text
+              - heading "Shared text for everyone on the page." [level=2] [ref=e164]
+              - paragraph [ref=e165]: Anyone on the page can edit the same text box. Loro syncs updates through Garnet in real time.
+          - article [ref=e166]:
+            - generic [ref=e169]:
+              - generic [ref=e170]: preact island
+              - heading "Isolated client islands stay sandboxed." [level=2] [ref=e171]
+              - paragraph [ref=e172]: Preact loads only inside the island boundary.No shared state, no routing ownership, no global hydration.
+              - generic [ref=e175]:
+                - generic [ref=e176]: Isolated island
+                - generic [ref=e177]: 1:00
+                - generic [ref=e178]:
+                  - img
+                  - generic [ref=e179]: Countdown
+                  - generic [ref=e180]: 1:00
+                  - generic [ref=e181]: Edge-safe timer
+                - button "Reset timer" [ref=e182]
+          - article [ref=e183]:
+            - generic [ref=e186]:
+              - generic [ref=e187]: react authoring
+              - heading "React stays server-only." [level=2] [ref=e188]
+              - paragraph [ref=e189]:
+                - strong [ref=e190]: React fragments compile into binary trees without client hydration.
+                - text: The DOM remains owned by Qwik.
+              - generic [ref=e193]:
+                - generic [ref=e194]:
+                  - generic [ref=e195]:
+                    - generic [ref=e196]: Binary compile demo
+                    - button "Compile to binary" [ref=e197]
+                  - generic [ref=e198]: React fragment renders on the server only.
+                - tablist "Compilation stages" [ref=e199]:
+                  - tab "React fragment" [selected] [ref=e200]: React fragment
+                  - tab "Binary tree" [ref=e202]: Binary tree
+                  - tab "Qwik DOM" [ref=e204]: Qwik DOM
+                - generic [ref=e206]:
+                  - tabpanel "React fragment" [ref=e207]:
+                    - generic [ref=e208]: React fragment
+                    - generic [ref=e209]:
+                      - generic [ref=e210]: Fragment
+                      - generic [ref=e211]: Card
+                      - generic [ref=e212]: Title
+                      - generic [ref=e213]: Copy
+                      - generic [ref=e214]: Badge
+                    - generic [ref=e215]: Server-only JSX tree.
+                  - tabpanel "Binary tree" [ref=e217]:
+                    - generic [ref=e218]: Binary tree
+                    - group "Binary tree stream" [ref=e219]:
+                      - generic [ref=e220]: "0101"
+                      - generic [ref=e221]: "1100"
+                      - generic [ref=e222]: "0011"
+                      - generic [ref=e223]: "1010"
+                      - generic [ref=e224]: "0110"
+                      - generic [ref=e225]: "1001"
+                      - generic [ref=e226]: "0001"
+                      - generic [ref=e227]: "1110"
+                    - generic [ref=e228]: Streamed render nodes.
+                  - tabpanel "Qwik DOM" [ref=e230]:
+                    - generic [ref=e231]: Qwik DOM
+                    - generic [ref=e232]:
+                      - generic [ref=e233]: <section>
+                      - generic [ref=e234]: <h2>
+                      - generic [ref=e235]: <p>
+                      - generic [ref=e236]: <div.badge>
+                    - generic [ref=e237]: DOM owned by Qwik.
+                - generic [ref=e238]:
+                  - generic [ref=e239]: "Hydration: skipped"
+                  - generic [ref=e240]: Binary tree stream
+  - generic:
+    - generic:
+      - navigation "Dock shortcuts":
+        - list [ref=e241]:
+          - listitem "Home" [ref=e242]:
+            - link "Home" [ref=e243] [cursor=pointer]:
+              - /url: /?lang=en
+              - img [ref=e244]
+          - listitem "Store" [ref=e246]:
+            - link "Store" [ref=e247] [cursor=pointer]:
+              - /url: /store/?lang=en
+              - img [ref=e248]
+          - listitem "Lab" [ref=e254]:
+            - link "Lab" [ref=e255] [cursor=pointer]:
+              - /url: /lab/?lang=en
+              - img [ref=e256]
+          - listitem "Login" [ref=e260]:
+            - link "Login" [ref=e261] [cursor=pointer]:
+              - /url: /login/?lang=en
+              - img [ref=e262]

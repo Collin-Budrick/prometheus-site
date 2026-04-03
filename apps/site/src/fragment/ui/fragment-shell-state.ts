@@ -1,10 +1,13 @@
 import { $, useComputed$, useOnDocument, useSignal, useTask$, useVisibleTask$ } from '@builder.io/qwik'
 import { useSharedFragmentStatusSignal } from '@core/fragments'
+import { buildFragmentHeightVersionSignature } from '@prometheus/ui/fragment-height'
 import type { EarlyHint, FragmentPayloadMap, FragmentPlan } from '../types'
 import { useLangCopy, useSharedLangSignal } from '../../shared/lang-bridge'
 import { isClientBootIntentReady, runAfterClientIntentIdle } from '../../shared/client-boot'
 import { getFragmentHeaderCopy } from '../../shared/fragment-copy'
 import { createFragmentPlanCachePayload } from '../plan-cache'
+import { fragmentPlanCache } from '../plan-cache'
+import { resolveCurrentFragmentCacheScope } from '../cache-scope'
 import { buildFragmentCssLinks } from '../fragment-css'
 import {
   getFragmentShellCacheEntry,
@@ -27,6 +30,7 @@ import {
 } from './layout-settle'
 import type { FragmentDragState, FragmentShellProps, SlottedEntry } from './fragment-shell-types'
 import type { FragmentRuntimeCardSizing } from '../runtime/protocol'
+import { mergeFragmentPayloadSources } from '../../shell/fragments/route-snapshot'
 import {
   applyFieldSnapshots,
   buildBentoSlots,
@@ -55,6 +59,18 @@ const buildPlanEarlyHints = (planValue: FragmentPlan) => {
   })
   return Array.from(unique.values())
 }
+
+const buildPlanVersionSignature = (planValue: FragmentPlan) =>
+  buildFragmentHeightVersionSignature(
+    planValue.fragments.reduce<Record<string, number>>((acc, entry) => {
+      const value = entry.cache?.updatedAt
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        acc[entry.id] = value
+      }
+      return acc
+    }, {}),
+    planValue.fragments.map((entry) => entry.id)
+  )
 
 const resolveLcpFragmentIds = (planValue: FragmentPlan) =>
   planValue.fragments.filter((entry) => entry.critical).map((entry) => entry.id)
@@ -90,16 +106,39 @@ export const useFragmentShellState = ({
   const normalizedPath = normalizeFragmentShellPath(path)
   const shellMode = resolveFragmentShellMode(normalizedPath)
   const isStaticHome = isStaticHomeShellMode(shellMode)
+  const fragmentScopeKey = resolveCurrentFragmentCacheScope(path)
+  const planVersionSignature = buildPlanVersionSignature(planValue)
   const seedState =
     initialShellState && normalizeFragmentShellPath(initialShellState.path) === normalizedPath
       ? initialShellState
       : null
-  const cachedEntry = typeof window !== 'undefined' ? getFragmentShellCacheEntry(path) : undefined
+  const cachedPlanEntry =
+    typeof window !== 'undefined'
+      ? fragmentPlanCache.get(path, initialLang, { scopeKey: fragmentScopeKey })
+      : undefined
+  const cachedEntry =
+    typeof window !== 'undefined'
+      ? getFragmentShellCacheEntry(path, {
+          scopeKey: fragmentScopeKey,
+          lang: initialLang,
+          versionSignature: planVersionSignature
+        })
+      : undefined
   const hasIntro = Boolean(introMarkdown?.trim())
   const initialFragmentMap = resolveFragments(initialFragments)
   const lcpFragmentIds = resolveLcpFragmentIds(planValue)
+  const restoredInitialFragmentMap = mergeFragmentPayloadSources(
+    initialFragmentMap,
+    cachedPlanEntry?.initialFragments,
+    cachedEntry?.fragments
+  )
+  const hasRestoredSnapshot = Object.keys(restoredInitialFragmentMap).length > Object.keys(initialFragmentMap).length
   const lcpFragments =
-    lcpFragmentIds.length > 0 ? pickFragments(initialFragmentMap, lcpFragmentIds) : initialFragmentMap
+    hasRestoredSnapshot
+      ? restoredInitialFragmentMap
+      : lcpFragmentIds.length > 0
+        ? pickFragments(initialFragmentMap, lcpFragmentIds)
+        : initialFragmentMap
   const initialHtmlFromFragments = lcpFragmentIds.reduce<Record<string, string>>((acc, id) => {
     const html = initialFragmentMap[id]?.html
     if (html) acc[id] = html
@@ -115,7 +154,7 @@ export const useFragmentShellState = ({
       ? createFragmentPlanCachePayload(path, initialLang, {
           etag: '',
           plan: planValue,
-          initialFragments: initialFragmentMap,
+          initialFragments: restoredInitialFragmentMap,
           earlyHints: planEarlyHints,
           initialHtml
         })
@@ -183,7 +222,7 @@ export const useFragmentShellState = ({
     typeof window !== 'undefined' &&
     (window as typeof window & { __PROM_CLIENT_READY?: boolean }).__PROM_CLIENT_READY === true
   const clientReady = useSignal(initialReady)
-  const hasCache = Boolean(cachedEntry)
+  const hasCache = Boolean(cachedEntry || hasRestoredSnapshot)
   const skipCssGuard = Boolean(!isStaticHome && cachedEntry && preserveFragmentEffects)
   const deferredStartupReady = useSignal(
     typeof window !== 'undefined' ? isClientBootIntentReady() : false
@@ -560,11 +599,17 @@ export const useFragmentShellState = ({
           plan: planValue,
           path,
           lang: langSignal.value,
+          scopeKey: fragmentScopeKey,
+          versionSignature: planVersionSignature,
           fragments: fragments.value,
           orderIds: orderIds.value,
           expandedId: expandedId.value,
           scrollY: lastScrollY.value,
           fields: grid ? collectFieldSnapshots(grid) : {}
+        }, {
+          scopeKey: fragmentScopeKey,
+          lang: langSignal.value,
+          versionSignature: planVersionSignature
         })
         persistShellState()
       })

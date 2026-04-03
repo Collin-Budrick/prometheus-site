@@ -60,6 +60,7 @@ import {
 import { loadStaticShellLanguageSeed } from "./language-seed-client";
 import {
   applyStaticShellSnapshot,
+  captureCurrentStaticShellSnapshot,
   loadStaticShellSnapshot,
   resolvePreferredStaticShellLang,
   updateStaticShellUrlLang,
@@ -84,6 +85,7 @@ import {
   collectMissingStaticFragmentRouteIds,
   hasCompleteStaticFragmentRouteSnapshot,
   mergeFragmentPayloadSources,
+  restoreRouteFragmentSnapshotFromCaches,
   restoreStaticFragmentRouteData,
 } from "../fragments/route-snapshot";
 import {
@@ -629,28 +631,22 @@ const restoreCachedStaticFragmentSnapshot = async (
   controller: Pick<StaticFragmentController, "lang" | "routeData">,
 ) => {
   const scopeKey = readRouteSnapshotScopeKey(controller.routeData);
-  const payloadCache = getPersistentRuntimeCache();
-  await payloadCache.hydrate().catch(() => undefined);
-
   const cachedEntry = fragmentPlanCache.get(controller.routeData.path, controller.lang, {
     scopeKey,
   });
-  const cachedPayloads = await payloadCache
-    .getPayloadsForRoute(scopeKey, controller.routeData.path, controller.lang)
-    .catch(() => [] as FragmentPayload[]);
-  const mergedPayloads = mergeFragmentPayloadSources(
-    controller.routeData.runtimeInitialFragments ?? [],
-    cachedEntry?.initialFragments,
-    cachedPayloads,
-  );
+  const { mergedPayloads, routeData } = await restoreRouteFragmentSnapshotFromCaches({
+    scopeKey,
+    path: controller.routeData.path,
+    lang: controller.lang,
+    routeData: controller.routeData,
+    planInitialFragments: cachedEntry?.initialFragments,
+    payloadCache: getPersistentRuntimeCache(),
+  });
   if (!Object.keys(mergedPayloads).length) {
     return;
   }
 
-  controller.routeData = restoreStaticFragmentRouteData(
-    controller.routeData,
-    mergedPayloads,
-  );
+  controller.routeData = restoreStaticFragmentRouteData(routeData, mergedPayloads);
   writeStaticFragmentRouteData(controller.routeData);
 
   if (cachedEntry?.plan) {
@@ -1501,6 +1497,7 @@ export const bootstrapStaticFragmentShell = async () => {
   handleServerReachabilityChange();
 
   const handlePageHide = () => {
+    captureCurrentStaticShellSnapshot(controller.snapshotKey, controller.lang);
     stopConnections(controller);
     controller.sharedRuntime?.suspendForPageHide();
   };

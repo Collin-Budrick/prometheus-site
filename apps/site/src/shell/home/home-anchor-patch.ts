@@ -364,7 +364,7 @@ const buildHomeAnchorFragmentHtml = (payload: FragmentPayload) => {
   return html ? `<div class="fragment-html">${html}</div>` : null
 }
 
-const canPromoteSatisfiedAnchorCard = ({
+const canPromoteSatisfiedHomeCard = ({
   card,
   expectedVersion
 }: {
@@ -372,7 +372,7 @@ const canPromoteSatisfiedAnchorCard = ({
   expectedVersion?: number
 }) => {
   const stage = card.getAttribute(STATIC_HOME_STAGE_ATTR)
-  if (stage !== 'anchor') {
+  if (stage !== 'anchor' && stage !== 'deferred') {
     return false
   }
 
@@ -386,8 +386,50 @@ const canPromoteSatisfiedAnchorCard = ({
     return true
   }
 
+  const body = card.querySelector<HTMLElement>(`[${STATIC_FRAGMENT_BODY_ATTR}]`)
+  if (!body?.innerHTML.trim()) {
+    return false
+  }
+
   const renderedVersion = parseFragmentVersion(card)
   return renderedVersion !== null && renderedVersion >= expectedVersion
+}
+
+export const promoteSatisfiedStaticHomeCards = ({
+  ids,
+  knownVersions,
+  root = document,
+}: {
+  ids: string[]
+  knownVersions: Record<string, number>
+  root?: ParentNode
+}) => {
+  let didPromote = false
+
+  ids.forEach((fragmentId) => {
+    const card = findStaticHomeFragmentCard(fragmentId, root)
+    if (!card) {
+      return
+    }
+
+    if (
+      !canPromoteSatisfiedHomeCard({
+        card,
+        expectedVersion: knownVersions[fragmentId]
+      })
+    ) {
+      return
+    }
+
+    didPromote = true
+    card.dataset.revealPhase = 'visible'
+    card.dataset.fragmentStage = 'ready'
+    card.dataset.fragmentReady = 'true'
+    card.dataset.fragmentLoaded = 'true'
+    setHomePatchState(card, 'ready')
+  })
+
+  return didPromote
 }
 
 export const promoteSatisfiedStaticHomeAnchorBatch = ({
@@ -403,32 +445,13 @@ export const promoteSatisfiedStaticHomeAnchorBatch = ({
   root?: ParentNode
   doc?: HomeAnchorPatchDocument | null
 }) => {
-  let hasSatisfiedAnchorCard = false
-
-  ids.forEach((fragmentId) => {
-    const card = findStaticHomeFragmentCard(fragmentId, root)
-    if (!card) {
-      return
-    }
-
-    if (
-      !canPromoteSatisfiedAnchorCard({
-        card,
-        expectedVersion: knownVersions[fragmentId]
-      })
-    ) {
-      return
-    }
-
-    hasSatisfiedAnchorCard = true
-    card.dataset.revealPhase = 'visible'
-    card.dataset.fragmentStage = 'ready'
-    card.dataset.fragmentReady = 'true'
-    card.dataset.fragmentLoaded = 'true'
-    setHomePatchState(card, 'ready')
+  const didPromote = promoteSatisfiedStaticHomeCards({
+    ids,
+    knownVersions,
+    root
   })
 
-  if (!hasSatisfiedAnchorCard) {
+  if (!didPromote) {
     return false
   }
 

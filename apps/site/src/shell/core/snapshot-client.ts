@@ -1,5 +1,10 @@
 import type { Lang } from '../../lang/types'
 import { setTrustedTemplateHtml } from '../../security/client'
+import {
+  parseUserFragmentCacheScope,
+  resolveCurrentFragmentUserCacheKey,
+  resolveFragmentCacheScope,
+} from '../../fragment/cache-scope'
 import { resolveStaticShellLangParam } from './lang-param'
 import type { StaticShellSnapshot, StaticShellSnapshotManifest } from './seed'
 import { renderDockRegionHtml, syncStaticDockMarkup } from '../home/home-dock-dom'
@@ -20,9 +25,11 @@ import { replayStaticSnapshotReadyStagger } from './snapshot-ready-stagger'
 
 const STATIC_LANG_STORAGE_KEYS = ['prometheus-lang', 'prometheus:pref:locale'] as const
 const STATIC_LANG_COOKIE_KEY = 'prometheus-lang'
+const SESSION_SNAPSHOT_STORAGE_PREFIX = 'prometheus:static-shell:session-snapshot:v1:'
 
 let snapshotManifestPromise: Promise<StaticShellSnapshotManifest> | null = null
 const snapshotCache = new Map<string, Promise<StaticShellSnapshot>>()
+const liveSessionSnapshotCache = new Map<string, StaticShellSnapshot>()
 
 const readJson = async <T,>(input: RequestInfo | URL) => {
   const response = await fetch(input, {
@@ -107,6 +114,100 @@ const readCookieValue = (key: string) => {
 
 const toSnapshotUrl = (assetPath: string) => resolveStaticAssetUrl(assetPath)
 
+const buildSessionSnapshotCacheKey = (snapshotKey: string, lang: Lang) =>
+  `${toStaticSnapshotKey(snapshotKey)}|${lang}`
+
+const canUseSessionStorage = () =>
+  typeof window !== 'undefined' && typeof window.sessionStorage !== 'undefined'
+
+const buildSessionSnapshotStorageKey = (snapshotKey: string, lang: Lang) =>
+  `${SESSION_SNAPSHOT_STORAGE_PREFIX}${buildSessionSnapshotCacheKey(snapshotKey, lang)}`
+
+const buildRouteResourceKey = (snapshotKey: string) =>
+  `route:${toStaticSnapshotKey(snapshotKey)}`
+
+const readStoredSessionSnapshot = (
+  snapshotKey: string,
+  lang: Lang
+): StaticShellSnapshot | null => {
+  if (!canUseSessionStorage()) {
+    return null
+  }
+
+  try {
+    const raw = window.sessionStorage.getItem(
+      buildSessionSnapshotStorageKey(snapshotKey, lang)
+    )
+    if (!raw) {
+      return null
+    }
+    return JSON.parse(raw) as StaticShellSnapshot
+  } catch {
+    return null
+  }
+}
+
+const writeStoredSessionSnapshot = (snapshot: StaticShellSnapshot) => {
+  if (!canUseSessionStorage()) {
+    return
+  }
+
+  try {
+    window.sessionStorage.setItem(
+      buildSessionSnapshotStorageKey(snapshot.path, snapshot.lang),
+      JSON.stringify(snapshot)
+    )
+  } catch {
+    // Ignore best-effort session snapshot persistence failures.
+  }
+}
+
+const clearStoredSessionSnapshots = (options?: {
+  snapshotKey?: string
+  lang?: Lang | null
+}) => {
+  if (!canUseSessionStorage()) {
+    return
+  }
+
+  try {
+    if (!options?.snapshotKey) {
+      const keysToDelete: string[] = []
+      for (let index = 0; index < window.sessionStorage.length; index += 1) {
+        const key = window.sessionStorage.key(index)
+        if (key?.startsWith(SESSION_SNAPSHOT_STORAGE_PREFIX)) {
+          keysToDelete.push(key)
+        }
+      }
+      keysToDelete.forEach((key) => window.sessionStorage.removeItem(key))
+      return
+    }
+
+    const normalizedSnapshotKey = toStaticSnapshotKey(options.snapshotKey)
+    const keyPrefix = `${SESSION_SNAPSHOT_STORAGE_PREFIX}${normalizedSnapshotKey}|`
+    const keysToDelete: string[] = []
+    for (let index = 0; index < window.sessionStorage.length; index += 1) {
+      const key = window.sessionStorage.key(index)
+      if (!key?.startsWith(keyPrefix)) {
+        continue
+      }
+      if (options.lang) {
+        const expectedKey = buildSessionSnapshotStorageKey(
+          normalizedSnapshotKey,
+          options.lang
+        )
+        if (key !== expectedKey) {
+          continue
+        }
+      }
+      keysToDelete.push(key)
+    }
+    keysToDelete.forEach((key) => window.sessionStorage.removeItem(key))
+  } catch {
+    // Ignore best-effort session snapshot cleanup failures.
+  }
+}
+
 const resolveSnapshotRouteBase = () => {
   if (typeof window === 'undefined') {
     return 'http://localhost/'
@@ -118,6 +219,104 @@ const resolveSnapshotRouteBase = () => {
     return `${window.location.origin}/`
   }
   return 'http://localhost/'
+}
+
+const serializeDocumentType = (doc: Document) => {
+  const doctype = doc.doctype
+  if (!doctype?.name) {
+    return '<!DOCTYPE html>'
+  }
+
+  let serialized = `<!DOCTYPE ${doctype.name}`
+  if (doctype.publicId) {
+    serialized += ` PUBLIC "${doctype.publicId}"`
+  } else if (doctype.systemId) {
+    serialized += ' SYSTEM'
+  }
+  if (doctype.systemId) {
+    serialized += ` "${doctype.systemId}"`
+  }
+  return `${serialized}>`
+}
+
+const buildCurrentStaticShellDocumentHtml = (doc: Document | null) => {
+  if (!doc) {
+    return null
+  }
+
+  const root = doc?.documentElement
+  if (!root?.outerHTML) {
+    return null
+  }
+
+  return `${serializeDocumentType(doc)}\n${root.outerHTML}`
+}
+
+const postStaticShellDocumentToServiceWorker = ({
+  snapshotKey,
+  lang,
+  doc,
+}: {
+  snapshotKey: string
+  lang: Lang
+  doc: Document | null
+}) => {
+  const html = buildCurrentStaticShellDocumentHtml(doc)
+  if (!html || typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
+    return
+  }
+
+  const href = doc?.location?.href ?? (typeof window !== 'undefined' ? window.location?.href : null)
+  if (!href) {
+    return
+  }
+
+  let routeUrl: string
+  try {
+    const nextUrl = new URL(href, resolveSnapshotRouteBase())
+    nextUrl.hash = ''
+    routeUrl = nextUrl.toString()
+  } catch {
+    return
+  }
+
+  const normalizedSnapshotKey = toStaticSnapshotKey(snapshotKey)
+  const scopeKey = resolveFragmentCacheScope(
+    normalizedSnapshotKey,
+    resolveCurrentFragmentUserCacheKey()
+  )
+  const userCacheKey = parseUserFragmentCacheScope(scopeKey)
+  const message = {
+    type: 'sw:update-resource',
+    resourceKey: buildRouteResourceKey(normalizedSnapshotKey),
+    url: routeUrl,
+    userCacheKey,
+    body: html,
+    contentType: 'text/html; charset=utf-8',
+  }
+
+  const send = (worker: Pick<ServiceWorker, 'postMessage'> | null | undefined) => {
+    if (!worker) {
+      return false
+    }
+    worker.postMessage(message)
+    return true
+  }
+
+  if (send(navigator.serviceWorker.controller)) {
+    return
+  }
+
+  const getRegistration = navigator.serviceWorker.getRegistration?.bind(navigator.serviceWorker)
+  if (!getRegistration) {
+    return
+  }
+
+  void getRegistration().then((registration) => {
+    send(registration?.active)
+  }).catch(() => {
+    // Ignore best-effort service worker sync failures.
+  })
 }
 
 const loadStaticShellSnapshotFromRoute = async (snapshotKey: string, lang: Lang) => {
@@ -226,6 +425,18 @@ const resolveSnapshotAssetPath = async (snapshotKey: string, lang: Lang) => {
 
 export const loadStaticShellSnapshot = async (snapshotKey: string, lang: Lang) => {
   const normalizedSnapshotKey = toStaticSnapshotKey(snapshotKey)
+  const sessionSnapshot = liveSessionSnapshotCache.get(buildSessionSnapshotCacheKey(normalizedSnapshotKey, lang))
+  if (sessionSnapshot) {
+    return sessionSnapshot
+  }
+  const storedSessionSnapshot = readStoredSessionSnapshot(normalizedSnapshotKey, lang)
+  if (storedSessionSnapshot) {
+    liveSessionSnapshotCache.set(
+      buildSessionSnapshotCacheKey(normalizedSnapshotKey, lang),
+      storedSessionSnapshot
+    )
+    return storedSessionSnapshot
+  }
   const cacheKey = `${normalizedSnapshotKey}|${lang}`
   const cached = snapshotCache.get(cacheKey)
   if (cached) {
@@ -257,6 +468,66 @@ export const applyStaticShellSnapshot = (
   replayStaticSnapshotReadyStagger()
 }
 
+export const captureCurrentStaticShellSnapshot = (
+  snapshotKey: string,
+  lang: Lang,
+  doc: Document | null = typeof document !== 'undefined' ? document : null
+) => {
+  if (!doc) {
+    return null
+  }
+
+  const header = doc.querySelector<HTMLElement>(`[${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_HEADER_REGION}"]`)
+  const main = doc.querySelector<HTMLElement>(`[${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_MAIN_REGION}"]`)
+  const dock = doc.querySelector<HTMLElement>(`[${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_DOCK_REGION}"]`)
+  if (!header || !main || !dock) {
+    return null
+  }
+
+  const snapshot: StaticShellSnapshot = {
+    path: toStaticSnapshotKey(snapshotKey),
+    lang,
+    title: doc.title,
+    regions: {
+      header: header.outerHTML,
+      main: main.outerHTML,
+      dock: dock.outerHTML
+    }
+  }
+  liveSessionSnapshotCache.set(buildSessionSnapshotCacheKey(snapshotKey, lang), snapshot)
+  writeStoredSessionSnapshot(snapshot)
+  postStaticShellDocumentToServiceWorker({
+    snapshotKey: snapshot.path,
+    lang: snapshot.lang,
+    doc,
+  })
+  return snapshot
+}
+
+export const clearStaticShellSessionSnapshots = (options?: {
+  snapshotKey?: string
+  lang?: Lang | null
+}) => {
+  if (!options?.snapshotKey) {
+    liveSessionSnapshotCache.clear()
+    clearStoredSessionSnapshots()
+    return
+  }
+
+  const normalizedSnapshotKey = toStaticSnapshotKey(options.snapshotKey)
+  Array.from(liveSessionSnapshotCache.keys()).forEach((key) => {
+    const [cachedSnapshotKey, cachedLang] = key.split('|')
+    if (cachedSnapshotKey !== normalizedSnapshotKey) {
+      return
+    }
+    if (options.lang && cachedLang !== options.lang) {
+      return
+    }
+    liveSessionSnapshotCache.delete(key)
+  })
+  clearStoredSessionSnapshots(options)
+}
+
 export const updateStaticShellUrlLang = (lang: Lang) => {
   const url = new URL(window.location.href)
   url.searchParams.set('lang', lang)
@@ -268,4 +539,5 @@ export const updateStaticShellUrlLang = (lang: Lang) => {
 export const resetStaticShellSnapshotClientForTests = () => {
   snapshotManifestPromise = null
   snapshotCache.clear()
+  liveSessionSnapshotCache.clear()
 }

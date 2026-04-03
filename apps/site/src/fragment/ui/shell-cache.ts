@@ -18,6 +18,8 @@ export type FragmentShellCacheEntry = {
   plan: FragmentPlanValue
   path: string
   lang: Lang
+  scopeKey?: string | null
+  versionSignature?: string | null
   fragments: FragmentPayloadMap
   orderIds: string[]
   expandedId: string | null
@@ -34,16 +36,56 @@ const CRITICAL_COOKIE_KEYS = {
 
 const normalizeFragmentShellPath = (value: string) => value.replace(/\/+$/, '') || '/'
 
-export const getFragmentShellCacheEntry = (path: string) =>
-  fragmentShellCache.get(normalizeFragmentShellPath(path))
-
-export const setFragmentShellCacheEntry = (path: string, entry: FragmentShellCacheEntry) => {
-  fragmentShellCache.set(normalizeFragmentShellPath(path), entry)
+type FragmentShellCacheKeyOptions = {
+  scopeKey?: string | null
+  lang?: string | null
+  versionSignature?: string | null
 }
 
-export const clearFragmentShellCache = (path?: string) => {
+const normalizeFragmentShellCacheKeyPart = (value?: string | null, fallback = '') => {
+  if (typeof value !== 'string') return fallback
+  const normalized = value.trim()
+  return normalized || fallback
+}
+
+const buildFragmentShellCacheKey = (path: string, options: FragmentShellCacheKeyOptions = {}) =>
+  [
+    normalizeFragmentShellPath(path),
+    normalizeFragmentShellCacheKeyPart(options.scopeKey, 'public'),
+    normalizeFragmentShellCacheKeyPart(options.lang, 'default'),
+    normalizeFragmentShellCacheKeyPart(options.versionSignature)
+  ].join('|')
+
+export const getFragmentShellCacheEntry = (path: string, options: FragmentShellCacheKeyOptions = {}) =>
+  fragmentShellCache.get(buildFragmentShellCacheKey(path, options))
+
+export const setFragmentShellCacheEntry = (
+  path: string,
+  entry: FragmentShellCacheEntry,
+  options: FragmentShellCacheKeyOptions = {}
+) => {
+  fragmentShellCache.set(
+    buildFragmentShellCacheKey(path, {
+      scopeKey: options.scopeKey ?? entry.scopeKey,
+      lang: options.lang ?? entry.lang,
+      versionSignature: options.versionSignature ?? entry.versionSignature
+    }),
+    entry
+  )
+}
+
+export const clearFragmentShellCache = (path?: string, options: Omit<FragmentShellCacheKeyOptions, 'versionSignature'> = {}) => {
   if (typeof path === 'string' && path.trim()) {
-    fragmentShellCache.delete(normalizeFragmentShellPath(path))
+    const normalizedPath = normalizeFragmentShellPath(path)
+    const expectedScope = normalizeFragmentShellCacheKeyPart(options.scopeKey)
+    const expectedLang = normalizeFragmentShellCacheKeyPart(options.lang)
+    Array.from(fragmentShellCache.keys()).forEach((key) => {
+      const [cachedPath, cachedScope, cachedLang] = key.split('|')
+      if (cachedPath !== normalizedPath) return
+      if (expectedScope && cachedScope !== expectedScope) return
+      if (expectedLang && cachedLang !== expectedLang) return
+      fragmentShellCache.delete(key)
+    })
     return
   }
   fragmentShellCache.clear()

@@ -9,6 +9,22 @@ type FragmentPayloadSource =
   | null
   | undefined
 
+export type RouteFragmentSnapshotState = {
+  fragmentOrder: ReadonlyArray<string>
+  runtimeInitialFragments?: FragmentPayload[]
+  fragmentVersions: Record<string, number>
+  versionSignature?: string | null
+}
+
+type RouteFragmentSnapshotPayloadCache = {
+  hydrate: () => Promise<void>
+  getPayloadsForRoute: (
+    scopeKey: string,
+    path: string,
+    lang: string
+  ) => Promise<FragmentPayload[]>
+}
+
 const readPayloadUpdatedAt = (payload: FragmentPayload) =>
   typeof payload.cacheUpdatedAt === 'number' && Number.isFinite(payload.cacheUpdatedAt)
     ? payload.cacheUpdatedAt
@@ -83,10 +99,10 @@ export const orderRouteSnapshotPayloads = (
   return orderedPayloads
 }
 
-export const restoreStaticFragmentRouteData = (
-  routeData: StaticFragmentRouteData,
+export const restoreRouteFragmentSnapshotState = <T extends RouteFragmentSnapshotState>(
+  routeData: T,
   payloads: Record<string, FragmentPayload>
-): StaticFragmentRouteData => {
+): T => {
   const runtimeInitialFragments = orderRouteSnapshotPayloads(routeData.fragmentOrder, payloads)
   const fragmentVersions = { ...routeData.fragmentVersions }
 
@@ -106,13 +122,83 @@ export const restoreStaticFragmentRouteData = (
   }
 }
 
-export const collectMissingStaticFragmentRouteIds = (
-  routeData: Pick<StaticFragmentRouteData, 'fragmentOrder' | 'runtimeInitialFragments'>
+export const loadRouteFragmentSnapshotPayloads = async ({
+  scopeKey,
+  path,
+  lang,
+  runtimeInitialFragments,
+  planInitialFragments,
+  payloadCache
+}: {
+  scopeKey: string
+  path: string
+  lang: string
+  runtimeInitialFragments?: FragmentPayloadSource
+  planInitialFragments?: FragmentPayloadSource
+  payloadCache: RouteFragmentSnapshotPayloadCache
+}) => {
+  await payloadCache.hydrate().catch(() => undefined)
+  const cachedPayloads = await payloadCache
+    .getPayloadsForRoute(scopeKey, path, lang)
+    .catch(() => [] as FragmentPayload[])
+
+  return mergeFragmentPayloadSources(
+    runtimeInitialFragments,
+    planInitialFragments,
+    cachedPayloads
+  )
+}
+
+export const restoreRouteFragmentSnapshotFromCaches = async <T extends RouteFragmentSnapshotState>({
+  scopeKey,
+  path,
+  lang,
+  routeData,
+  planInitialFragments,
+  payloadCache
+}: {
+  scopeKey: string
+  path: string
+  lang: string
+  routeData: T
+  planInitialFragments?: FragmentPayloadSource
+  payloadCache: RouteFragmentSnapshotPayloadCache
+}) => {
+  const mergedPayloads = await loadRouteFragmentSnapshotPayloads({
+    scopeKey,
+    path,
+    lang,
+    runtimeInitialFragments: routeData.runtimeInitialFragments,
+    planInitialFragments,
+    payloadCache
+  })
+
+  return {
+    mergedPayloads,
+    routeData: restoreRouteFragmentSnapshotState(routeData, mergedPayloads)
+  }
+}
+
+export const collectMissingRouteFragmentIds = (
+  routeData: Pick<RouteFragmentSnapshotState, 'fragmentOrder' | 'runtimeInitialFragments'>
 ) => {
   const restoredIds = new Set((routeData.runtimeInitialFragments ?? []).map((payload) => payload.id))
   return routeData.fragmentOrder.filter((fragmentId) => !restoredIds.has(fragmentId))
 }
 
+export const hasCompleteRouteFragmentSnapshot = (
+  routeData: Pick<RouteFragmentSnapshotState, 'fragmentOrder' | 'runtimeInitialFragments'>
+) => collectMissingRouteFragmentIds(routeData).length === 0
+
+export const restoreStaticFragmentRouteData = (
+  routeData: StaticFragmentRouteData,
+  payloads: Record<string, FragmentPayload>
+) => restoreRouteFragmentSnapshotState(routeData, payloads)
+
+export const collectMissingStaticFragmentRouteIds = (
+  routeData: Pick<StaticFragmentRouteData, 'fragmentOrder' | 'runtimeInitialFragments'>
+) => collectMissingRouteFragmentIds(routeData)
+
 export const hasCompleteStaticFragmentRouteSnapshot = (
   routeData: Pick<StaticFragmentRouteData, 'fragmentOrder' | 'runtimeInitialFragments'>
-) => collectMissingStaticFragmentRouteIds(routeData).length === 0
+) => hasCompleteRouteFragmentSnapshot(routeData)

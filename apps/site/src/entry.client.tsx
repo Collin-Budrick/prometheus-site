@@ -32,6 +32,7 @@ import {
 } from './fragment/cache-scope'
 import { getPersistentRuntimeCache } from './fragment/runtime/persistent-cache-instance'
 import { parseFragmentPayloadResourceKey } from './fragment/runtime/resource-keys'
+import { clearFragmentShellCache } from './fragment/ui/shell-cache'
 import type { FragmentPayload } from './fragment/types'
 import {
   STATIC_FRAGMENT_DATA_SCRIPT_ID,
@@ -40,6 +41,7 @@ import {
   STATIC_PAGE_ROOT_ATTR,
   STATIC_ROUTE_ATTR
 } from './shell/core/constants'
+import { clearStaticShellSessionSnapshots } from './shell/core/snapshot-client'
 
 declare global {
   interface Window {
@@ -438,6 +440,8 @@ function setupServiceWorkerBridge() {
     const payload = event.data as Record<string, unknown> | null
     if (!payload || typeof payload.type !== 'string') return
     if (payload.type === 'sw:cache-refreshed') {
+      clearStaticShellSessionSnapshots()
+      clearFragmentShellCache()
       dispatchSwEvent('prom:sw-cache-refreshed', { source: 'sw' })
     }
     if (payload.type === 'sw:cache-cleared') {
@@ -446,6 +450,8 @@ function setupServiceWorkerBridge() {
           ? buildUserFragmentCacheScope(payload.userCacheKey)
           : null
       )
+      clearStaticShellSessionSnapshots()
+      clearFragmentShellCache()
       dispatchSwEvent('prom:sw-cache-cleared', { source: 'sw' })
     }
     if (payload.type === 'sw:warm-complete') {
@@ -461,6 +467,14 @@ function setupServiceWorkerBridge() {
           nextPayload.lang,
           nextPayload.payload
         )
+        clearStaticShellSessionSnapshots({
+          snapshotKey: nextPayload.path,
+          lang: nextPayload.lang
+        })
+        clearFragmentShellCache(nextPayload.path, {
+          scopeKey: nextPayload.scopeKey,
+          lang: nextPayload.lang
+        })
       })()
       dispatchSwEvent('prom:sw-resource-updated', payload)
     }
@@ -469,12 +483,21 @@ function setupServiceWorkerBridge() {
         typeof payload.resourceKey === 'string' ? payload.resourceKey : null
       )
       if (parsedKey) {
+        const scopeKey = resolveFragmentScopeFromPayload(payload, parsedKey.path)
         void persistentFragmentRuntimeCache.invalidatePayload(
-          resolveFragmentScopeFromPayload(payload, parsedKey.path),
+          scopeKey,
           parsedKey.path,
           parsedKey.lang,
           parsedKey.fragmentId
         )
+        clearStaticShellSessionSnapshots({
+          snapshotKey: parsedKey.path,
+          lang: parsedKey.lang
+        })
+        clearFragmentShellCache(parsedKey.path, {
+          scopeKey,
+          lang: parsedKey.lang
+        })
       }
       dispatchSwEvent('prom:sw-resource-invalidated', payload)
     }

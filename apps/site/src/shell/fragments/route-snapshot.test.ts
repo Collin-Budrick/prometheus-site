@@ -5,8 +5,10 @@ import { createStaticFragmentRouteData } from './static-fragment-model'
 import {
   collectMissingStaticFragmentRouteIds,
   hasCompleteStaticFragmentRouteSnapshot,
+  loadRouteFragmentSnapshotPayloads,
   mergeFragmentPayloadSources,
   orderRouteSnapshotPayloads,
+  restoreRouteFragmentSnapshotFromCaches,
   restoreStaticFragmentRouteData
 } from './route-snapshot'
 
@@ -84,5 +86,65 @@ describe('route snapshot helpers', () => {
 
     expect(collectMissingStaticFragmentRouteIds(routeData)).toEqual([cartId])
     expect(hasCompleteStaticFragmentRouteSnapshot(routeData)).toBe(false)
+  })
+
+  it('hydrates cached payloads from plan and persistent cache sources together', async () => {
+    const heroPayload = createPayload('fragment://page/store/hero@v1', 11)
+    const cartPayload = createPayload('fragment://page/store/cart@v1', 22)
+    const payloadCache = {
+      hydrate: async () => undefined,
+      getPayloadsForRoute: async () => [cartPayload]
+    }
+
+    const mergedPayloads = await loadRouteFragmentSnapshotPayloads({
+      scopeKey: 'public',
+      path: '/store',
+      lang: 'en',
+      runtimeInitialFragments: [heroPayload],
+      planInitialFragments: {
+        [heroPayload.id]: heroPayload
+      },
+      payloadCache
+    })
+
+    expect(mergedPayloads).toEqual({
+      [heroPayload.id]: heroPayload,
+      [cartPayload.id]: cartPayload
+    })
+  })
+
+  it('restores route data from cached payload stores in route order', async () => {
+    const heroPayload = createPayload('fragment://page/store/hero@v1', 11)
+    const cartPayload = createPayload('fragment://page/store/cart@v1', 22)
+    const routeData = createStaticFragmentRouteData({
+      path: '/store',
+      lang: 'en',
+      fragmentOrder: [heroPayload.id, cartPayload.id],
+      runtimeInitialFragments: [heroPayload]
+    })
+
+    const restored = await restoreRouteFragmentSnapshotFromCaches({
+      scopeKey: 'public',
+      path: '/store',
+      lang: 'en',
+      routeData,
+      planInitialFragments: {
+        [heroPayload.id]: heroPayload
+      },
+      payloadCache: {
+        hydrate: async () => undefined,
+        getPayloadsForRoute: async () => [cartPayload]
+      }
+    })
+
+    expect(restored.routeData.runtimeInitialFragments).toEqual([heroPayload, cartPayload])
+    expect(restored.routeData.fragmentVersions).toEqual({
+      [heroPayload.id]: 11,
+      [cartPayload.id]: 22
+    })
+    expect(restored.mergedPayloads).toEqual({
+      [heroPayload.id]: heroPayload,
+      [cartPayload.id]: cartPayload
+    })
   })
 })

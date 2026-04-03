@@ -11,6 +11,7 @@ import type { HomeDemoAssetMap } from './home-demo-runtime-types'
 import type { StaticShellSeed } from '../core/seed'
 import { readStaticShellSeed } from '../core/seed-client'
 import { HOME_FRAGMENT_BOOTSTRAP_IDS } from './home-fragment-bootstrap-ids'
+import { asTrustedScript } from '../../security/client'
 
 type SerializedHomeRuntimeProfileBucket = [maxWidth: number, height: number]
 type SerializedHomeRuntimeLayoutLegacy = [
@@ -305,6 +306,10 @@ type JsonScriptElement = {
   textContent: string | null
 }
 
+type WritableJsonScriptElement = JsonScriptElement & {
+  text?: string | ReturnType<typeof asTrustedScript>
+}
+
 export type StaticHomeBootstrapDocument = Pick<Document, 'getElementById'>
 
 const isJsonScriptElement = (value: unknown): value is JsonScriptElement => {
@@ -325,6 +330,33 @@ export const readJsonScript = <T,>(
   } catch {
     return null
   }
+}
+
+const serializeJsonForScript = (value: unknown) => JSON.stringify(value).replace(/</g, '\\u003c')
+
+const isWritableJsonScriptElement = (value: unknown): value is WritableJsonScriptElement =>
+  isJsonScriptElement(value)
+
+export const readStaticHomeRouteData = ({
+  doc = typeof document !== 'undefined' ? document : null
+}: {
+  doc?: StaticHomeBootstrapDocument | null
+} = {}) => readJsonScript<HomeStaticRouteData>(STATIC_HOME_DATA_SCRIPT_ID, doc)
+
+export const writeStaticHomeRouteData = (
+  routeData: HomeStaticRouteData | null,
+  doc: StaticHomeBootstrapDocument | null = typeof document !== 'undefined' ? document : null
+) => {
+  if (!routeData) return null
+  const element = doc?.getElementById(STATIC_HOME_DATA_SCRIPT_ID)
+  if (!element || !isWritableJsonScriptElement(element)) return null
+  const serialized = serializeJsonForScript(routeData)
+  if ('text' in element) {
+    element.text = asTrustedScript(serialized)
+  } else {
+    element.textContent = serialized
+  }
+  return routeData
 }
 
 export const readStaticHomeBootstrapData = ({
