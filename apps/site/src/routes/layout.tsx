@@ -1395,6 +1395,9 @@ const InteractiveShellLayout = component$(() => {
                 class="fragment-status"
                 data-runtime-state={fragmentStatus.value}
                 data-state={effectiveFragmentStatus}
+                data-status-label-idle={copy.value.fragmentStatusIdle}
+                data-status-label-streaming={copy.value.fragmentStatusStreaming}
+                data-status-label-error={copy.value.fragmentStatusStalled}
                 role="status"
                 aria-live="polite"
                 aria-label={statusLabel}

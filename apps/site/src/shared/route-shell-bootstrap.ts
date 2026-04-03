@@ -364,6 +364,7 @@ export const buildRouteShellBootstrapScript = ({
   var swBridgeReadyKey = '__PROMETHEUS_ROUTE_SW_BRIDGE_READY__';
   var swBridgeInstalledKey = '__PROMETHEUS_ROUTE_SW_BRIDGE_INSTALLED__';
   var swHeartbeatInstalledKey = '__PROMETHEUS_ROUTE_SW_HEARTBEAT_INSTALLED__';
+  var fragmentStatusSelector = '.fragment-status[data-runtime-state]';
   var swRegistrationPromise = null;
 
   var normalizePath = function (value) {
@@ -437,6 +438,45 @@ export const buildRouteShellBootstrapScript = ({
     window.dispatchEvent(new CustomEvent(name, { detail: detail || {} }));
   };
 
+  var resolveFragmentRuntimeState = function (value) {
+    return value === 'streaming' || value === 'error' ? value : 'idle';
+  };
+
+  var resolveEffectiveFragmentStatus = function (runtimeState, reachability) {
+    return !reachability.browserOnline || reachability.online === false ? 'error' : runtimeState;
+  };
+
+  var resolveFragmentStatusLabel = function (element, state) {
+    if (!element || !element.dataset) return null;
+    if (state === 'streaming') {
+      return typeof element.dataset.statusLabelStreaming === 'string' && element.dataset.statusLabelStreaming.trim()
+        ? element.dataset.statusLabelStreaming.trim()
+        : null;
+    }
+    if (state === 'error') {
+      return typeof element.dataset.statusLabelError === 'string' && element.dataset.statusLabelError.trim()
+        ? element.dataset.statusLabelError.trim()
+        : null;
+    }
+    return typeof element.dataset.statusLabelIdle === 'string' && element.dataset.statusLabelIdle.trim()
+      ? element.dataset.statusLabelIdle.trim()
+      : null;
+  };
+
+  var syncFragmentStatusIndicators = function (reachability) {
+    var elements = document.querySelectorAll(fragmentStatusSelector);
+    for (var index = 0; index < elements.length; index += 1) {
+      var element = elements[index];
+      var runtimeState = resolveFragmentRuntimeState(element.dataset.runtimeState || element.dataset.state);
+      var effectiveState = resolveEffectiveFragmentStatus(runtimeState, reachability);
+      element.dataset.state = effectiveState;
+      var label = resolveFragmentStatusLabel(element, effectiveState);
+      if (label) {
+        element.setAttribute('aria-label', label);
+      }
+    }
+  };
+
   var resolveBrowserOnline = function () {
     return navigator.onLine !== false;
   };
@@ -480,9 +520,11 @@ export const buildRouteShellBootstrapScript = ({
       source: typeof patch.source === 'string' && patch.source.trim() ? patch.source.trim() : current.source
     };
     if (!hasReachabilityChanged(current, next)) {
+      syncFragmentStatusIndicators(current);
       return current;
     }
     window[serverReachabilityKey] = next;
+    syncFragmentStatusIndicators(next);
     dispatchSwEvent(serverReachabilityEvent, next);
     return next;
   };
