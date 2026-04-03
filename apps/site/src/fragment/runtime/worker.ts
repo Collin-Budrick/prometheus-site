@@ -35,6 +35,7 @@ import type {
   FragmentRuntimeBootstrapPrimedMessage,
   FragmentRuntimeWorkerMessage
 } from './protocol'
+import { decodeBootstrapFramesSerially } from './bootstrap-decode'
 import { decodeRuntimeFragmentPayload } from './decode-payload'
 import {
   buildLearnedHeightKey,
@@ -208,8 +209,8 @@ class DecodePool {
     let worker: Worker
     try {
       worker = this.workerHref
-        ? new Worker(this.workerHref, { type: 'module' })
-        : new Worker(new URL('./decode-pool.worker.js', import.meta.url), { type: 'module' })
+        ? new Worker(this.workerHref, NESTED_DECODE_WORKER_OPTIONS)
+        : new Worker(new URL('./decode-pool.worker.js', import.meta.url), NESTED_DECODE_WORKER_OPTIONS)
     } catch (error) {
       this.terminate()
       if (!warnedAboutNestedDecodeWorkerFallback) {
@@ -343,6 +344,10 @@ const resolveDecodePoolMaxSize = () => {
   return Math.max(1, Math.min(MAX_DECODE_WORKERS, Math.floor(hardwareConcurrency / 2) || 1))
 }
 
+const NESTED_DECODE_WORKER_OPTIONS: WorkerOptions = {
+  name: 'fragment-decode'
+}
+
 let decodePool: DecodePool | null = null
 
 const getDecodePool = () => {
@@ -361,10 +366,9 @@ const buildBootstrapPayloadKey = (path: string, lang: string, fragmentIds: strin
 
 const decodeBootstrapPayloads = async (bytes: Uint8Array) => {
   const frames = parseFragmentFrames(bytes).filter((frame) => !isFragmentHeartbeatFrame(frame))
-  const payloads = await Promise.all(
-    frames.map(async (frame) => getDecodePool().decode(frame.id, frame.payloadBytes))
+  return await decodeBootstrapFramesSerially(frames, (fragmentId, payloadBytes) =>
+    decodeRuntimeFragmentPayload(fragmentId, payloadBytes)
   )
-  return payloads
 }
 
 let supportedWorkerPayloadEncodingsPromise: Promise<FragmentCompressionEncoding[]> | null = null
