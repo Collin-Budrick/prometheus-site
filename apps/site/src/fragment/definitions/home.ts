@@ -83,7 +83,7 @@ const renderHomeWidgetMarker = (
   kind: 'planner-demo' | 'wasm-renderer-demo' | 'react-binary-demo' | 'preact-island' | 'home-collab',
   shell: ReturnType<typeof h>,
   props?: Record<string, unknown>,
-  priority: 'critical' | 'visible' | 'deferred' = 'visible'
+  priority: 'critical' | 'visible' | 'deferred' = 'critical'
 ) =>
   createFragmentWidgetMarkerNode({
     kind,

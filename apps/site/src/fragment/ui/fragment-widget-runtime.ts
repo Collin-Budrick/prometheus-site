@@ -76,15 +76,34 @@ const readWidgetPriority = (element: HTMLElement): WidgetPriority => {
   return 'normal'
 }
 
+const readWidgetPropsSource = (node: Element | null) => {
+  if (!node) {
+    return ''
+  }
+  const templateNode = node as Element & {
+    innerHTML?: string
+    tagName?: string
+    textContent?: string | null
+  }
+  if (
+    templateNode.tagName === 'TEMPLATE' &&
+    typeof templateNode.innerHTML === 'string'
+  ) {
+    return templateNode.innerHTML.trim()
+  }
+  return templateNode.textContent?.trim() ?? ''
+}
+
 const readWidgetProps = (element: HTMLElement): FragmentWidgetPayload => {
-  const script = element.querySelector<HTMLScriptElement>(
+  const propsNode = element.querySelector<Element>(
     FRAGMENT_WIDGET_PROPS_SELECTOR
   )
-  if (!script?.textContent) {
+  const source = readWidgetPropsSource(propsNode)
+  if (!source) {
     return {}
   }
   try {
-    const parsed = JSON.parse(script.textContent) as FragmentWidgetPayload
+    const parsed = JSON.parse(source) as FragmentWidgetPayload
     return typeof parsed === 'object' && parsed !== null ? parsed : {}
   } catch (error) {
     console.error('Failed to parse fragment widget props:', error)

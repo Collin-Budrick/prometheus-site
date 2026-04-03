@@ -66,7 +66,7 @@ const reactFragment: FragmentDefinition = {
       createFragmentWidgetMarkerNode({
         kind: 'react-binary-demo',
         id: buildFragmentWidgetId(reactDemo.fragmentId, 'react-binary-demo', 'shell'),
-        priority: 'visible',
+        priority: 'critical',
         props: {},
         shell: renderHomeDemoCompactShell(
           'react-binary',

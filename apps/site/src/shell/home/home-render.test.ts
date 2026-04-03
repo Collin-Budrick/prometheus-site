@@ -144,7 +144,7 @@ describe('renderHomeStaticFragmentHtml', () => {
 
     expect(html).toContain('data-fragment-widget="planner-demo"')
     expect(html).toContain('data-fragment-widget-id="fragment://page/home/unknown@v1::planner-demo::shell"')
-    expect(html).toContain('data-fragment-widget-priority="visible"')
+    expect(html).toContain('data-fragment-widget-priority="critical"')
     expect(html).toContain('data-fragment-widget-hydrated="false"')
     expect(html).toContain('data-fragment-widget-shell')
     expect(html).not.toContain('data-fragment-widget-props')

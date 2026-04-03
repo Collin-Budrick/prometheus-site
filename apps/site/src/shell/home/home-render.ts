@@ -189,7 +189,7 @@ const buildDemoWidgetNode = (
         toDemoWidgetKind(kind),
         'shell'
       ),
-    priority: options.priority ?? 'visible',
+    priority: options.priority ?? 'critical',
     props,
     shell
   })

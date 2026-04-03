@@ -157,6 +157,8 @@ describe('installHomeStaticEntry', () => {
     let deferredRuntimeInstalls = 0
     let resumeCalls = 0
     let globalStyleCallCount = 0
+    let widgetRuntimeLoads = 0
+    let widgetRuntimeCreates = 0
 
     const cleanup = installHomeStaticEntry({
       win: win as never,
@@ -179,6 +181,20 @@ describe('installHomeStaticEntry', () => {
         expect(previewRefresh).toBeUndefined()
         return true
       },
+      loadWidgetRuntime: async () => {
+        widgetRuntimeLoads += 1
+        return {
+          createFragmentWidgetRuntime: ({ root, observeMutations }: { root: unknown; observeMutations: boolean }) => {
+            widgetRuntimeCreates += 1
+            expect(root).toBe(doc.mainRoot)
+            expect(observeMutations).toBe(true)
+            return {
+              handleInteraction() {},
+              destroy() {}
+            }
+          }
+        } as never
+      },
       ensureDeferredGlobalStylesheet: async ({ doc: liveDoc }) => {
         globalStyleCallCount += 1
         expect(liveDoc).toBe(doc)
@@ -199,6 +215,12 @@ describe('installHomeStaticEntry', () => {
     expect(doc.listeners.has('visibilitychange')).toBe(true)
     expect(scheduledOptions).toEqual([
       expect.objectContaining({
+        priority: 'user-visible',
+        preferIdle: true,
+        waitForPaint: true,
+        timeoutMs: 250
+      }),
+      expect.objectContaining({
         preferIdle: true,
         waitForLoad: true,
         waitForPaint: true,
@@ -215,6 +237,8 @@ describe('installHomeStaticEntry', () => {
     await flushMicrotasks()
 
     expect(globalStyleCallCount).toBe(1)
+    expect(widgetRuntimeLoads).toBe(1)
+    expect(widgetRuntimeCreates).toBe(1)
     expect(deferredRuntimeLoads).toBe(1)
     expect(deferredRuntimeInstalls).toBe(1)
 
@@ -231,6 +255,7 @@ describe('installHomeStaticEntry', () => {
     const taskQueue = createTaskQueue()
     let globalStyleCallCount = 0
     let deferredRuntimeLoads = 0
+    let widgetRuntimeLoads = 0
 
     const cleanup = installHomeStaticEntry({
       win: win as never,
@@ -243,6 +268,15 @@ describe('installHomeStaticEntry', () => {
         } as never
       },
       resumeDeferredHydration: () => true,
+      loadWidgetRuntime: async () => {
+        widgetRuntimeLoads += 1
+        return {
+          createFragmentWidgetRuntime: () => ({
+            handleInteraction() {},
+            destroy() {}
+          })
+        } as never
+      },
       ensureDeferredGlobalStylesheet: async () => {
         globalStyleCallCount += 1
       }
@@ -255,7 +289,54 @@ describe('installHomeStaticEntry', () => {
     await flushMicrotasks()
 
     expect(globalStyleCallCount).toBe(0)
+    expect(widgetRuntimeLoads).toBe(0)
     expect(deferredRuntimeLoads).toBe(1)
+
+    cleanup()
+  })
+
+  it('starts the widget runtime automatically after first paint without waiting for interaction', async () => {
+    const win = new MockWindow()
+    const doc = new MockDocument()
+    const taskQueue = createTaskQueue()
+    let loadWidgetRuntimeCalls = 0
+    let createRuntimeCalls = 0
+
+    const cleanup = installHomeStaticEntry({
+      win: win as never,
+      doc: doc as never,
+      scheduleTask: taskQueue.schedule as never,
+      loadDeferredRuntime: async () => ({
+        installHomeBootstrapDeferredRuntime: async () => undefined
+      }) as never,
+      resumeDeferredHydration: () => true,
+      loadWidgetRuntime: async () => {
+        loadWidgetRuntimeCalls += 1
+        return {
+          createFragmentWidgetRuntime: ({
+            root,
+            observeMutations
+          }: {
+            root: unknown
+            observeMutations: boolean
+          }) => {
+            createRuntimeCalls += 1
+            expect(root).toBe(doc.mainRoot)
+            expect(observeMutations).toBe(true)
+            return {
+              handleInteraction() {},
+              destroy() {}
+            }
+          }
+        } as never
+      }
+    })
+
+    taskQueue.flush()
+    await flushMicrotasks()
+
+    expect(loadWidgetRuntimeCalls).toBe(1)
+    expect(createRuntimeCalls).toBe(1)
 
     cleanup()
   })

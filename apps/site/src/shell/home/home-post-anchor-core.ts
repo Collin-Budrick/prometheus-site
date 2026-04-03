@@ -188,6 +188,7 @@ export const installHomeStaticEntry = ({
   let widgetRuntime:
     | import('../../fragment/ui/fragment-widget-runtime').FragmentWidgetRuntime
     | null = null
+  let cancelWidgetRuntimeStart: (() => void) | null = null
   let deferredRuntimePromise: Promise<void> | null = null
   let cancelDeferredGlobalStylesheetStart: (() => void) | null = null
   let cancelDeferredRuntimeStart: (() => void) | null = null
@@ -361,6 +362,25 @@ export const installHomeStaticEntry = ({
         console.error('Static home widget runtime failed:', error)
       })
 
+  const scheduleWidgetRuntime = () => {
+    if (cancelWidgetRuntimeStart || widgetRuntimePromise || widgetRuntime) {
+      return
+    }
+
+    cancelWidgetRuntimeStart = scheduleTask(
+      () => {
+        cancelWidgetRuntimeStart = null
+        void startWidgetRuntime()
+      },
+      {
+        priority: 'user-visible',
+        timeoutMs: 250,
+        preferIdle: true,
+        waitForPaint: true
+      }
+    )
+  }
+
   const clearPendingClickReplay = () => {
     cancelPendingClickReplay?.()
     cancelPendingClickReplay = null
@@ -461,11 +481,15 @@ export const installHomeStaticEntry = ({
     if (liveDoc.visibilityState !== 'hidden') {
       return
     }
+    cancelWidgetRuntimeStart?.()
+    cancelWidgetRuntimeStart = null
     cancelDeferredGlobalStylesheetStart?.()
     cancelDeferredGlobalStylesheetStart = null
   }
 
   function handlePageHide() {
+    cancelWidgetRuntimeStart?.()
+    cancelWidgetRuntimeStart = null
     cancelDeferredGlobalStylesheetStart?.()
     cancelDeferredGlobalStylesheetStart = null
   }
@@ -496,6 +520,7 @@ export const installHomeStaticEntry = ({
     })
   }
   resumeHomeHydration()
+  scheduleWidgetRuntime()
   scheduleDeferredGlobalStylesheet()
   scheduleDeferredRuntime()
 
@@ -513,6 +538,8 @@ export const installHomeStaticEntry = ({
     liveWin.removeEventListener('pagehide', handlePageHide, eventOptions)
     cleanupEarlySettingsBridge()
     primeHomeSettingsInteractionHandler = undefined
+    cancelWidgetRuntimeStart?.()
+    cancelWidgetRuntimeStart = null
     cancelDeferredGlobalStylesheetStart?.()
     cancelDeferredGlobalStylesheetStart = null
     cancelDeferredRuntimeStart?.()

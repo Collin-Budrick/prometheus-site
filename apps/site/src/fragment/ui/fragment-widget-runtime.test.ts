@@ -13,6 +13,7 @@ type MockIntersectionEntry = {
 }
 
 class MockScriptElement {
+  tagName = 'SCRIPT'
   textContent: string
 
   constructor(textContent: string) {
@@ -20,20 +21,33 @@ class MockScriptElement {
   }
 }
 
+class MockTemplateElement {
+  tagName = 'TEMPLATE'
+  innerHTML: string
+  textContent = ''
+
+  constructor(innerHTML: string) {
+    this.innerHTML = innerHTML
+  }
+}
+
 class MockWidgetElement {
   readonly nodeType = 1
   isConnected = true
   readonly dataset: Record<string, string>
-  private readonly propsScript: MockScriptElement
+  private readonly propsNode: MockScriptElement | MockTemplateElement
 
-  constructor(priority: 'critical' | 'visible' | 'deferred') {
+  constructor(
+    priority: 'critical' | 'visible' | 'deferred',
+    propsNode: MockScriptElement | MockTemplateElement = new MockScriptElement('{}')
+  ) {
     this.dataset = {
       fragmentWidget: 'contact-invites',
       fragmentWidgetId: 'fragment://page/test/contact@v1::contact-invites',
       fragmentWidgetPriority: priority,
       fragmentWidgetHydrated: 'false'
     }
-    this.propsScript = new MockScriptElement('{}')
+    this.propsNode = propsNode
   }
 
   matches(selector: string) {
@@ -46,7 +60,7 @@ class MockWidgetElement {
 
   querySelector(selector: string) {
     if (selector === FRAGMENT_WIDGET_PROPS_SELECTOR) {
-      return this.propsScript
+      return this.propsNode
     }
     return null
   }
@@ -195,6 +209,29 @@ describe('createFragmentWidgetRuntime', () => {
 
     scheduledPaintCallback?.(16.7)
     await flushMicrotasks()
+    expect(widget.dataset.fragmentWidgetHydrated).toBe('true')
+
+    runtime.destroy()
+  })
+
+  it('parses widget props from template markup when template textContent is empty', async () => {
+    let scheduledPaintCallback: FrameRequestCallback | null = null
+    globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      scheduledPaintCallback = callback
+      return 1
+    }) as typeof requestAnimationFrame
+    globalThis.cancelAnimationFrame = (() => undefined) as typeof cancelAnimationFrame
+
+    const widget = new MockWidgetElement(
+      'critical',
+      new MockTemplateElement('{"props":{"inviteId":"abc"}}')
+    )
+    const root = new MockRootElement([widget])
+    const runtime = createFragmentWidgetRuntime({ root: root as unknown as ParentNode })
+
+    scheduledPaintCallback?.(16.7)
+    await flushMicrotasks()
+
     expect(widget.dataset.fragmentWidgetHydrated).toBe('true')
 
     runtime.destroy()

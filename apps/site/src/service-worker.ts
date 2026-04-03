@@ -22,9 +22,9 @@ type PeriodicSyncEventLike = ExtendableEvent & {
 }
 
 const CACHE_PREFIX = templateBranding.ids.cachePrefix
-const PUBLIC_SHELL_CACHE_NAME = `${CACHE_PREFIX}-public-shell-v1`
+const PUBLIC_SHELL_CACHE_NAME = `${CACHE_PREFIX}-public-shell-v2`
 const PUBLIC_DATA_CACHE_NAME = `${CACHE_PREFIX}-public-data-v1`
-const USER_SHELL_CACHE_PREFIX = `${CACHE_PREFIX}-user-shell-v1`
+const USER_SHELL_CACHE_PREFIX = `${CACHE_PREFIX}-user-shell-v2`
 const USER_DATA_CACHE_PREFIX = `${CACHE_PREFIX}-user-data-v1`
 const OUTBOX_CACHE_NAME = `${CACHE_PREFIX}-outbox-v1`
 const ACTIVE_USER_RESOURCE_KEY = 'meta:active-user'
@@ -289,6 +289,23 @@ const clearRuntimeCaches = async () => {
       key.startsWith(`${CACHE_PREFIX}-user-data`) ||
       key.startsWith(OUTBOX_CACHE_NAME)
   )
+  await Promise.all(targets.map((key) => caches.delete(key)))
+}
+
+const deleteStaleShellCaches = async () => {
+  const keys = await caches.keys()
+  const targets = keys.filter((key) => {
+    if (key === PUBLIC_SHELL_CACHE_NAME) {
+      return false
+    }
+    if (key.startsWith(USER_SHELL_CACHE_PREFIX)) {
+      return false
+    }
+    return (
+      key.startsWith(`${CACHE_PREFIX}-public-shell-`) ||
+      key.startsWith(`${CACHE_PREFIX}-user-shell-`)
+    )
+  })
   await Promise.all(targets.map((key) => caches.delete(key)))
 }
 
@@ -605,7 +622,12 @@ self.addEventListener('install', (event) => {
 })
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim())
+  event.waitUntil(
+    Promise.all([
+      deleteStaleShellCaches(),
+      self.clients.claim()
+    ])
+  )
 })
 
 self.addEventListener('fetch', (event) => {
