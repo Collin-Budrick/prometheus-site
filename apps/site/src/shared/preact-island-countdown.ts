@@ -1,8 +1,9 @@
 import type { PreactIslandCopy } from '../lang'
-import { showNativeNotification } from '../native/notifications'
+import type { ResidentNotificationIntentInput } from './resident-notifications'
 
 export const PREACT_COUNTDOWN_DEFAULT_SECONDS = 60
 export const PREACT_COUNTDOWN_STEP_SECONDS = 10
+export const PREACT_COUNTDOWN_NOTIFICATION_KEY = 'countdown-complete'
 
 export const formatPreactIslandClock = (seconds: number) => {
   const safeSeconds = Math.max(0, Math.floor(seconds))
@@ -60,16 +61,21 @@ export const resolvePreactIslandTickDelayMs = (
   return nextBoundaryMs === 0 ? 1000 : nextBoundaryMs
 }
 
-export const showPreactIslandCompletionNotification = async (
+export const buildPreactIslandCompletionNotificationIntent = (
   label: string,
   copy: PreactIslandCopy,
+  deliverAtMs: number,
   url?: string
-) =>
-  showNativeNotification({
-    title: label.trim() || copy.label,
-    body: `${copy.countdown} · 0:00 · ${copy.ready}`,
-    tag: `prom:preact-island-complete:${label.trim() || copy.label}`,
-    url,
-    requireInteraction: false,
-    silent: false
-  })
+): ResidentNotificationIntentInput => ({
+  notificationKey: PREACT_COUNTDOWN_NOTIFICATION_KEY,
+  kind: 'scheduled',
+  title: label.trim() || copy.label,
+  body: `${copy.countdown} - 0:00 - ${copy.ready}`,
+  url,
+  deliverAtMs
+})
+
+export const resolvePreactIslandNotificationUrl = (win: Window | undefined = globalThis.window) => {
+  const href = win?.location?.href
+  return typeof href === 'string' && href.trim() ? href : undefined
+}

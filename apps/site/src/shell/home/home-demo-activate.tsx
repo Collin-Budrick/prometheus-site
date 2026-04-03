@@ -3,14 +3,20 @@ import { requestNativeNotificationPermission } from '../../native/notifications'
 import { setTrustedInnerHtml } from '../../security/client'
 import {
   PREACT_COUNTDOWN_DEFAULT_SECONDS,
+  PREACT_COUNTDOWN_NOTIFICATION_KEY,
   adjustPreactIslandCountdown,
+  buildPreactIslandCompletionNotificationIntent,
   formatPreactIslandClock,
+  resolvePreactIslandNotificationUrl,
   resolvePreactIslandProgress,
   resolvePreactIslandRemainingSeconds,
-  resolvePreactIslandTickDelayMs,
-  showPreactIslandCompletionNotification
+  resolvePreactIslandTickDelayMs
 } from '../../shared/preact-island-countdown'
 import { createResidentFragmentExecutionGate } from '../../shared/resident-fragment-execution-gate'
+import {
+  clearResidentNotificationIntent,
+  emitResidentNotificationIntent
+} from '../../shared/resident-notification-manager'
 import {
   getStaticHomeFragmentTextCopy,
   getStaticHomePlannerDemoCopy,
@@ -1034,7 +1040,6 @@ const activatePreactIslandDemo = (
   let limitSeconds = PREACT_COUNTDOWN_DEFAULT_SECONDS
   let remaining = PREACT_COUNTDOWN_DEFAULT_SECONDS
   let deadlineAtMs: number | null = Date.now() + PREACT_COUNTDOWN_DEFAULT_SECONDS * 1000
-  let didNotifyCompletion = false
   let timeoutHandle = 0
   let cancelDeferredTick: () => void = () => undefined
 
@@ -1042,6 +1047,23 @@ const activatePreactIslandDemo = (
     if (!timeoutHandle) return
     window.clearTimeout(timeoutHandle)
     timeoutHandle = 0
+  }
+
+  const syncCompletionNotification = async (nextRemaining: number, nextDeadlineAtMs: number | null) => {
+    if (nextRemaining <= 0 || !nextDeadlineAtMs) {
+      await clearResidentNotificationIntent(root, PREACT_COUNTDOWN_NOTIFICATION_KEY)
+      return
+    }
+
+    await emitResidentNotificationIntent(
+      root,
+      buildPreactIslandCompletionNotificationIntent(
+        label,
+        copy,
+        nextDeadlineAtMs,
+        resolvePreactIslandNotificationUrl()
+      )
+    )
   }
 
   const scheduleTick = () => {
@@ -1055,21 +1077,13 @@ const activatePreactIslandDemo = (
     if (delayMs <= 0) {
       remaining = resolvePreactIslandRemainingSeconds(deadlineAtMs)
       update()
-      if (remaining === 0 && !didNotifyCompletion) {
-        didNotifyCompletion = true
-        void showPreactIslandCompletionNotification(label, copy, window.location.href)
-      }
       return
     }
     timeoutHandle = window.setTimeout(() => {
       timeoutHandle = 0
       remaining = resolvePreactIslandRemainingSeconds(deadlineAtMs)
       update()
-      if (remaining === 0 && !didNotifyCompletion) {
-        didNotifyCompletion = true
-        void showPreactIslandCompletionNotification(label, copy, window.location.href)
-        return
-      }
+      if (remaining === 0) return
       scheduleTick()
     }, delayMs)
   }
@@ -1079,8 +1093,8 @@ const activatePreactIslandDemo = (
     limitSeconds = nextLimit
     remaining = nextRemaining
     deadlineAtMs = nextRemaining > 0 ? Date.now() + nextRemaining * 1000 : null
-    didNotifyCompletion = nextRemaining === 0
     update()
+    void syncCompletionNotification(nextRemaining, deadlineAtMs)
     scheduleTick()
   }
 
@@ -1154,6 +1168,7 @@ const activatePreactIslandDemo = (
   update()
   cancelDeferredTick = scheduleHomeDemoEnhancement(() => {
     void requestNativeNotificationPermission()
+    void syncCompletionNotification(remaining, deadlineAtMs)
     scheduleTick()
   })
 

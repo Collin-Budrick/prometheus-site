@@ -8,6 +8,10 @@ import {
   type ServerHealthSource,
   shouldProbeServerHealth
 } from './shared/server-health'
+import {
+  type ResidentNotificationRecord,
+  buildResidentNotificationTag
+} from './shared/resident-notifications'
 
 declare const self: ServiceWorkerGlobalScope & {
   __SW_MANIFEST: (string | { url: string; revision?: string | null })[]
@@ -19,6 +23,14 @@ type SyncEventLike = ExtendableEvent & {
 
 type PeriodicSyncEventLike = ExtendableEvent & {
   tag: string
+}
+
+type NotificationTriggerCapableGlobal = ServiceWorkerGlobalScope & {
+  TimestampTrigger?: new (timestamp: number) => unknown
+}
+
+type NotificationOptionsWithTrigger = NotificationOptions & {
+  showTrigger?: unknown
 }
 
 const CACHE_PREFIX = templateBranding.ids.cachePrefix
@@ -235,6 +247,137 @@ const broadcastMessage = async (message: Record<string, unknown>) => {
 
 let lastServerHealthStatus: ServerHealthResult | null = null
 let serverHealthCheckPromise: Promise<ServerHealthResult> | null = null
+const residentNotificationStates = new Map<
+  string,
+  {
+    deliveredAt: number | null
+    updatedAt: number
+  }
+>()
+
+const isResidentNotificationRecord = (value: unknown): value is ResidentNotificationRecord => {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Record<string, unknown>
+  return (
+    typeof candidate.id === 'string' &&
+    typeof candidate.notificationKey === 'string' &&
+    typeof candidate.kind === 'string' &&
+    typeof candidate.title === 'string' &&
+    typeof candidate.body === 'string' &&
+    typeof candidate.updatedAt === 'number' &&
+    typeof candidate.residentKey === 'string' &&
+    typeof candidate.scopeKey === 'string'
+  )
+}
+
+const buildResidentNotificationData = (record: ResidentNotificationRecord) => ({
+  notificationId: record.id,
+  url: record.url ?? '/'
+})
+
+const getResidentNotificationTag = (record: ResidentNotificationRecord) =>
+  buildResidentNotificationTag(record.id)
+
+const buildResidentNotificationTrigger = (deliverAtMs: number) => {
+  const triggerCtor = (self as NotificationTriggerCapableGlobal).TimestampTrigger
+  if (typeof triggerCtor !== 'function') {
+    return null
+  }
+  try {
+    return new triggerCtor(deliverAtMs)
+  } catch {
+    return null
+  }
+}
+
+const broadcastResidentNotificationDelivered = async (
+  record: ResidentNotificationRecord,
+  deliveredAt: number
+) => {
+  await broadcastMessage({
+    type: 'sw:resident-notification-delivered',
+    notificationId: record.id,
+    updatedAt: record.updatedAt,
+    deliveredAt
+  })
+}
+
+const closeResidentNotifications = async (tag: string) => {
+  const notifications = await self.registration.getNotifications({ tag })
+  notifications.forEach((notification) => {
+    notification.close()
+  })
+}
+
+const showResidentNotificationNow = async (
+  record: ResidentNotificationRecord,
+  deliveredAt = Date.now()
+) => {
+  const tag = getResidentNotificationTag(record)
+  await closeResidentNotifications(tag)
+  await self.registration.showNotification(record.title, {
+    body: record.body,
+    data: buildResidentNotificationData(record),
+    tag,
+    requireInteraction: false,
+    silent: false
+  })
+  residentNotificationStates.set(record.id, {
+    deliveredAt,
+    updatedAt: record.updatedAt
+  })
+  await broadcastResidentNotificationDelivered(record, deliveredAt)
+}
+
+const upsertResidentNotification = async (
+  record: ResidentNotificationRecord,
+  options: {
+    deliverNow?: boolean
+  } = {}
+) => {
+  const current = residentNotificationStates.get(record.id)
+  if (current && current.updatedAt > record.updatedAt) {
+    return
+  }
+  if (current && current.updatedAt === record.updatedAt && current.deliveredAt !== null) {
+    return
+  }
+
+  const deliverAtMs =
+    record.kind === 'scheduled' && typeof record.deliverAtMs === 'number' ? record.deliverAtMs : null
+
+  if (
+    !options.deliverNow &&
+    deliverAtMs !== null &&
+    deliverAtMs > Date.now()
+  ) {
+    const showTrigger = buildResidentNotificationTrigger(deliverAtMs)
+    if (showTrigger) {
+      const tag = getResidentNotificationTag(record)
+      await closeResidentNotifications(tag)
+      await self.registration.showNotification(record.title, {
+        body: record.body,
+        data: buildResidentNotificationData(record),
+        tag,
+        requireInteraction: false,
+        silent: false,
+        showTrigger
+      } as NotificationOptionsWithTrigger)
+      residentNotificationStates.set(record.id, {
+        deliveredAt: null,
+        updatedAt: record.updatedAt
+      })
+      return
+    }
+  }
+
+  await showResidentNotificationNow(record)
+}
+
+const clearResidentNotification = async (notificationId: string, tag: string) => {
+  residentNotificationStates.delete(notificationId)
+  await closeResidentNotifications(tag)
+}
 
 const broadcastServerHealthStatus = async (
   status: ServerHealthResult,
@@ -805,6 +948,24 @@ self.addEventListener('message', (event) => {
         userCacheKey: typeof payload.userCacheKey === 'string' ? payload.userCacheKey : null
       })
     )
+    return
+  }
+
+  if (payload.type === 'sw:resident-notification-upsert' && isResidentNotificationRecord(payload.notification)) {
+    event.waitUntil(
+      upsertResidentNotification(payload.notification, {
+        deliverNow: payload.deliverNow === true
+      })
+    )
+    return
+  }
+
+  if (
+    payload.type === 'sw:resident-notification-clear' &&
+    typeof payload.notificationId === 'string' &&
+    typeof payload.tag === 'string'
+  ) {
+    event.waitUntil(clearResidentNotification(payload.notificationId, payload.tag))
   }
 })
 
@@ -889,9 +1050,18 @@ self.addEventListener('push', (event: PushEvent) => {
 })
 
 self.addEventListener('notificationclick', (event: NotificationEvent) => {
+  const notificationData = event.notification.data as
+    | {
+        notificationId?: string
+        url?: string
+      }
+    | undefined
+  const notificationId = typeof notificationData?.notificationId === 'string' ? notificationData.notificationId : null
+  if (notificationId) {
+    residentNotificationStates.delete(notificationId)
+  }
   event.notification.close()
-  const data = event.notification.data as { url?: string } | undefined
-  const targetUrl = typeof data?.url === 'string' ? data.url : '/'
+  const targetUrl = typeof notificationData?.url === 'string' ? notificationData.url : '/'
   event.waitUntil(
     (async () => {
       const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
@@ -903,5 +1073,33 @@ self.addEventListener('notificationclick', (event: NotificationEvent) => {
       }
       await self.clients.openWindow(targetUrl)
     })()
+  )
+})
+
+self.addEventListener('notificationclose', (event: NotificationEvent) => {
+  const notificationData = event.notification.data as
+    | {
+        notificationId?: string
+      }
+    | undefined
+  const notificationId = typeof notificationData?.notificationId === 'string' ? notificationData.notificationId : null
+  if (!notificationId) {
+    return
+  }
+  const state = residentNotificationStates.get(notificationId)
+  if (!state) {
+    return
+  }
+  residentNotificationStates.set(notificationId, {
+    ...state,
+    deliveredAt: state.deliveredAt ?? Date.now()
+  })
+  event.waitUntil(
+    broadcastMessage({
+      type: 'sw:resident-notification-delivered',
+      notificationId,
+      updatedAt: state.updatedAt,
+      deliveredAt: state.deliveredAt ?? Date.now()
+    })
   )
 })

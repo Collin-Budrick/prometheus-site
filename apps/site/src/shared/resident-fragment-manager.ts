@@ -315,24 +315,21 @@ export const readResidentFragmentMeta = (
   element: Element | null,
   options: Partial<Pick<ResidentFragmentMeta, 'fragmentId' | 'lang' | 'path' | 'scopeKey'>> = {}
 ): ResidentFragmentMeta | null => {
-  if (!isHTMLElementLike(element)) {
+  const residentElement = resolveResidentElement(element)
+  if (!residentElement) {
     return null
   }
-  if (element.getAttribute(FRAGMENT_RESIDENT_ATTR) !== 'true') {
-    return null
-  }
-
-  const residentKey = trimToNull(element.getAttribute(FRAGMENT_RESIDENT_KEY_ATTR))
+  const residentKey = trimToNull(residentElement.getAttribute(FRAGMENT_RESIDENT_KEY_ATTR))
   if (!residentKey) {
     return null
   }
 
-  const doc = element.ownerDocument
+  const doc = residentElement.ownerDocument
   const path = trimToNull(options.path) ?? resolveResidentRoutePath(doc)
   const lang = trimToNull(options.lang) ?? resolveResidentLang(doc)
   const fragmentId =
     trimToNull(options.fragmentId) ??
-    trimToNull(element.closest<HTMLElement>('[data-fragment-id]')?.dataset.fragmentId)
+    trimToNull(residentElement.closest<HTMLElement>('[data-fragment-id]')?.dataset.fragmentId)
   const scopeKey = trimToNull(options.scopeKey) ?? resolveCurrentFragmentCacheScope(path)
 
   return {
@@ -341,7 +338,7 @@ export const readResidentFragmentMeta = (
     path,
     residentKey,
     scopeKey,
-    mode: normalizeResidentMode(element.getAttribute(FRAGMENT_RESIDENT_MODE_ATTR))
+    mode: normalizeResidentMode(residentElement.getAttribute(FRAGMENT_RESIDENT_MODE_ATTR))
   }
 }
 

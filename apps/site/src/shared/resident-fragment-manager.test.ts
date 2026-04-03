@@ -9,6 +9,7 @@ import {
   destroyResidentFragmentScope,
   invalidateResidentFragments,
   parkResidentSubtreesWithin,
+  readResidentFragmentMeta,
   readResidentFragmentMode,
   registerResidentFragmentCleanup,
   resetResidentFragmentManagerForTests,
@@ -320,6 +321,37 @@ describe('resident-fragment-manager', () => {
     unsubscribe()
 
     expect(lifecycleEvents).toEqual(['attached:live', 'parked:live', 'destroyed:live'])
+  })
+
+  it('reads resident metadata from descendant elements', () => {
+    const doc = new MockDocument('en')
+    const routeRoot = doc.createElement('section')
+    routeRoot.setAttribute('data-static-home-root', 'true')
+    routeRoot.setAttribute('data-static-path', '/')
+    const card = doc.createElement('article')
+    card.setAttribute('data-fragment-id', 'fragment://page/home/island@v1')
+    routeRoot.appendChild(card)
+    doc.body.appendChild(routeRoot)
+
+    const residentKey = 'fragment://page/home/island@v1::preact-island::resident'
+    const widget = appendResidentWidget({
+      card,
+      doc,
+      residentKey,
+      residentMode: 'live'
+    })
+    const innerRoot = doc.createElement('div')
+    innerRoot.setAttribute('class', 'preact-island-ui')
+    widget.appendChild(innerRoot)
+
+    expect(readResidentFragmentMeta(innerRoot as unknown as Element)).toEqual({
+      fragmentId: 'fragment://page/home/island@v1',
+      lang: 'en',
+      mode: 'live',
+      path: '/',
+      residentKey,
+      scopeKey: 'public'
+    })
   })
 
   it('invalidates only parked residents when requested', () => {

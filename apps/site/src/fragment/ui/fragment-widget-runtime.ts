@@ -1,5 +1,6 @@
 import type { AttachHomeCollabRootOptions } from '../../shell/home/home-collab-entry'
 import type { HomeDemoKind } from '../../shell/home/home-demo-activate'
+import { setTrustedInnerHtml } from '../../security/client'
 import {
   isResidentFragmentElement,
   isResidentFragmentTracked,
@@ -91,7 +92,7 @@ const decodeHtmlEntities = (value: string) => {
   }
 
   const textarea = document.createElement('textarea')
-  textarea.innerHTML = value
+  setTrustedInnerHtml(textarea, value, 'template')
   return textarea.value.trim()
 }
 

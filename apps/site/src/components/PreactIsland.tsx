@@ -3,17 +3,23 @@ import { effect } from '@preact/signals-core'
 import { getPreactIslandCopy } from '../lang/client'
 import {
   PREACT_COUNTDOWN_DEFAULT_SECONDS,
+  PREACT_COUNTDOWN_NOTIFICATION_KEY,
   PREACT_COUNTDOWN_STEP_SECONDS,
   adjustPreactIslandCountdown,
+  buildPreactIslandCompletionNotificationIntent,
   formatPreactIslandClock,
+  resolvePreactIslandNotificationUrl,
   resolvePreactIslandProgress,
   resolvePreactIslandRemainingSeconds,
-  resolvePreactIslandTickDelayMs,
-  showPreactIslandCompletionNotification
+  resolvePreactIslandTickDelayMs
 } from '../shared/preact-island-countdown'
 import { createResidentFragmentExecutionGate } from '../shared/resident-fragment-execution-gate'
 import { lang } from '../shared/lang-store'
 import { requestNativeNotificationPermission } from '../native/notifications'
+import {
+  clearResidentNotificationIntent,
+  emitResidentNotificationIntent
+} from '../shared/resident-notification-manager'
 
 type PreactIslandProps = {
   label?: string
@@ -60,13 +66,31 @@ export const PreactIsland = component$(({ label }: PreactIslandProps) => {
         const remainingRef = useRef(remaining)
         const limitRef = useRef(limitSeconds)
         const deadlineRef = useRef<number | null>(Date.now() + PREACT_COUNTDOWN_DEFAULT_SECONDS * 1000)
-        const notifiedRef = useRef(false)
 
         const clearTick = () => {
           if (timeoutRef.current !== null) {
             window.clearTimeout(timeoutRef.current)
             timeoutRef.current = null
           }
+        }
+
+        const syncCompletionNotification = async (
+          nextRemaining: number,
+          nextDeadlineAtMs: number | null
+        ) => {
+          if (nextRemaining <= 0 || !nextDeadlineAtMs) {
+            await clearResidentNotificationIntent(target, PREACT_COUNTDOWN_NOTIFICATION_KEY)
+            return
+          }
+          await emitResidentNotificationIntent(
+            target,
+            buildPreactIslandCompletionNotificationIntent(
+              label ?? copy.label,
+              copy,
+              nextDeadlineAtMs,
+              resolvePreactIslandNotificationUrl()
+            )
+          )
         }
 
         const scheduleTick = () => {
@@ -81,10 +105,6 @@ export const PreactIsland = component$(({ label }: PreactIslandProps) => {
             const nextRemaining = resolvePreactIslandRemainingSeconds(deadlineRef.current)
             remainingRef.current = nextRemaining
             setRemaining(nextRemaining)
-            if (nextRemaining === 0 && !notifiedRef.current) {
-              notifiedRef.current = true
-              void showPreactIslandCompletionNotification(label ?? copy.label, copy, window.location.href)
-            }
             return
           }
           timeoutRef.current = window.setTimeout(() => {
@@ -92,11 +112,7 @@ export const PreactIsland = component$(({ label }: PreactIslandProps) => {
             const nextRemaining = resolvePreactIslandRemainingSeconds(deadlineRef.current)
             remainingRef.current = nextRemaining
             setRemaining(nextRemaining)
-            if (nextRemaining === 0 && !notifiedRef.current) {
-              notifiedRef.current = true
-              void showPreactIslandCompletionNotification(label ?? copy.label, copy, window.location.href)
-              return
-            }
+            if (nextRemaining === 0) return
             scheduleTick()
           }, delayMs)
         }
@@ -136,6 +152,7 @@ export const PreactIsland = component$(({ label }: PreactIslandProps) => {
 
         useEffect(() => {
           void requestNativeNotificationPermission()
+          void syncCompletionNotification(remainingRef.current, deadlineRef.current)
         }, [])
 
         const applyCountdownState = (nextLimit: number, nextRemaining: number) => {
@@ -143,9 +160,9 @@ export const PreactIsland = component$(({ label }: PreactIslandProps) => {
           limitRef.current = nextLimit
           remainingRef.current = nextRemaining
           deadlineRef.current = nextRemaining > 0 ? Date.now() + nextRemaining * 1000 : null
-          notifiedRef.current = nextRemaining === 0
           setLimitSeconds(nextLimit)
           setRemaining(nextRemaining)
+          void syncCompletionNotification(nextRemaining, deadlineRef.current)
           if (nextRemaining > 0) {
             scheduleTick()
           }

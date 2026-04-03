@@ -47,6 +47,12 @@ import {
   destroyResidentFragmentScope,
   invalidateResidentFragments
 } from './shared/resident-fragment-manager'
+import {
+  clearResidentNotificationScope,
+  handleResidentNotificationDeliveredMessage,
+  initResidentNotificationManager,
+  invalidateResidentNotificationIntents
+} from './shared/resident-notification-manager'
 
 declare global {
   interface Window {
@@ -264,6 +270,11 @@ export default function (opts: RenderOptions) {
     runAfterClientIntentIdle(() => {
       setupServiceWorkerBridge()
       setupServiceWorkerHeartbeatLoop()
+      void initResidentNotificationManager()
+    })
+  } else if (!nativeRuntime) {
+    runAfterClientIntentIdle(() => {
+      void initResidentNotificationManager()
     })
   }
 
@@ -453,8 +464,10 @@ function setupServiceWorkerBridge() {
     if (payload.type === 'sw:cache-cleared') {
       if (payload.scope === 'user' && typeof payload.userCacheKey === 'string') {
         destroyResidentFragmentScope(buildUserFragmentCacheScope(payload.userCacheKey))
+        void clearResidentNotificationScope(buildUserFragmentCacheScope(payload.userCacheKey))
       } else {
         destroyAllResidentFragments()
+        void invalidateResidentNotificationIntents({})
       }
       void clearScopedFragmentCaches(
         payload.scope === 'user' && typeof payload.userCacheKey === 'string'
@@ -493,6 +506,12 @@ function setupServiceWorkerBridge() {
           fragmentId: nextPayload.fragmentId,
           parkedOnly: true
         })
+        void invalidateResidentNotificationIntents({
+          scopeKey: nextPayload.scopeKey,
+          path: nextPayload.path,
+          lang: nextPayload.lang,
+          fragmentId: nextPayload.fragmentId
+        })
       })()
       dispatchSwEvent('prom:sw-resource-updated', payload)
     }
@@ -523,8 +542,17 @@ function setupServiceWorkerBridge() {
           fragmentId: parsedKey.fragmentId,
           parkedOnly: true
         })
+        void invalidateResidentNotificationIntents({
+          scopeKey,
+          path: parsedKey.path,
+          lang: parsedKey.lang,
+          fragmentId: parsedKey.fragmentId
+        })
       }
       dispatchSwEvent('prom:sw-resource-invalidated', payload)
+    }
+    if (payload.type === 'sw:resident-notification-delivered') {
+      void handleResidentNotificationDeliveredMessage(payload)
     }
     if (payload.type === 'sw:status') {
       writeServerReachabilitySnapshot({
