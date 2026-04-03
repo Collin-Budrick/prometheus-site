@@ -233,11 +233,11 @@ export const loadStaticShellSnapshot = async (snapshotKey: string, lang: Lang) =
   }
 
   const nextPromise = (async () => {
-    const assetPath = await resolveSnapshotAssetPath(normalizedSnapshotKey, lang)
     try {
-      return await readJson<StaticShellSnapshot>(toSnapshotUrl(assetPath))
-    } catch {
       return await loadStaticShellSnapshotFromRoute(normalizedSnapshotKey, lang)
+    } catch {
+      const assetPath = await resolveSnapshotAssetPath(normalizedSnapshotKey, lang)
+      return await readJson<StaticShellSnapshot>(toSnapshotUrl(assetPath))
     }
   })()
   snapshotCache.set(cacheKey, nextPromise)

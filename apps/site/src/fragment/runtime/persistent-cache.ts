@@ -463,6 +463,13 @@ export const createPersistentRuntimeCache = (options: PersistentRuntimeCacheOpti
       const keys = await collectPayloadKeys((record) => record.key.startsWith(prefix))
       return keys.map((key) => key.slice(prefix.length))
     },
+    async getPayloadsForRoute(scopeKey: string, path: string, lang: string) {
+      const prefix = buildPayloadRoutePrefix(normalizeScopeKey(scopeKey), path, lang)
+      const keys = await collectPayloadKeys((record) => record.key.startsWith(prefix))
+      return keys
+        .map((key) => payloads.get(key)?.payload)
+        .filter((payload): payload is FragmentPayload => Boolean(payload))
+    },
     async writeLearnedHeight(key: string, height: number) {
       await writeLearnedHeightRecord(key, height)
     },

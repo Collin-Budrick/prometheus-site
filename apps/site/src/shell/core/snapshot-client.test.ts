@@ -180,6 +180,7 @@ describe('snapshot-client', () => {
 
   it('falls back to the deterministic snapshot asset path when the manifest is missing', async () => {
     const calls: string[] = []
+    const routeUrl = 'https://prometheus.test/chat?lang=ja'
     const manifestUrl = new URL(STATIC_SHELL_SNAPSHOT_MANIFEST_PATH, 'https://prometheus.test/').toString()
     const snapshotUrl = new URL(toStaticSnapshotAssetPath('/chat', 'ja'), 'https://prometheus.test/').toString()
 
@@ -191,6 +192,10 @@ describe('snapshot-client', () => {
             ? input.toString()
             : input.url
       calls.push(url)
+
+      if (url === routeUrl) {
+        return new Response('Not found', { status: 404 })
+      }
 
       if (url === manifestUrl) {
         return new Response('Not found', { status: 404 })
@@ -225,13 +230,11 @@ describe('snapshot-client', () => {
 
     expect(snapshot.title).toBe('Prometheus | Chat')
     expect(cachedSnapshot).toEqual(snapshot)
-    expect(calls).toEqual([manifestUrl, snapshotUrl])
+    expect(calls).toEqual([routeUrl, manifestUrl, snapshotUrl])
   })
 
-  it('falls back to the localized route HTML when snapshot json is unavailable', async () => {
+  it('prefers the localized route HTML over the build-time snapshot asset', async () => {
     const calls: string[] = []
-    const manifestUrl = new URL(STATIC_SHELL_SNAPSHOT_MANIFEST_PATH, 'https://prometheus.test/').toString()
-    const snapshotUrl = new URL(toStaticSnapshotAssetPath('/chat', 'ja'), 'https://prometheus.test/').toString()
     const routeUrl = 'https://prometheus.test/chat?lang=ja'
 
     globalThis.fetch = (async (input: RequestInfo | URL) => {
@@ -242,10 +245,6 @@ describe('snapshot-client', () => {
             ? input.toString()
             : input.url
       calls.push(url)
-
-      if (url === manifestUrl || url === snapshotUrl) {
-        return new Response('Not found', { status: 404 })
-      }
 
       if (url === routeUrl) {
         return new Response(
@@ -284,6 +283,6 @@ describe('snapshot-client', () => {
         dock: `<div ${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_DOCK_REGION}" ${STATIC_DOCK_ROOT_ATTR}="true">dock ja</div>`
       }
     })
-    expect(calls).toEqual([manifestUrl, snapshotUrl, routeUrl])
+    expect(calls).toEqual([routeUrl])
   })
 })

@@ -186,4 +186,45 @@ describe('fragment runtime persistent cache', () => {
 
     cache.close()
   })
+
+  it('returns every cached payload for a scoped route restore', async () => {
+    const cache = createPersistentRuntimeCache({
+      broadcastFactory: (name) => new MockBroadcastChannel(name)
+    })
+    const userScope = buildUserFragmentCacheScope('user-123')
+    const publicPayload = createPayload({
+      id: 'store-stream',
+      cacheUpdatedAt: 41
+    })
+    const secondPublicPayload = createPayload({
+      id: 'store-cart',
+      cacheUpdatedAt: 42,
+      meta: {
+        cacheKey: 'cache-store-cart'
+      }
+    })
+    const userPayload = createPayload({
+      id: 'chat-search',
+      cacheUpdatedAt: 51,
+      meta: {
+        cacheKey: 'cache-chat-search'
+      }
+    })
+
+    await cache.hydrate()
+    await cache.seedPayloads(PUBLIC_FRAGMENT_CACHE_SCOPE, '/store', 'en', [publicPayload, secondPublicPayload])
+    await cache.seedPayload(userScope, '/chat', 'en', userPayload)
+
+    expect(
+      (await cache.getPayloadsForRoute(PUBLIC_FRAGMENT_CACHE_SCOPE, '/store/', 'en'))
+        .map((payload) => payload.id)
+        .sort()
+    ).toEqual(['store-cart', 'store-stream'])
+    expect((await cache.getPayloadsForRoute(userScope, '/chat', 'en')).map((payload) => payload.id)).toEqual([
+      'chat-search'
+    ])
+    expect(await cache.getPayloadsForRoute(PUBLIC_FRAGMENT_CACHE_SCOPE, '/chat', 'en')).toEqual([])
+
+    cache.close()
+  })
 })

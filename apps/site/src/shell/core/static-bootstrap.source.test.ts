@@ -14,4 +14,12 @@ describe('static-bootstrap source', () => {
     expect(source).not.toContain('import { mountStaticSettingsController } from "./controllers/settings-static-controller";')
     expect(source).not.toContain('import {\n  loadClientAuthSession,\n  redirectProtectedStaticRouteToLogin,\n} from "../auth/auth-client";')
   })
+
+  it('restores cached fragment snapshots before runtime startup and only schedules deferred streams for missing fragments', async () => {
+    const source = await readSource()
+
+    expect(source).toContain('await restoreCachedStaticFragmentSnapshot(controller);')
+    expect(source).toContain('if (!hasStaticFragmentRoot() || !shouldStartDeferredSnapshotStream(controller))')
+    expect(source).toContain('if (shouldStartDeferredSnapshotStream(controller)) {')
+  })
 })

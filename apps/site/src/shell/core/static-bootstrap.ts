@@ -30,6 +30,8 @@ import type { StaticFragmentRouteModel } from "../fragments/static-fragment-mode
 import { persistInitialFragmentCardHeights } from "../fragments/fragment-height";
 import type { FragmentPayload } from "../../fragment/types";
 import { resolveCurrentFragmentCacheScope } from "../../fragment/cache-scope";
+import { fragmentPlanCache } from "../../fragment/plan-cache";
+import { getPersistentRuntimeCache } from "../../fragment/runtime/persistent-cache-instance";
 import {
   STATIC_FRAGMENT_BODY_ATTR,
   STATIC_FRAGMENT_CARD_ATTR,
@@ -78,6 +80,12 @@ import {
   SERVER_REACHABILITY_EVENT,
 } from "../../shared/server-reachability";
 import type { StoreSeed } from "../../features/store/store-seed";
+import {
+  collectMissingStaticFragmentRouteIds,
+  hasCompleteStaticFragmentRouteSnapshot,
+  mergeFragmentPayloadSources,
+  restoreStaticFragmentRouteData,
+} from "../fragments/route-snapshot";
 import {
   createStaticShellThemeIcon,
   ensureStaticShellSettingsOverlay,
@@ -577,6 +585,100 @@ const syncRouteDataVersion = (
   writeStaticFragmentRouteData(routeData);
 };
 
+const readRouteSnapshotScopeKey = (routeData: StaticFragmentRouteData) =>
+  resolveCurrentFragmentCacheScope(routeData.path);
+
+const rememberStaticFragmentSnapshotPayloads = (
+  controller: Pick<StaticFragmentController, "lang" | "routeData">,
+  payloads: FragmentPayload[],
+) => {
+  if (!payloads.length) return;
+
+  const scopeKey = readRouteSnapshotScopeKey(controller.routeData);
+  controller.routeData = restoreStaticFragmentRouteData(
+    controller.routeData,
+    mergeFragmentPayloadSources(
+      controller.routeData.runtimeInitialFragments ?? [],
+      payloads,
+    ),
+  );
+  writeStaticFragmentRouteData(controller.routeData);
+
+  const cachedEntry = fragmentPlanCache.get(controller.routeData.path, controller.lang, {
+    scopeKey,
+  });
+  if (!cachedEntry?.plan) {
+    return;
+  }
+
+  fragmentPlanCache.set(
+    controller.routeData.path,
+    controller.lang,
+    {
+      ...cachedEntry,
+      initialFragments: mergeFragmentPayloadSources(
+        cachedEntry.initialFragments,
+        payloads,
+      ),
+    },
+    { scopeKey },
+  );
+};
+
+const restoreCachedStaticFragmentSnapshot = async (
+  controller: Pick<StaticFragmentController, "lang" | "routeData">,
+) => {
+  const scopeKey = readRouteSnapshotScopeKey(controller.routeData);
+  const payloadCache = getPersistentRuntimeCache();
+  await payloadCache.hydrate().catch(() => undefined);
+
+  const cachedEntry = fragmentPlanCache.get(controller.routeData.path, controller.lang, {
+    scopeKey,
+  });
+  const cachedPayloads = await payloadCache
+    .getPayloadsForRoute(scopeKey, controller.routeData.path, controller.lang)
+    .catch(() => [] as FragmentPayload[]);
+  const mergedPayloads = mergeFragmentPayloadSources(
+    controller.routeData.runtimeInitialFragments ?? [],
+    cachedEntry?.initialFragments,
+    cachedPayloads,
+  );
+  if (!Object.keys(mergedPayloads).length) {
+    return;
+  }
+
+  controller.routeData = restoreStaticFragmentRouteData(
+    controller.routeData,
+    mergedPayloads,
+  );
+  writeStaticFragmentRouteData(controller.routeData);
+
+  if (cachedEntry?.plan) {
+    fragmentPlanCache.set(
+      controller.routeData.path,
+      controller.lang,
+      {
+        ...cachedEntry,
+        initialFragments: mergeFragmentPayloadSources(
+          cachedEntry.initialFragments,
+          mergedPayloads,
+        ),
+      },
+      { scopeKey },
+    );
+  }
+
+  (controller.routeData.runtimeInitialFragments ?? []).forEach((payload) => {
+    patchStaticFragmentCard(payload, controller.routeData, document, {
+      immediateReady: true,
+    });
+  });
+};
+
+const shouldStartDeferredSnapshotStream = (
+  controller: Pick<StaticFragmentController, "routeData">,
+) => collectMissingStaticFragmentRouteIds(controller.routeData).length > 0;
+
 const connectSharedFragmentRuntime = (
   controller: StaticFragmentController,
 ) => {
@@ -612,6 +714,7 @@ const connectSharedFragmentRuntime = (
     enableStreaming: true,
     startupMode: "eager-visible-first",
     onCommit: (payload) => {
+      rememberStaticFragmentSnapshotPayloads(controller, [payload]);
       controller.commitQueue?.enqueue(payload);
     },
     onSizing: applySharedRuntimeSizing,
@@ -969,7 +1072,8 @@ const startDeferredStream = async (controller: StaticFragmentController) => {
       ids: streamIds,
       signal: streamAbort.signal,
       routeData: controller.routeData,
-      onFragment: () => {
+      onFragment: (payload) => {
+        rememberStaticFragmentSnapshotPayloads(controller, [payload]);
         updateFragmentStatus(controller.lang, "streaming");
       },
       onError: () => {
@@ -982,7 +1086,9 @@ const startDeferredStream = async (controller: StaticFragmentController) => {
       !streamAbort.signal.aborted
     ) {
       updateFragmentStatus(controller.lang, "idle");
-      scheduleStreamRetry(controller, 2000);
+      if (shouldStartDeferredSnapshotStream(controller)) {
+        scheduleStreamRetry(controller, 2000);
+      }
     }
   } catch (error) {
     if (
@@ -993,7 +1099,10 @@ const startDeferredStream = async (controller: StaticFragmentController) => {
       return;
     console.error("Static fragment stream failed:", error);
     updateFragmentStatus(controller.lang, "error");
-    if (shouldRetryFragmentStream(error)) {
+    if (
+      shouldRetryFragmentStream(error) &&
+      shouldStartDeferredSnapshotStream(controller)
+    ) {
       scheduleStreamRetry(controller, 2000);
     }
   }
@@ -1003,7 +1112,8 @@ const scheduleDeferredStreamStart = (
   controller: StaticFragmentController,
   delayMs = 1800,
 ) => {
-  if (!hasStaticFragmentRoot()) return;
+  if (!hasStaticFragmentRoot() || !shouldStartDeferredSnapshotStream(controller))
+    return;
   controller.streamStartCancel?.();
   const cancelSchedule = scheduleStaticShellTask(
     () => {
@@ -1071,6 +1181,11 @@ const observeVisibleStaticFragments = (
         .filter((id) => !visibleIds.includes(id))
         .forEach((id) => controller.commitQueue?.setVisible(id, false));
       if (controller.sharedRuntime) {
+        if (!shouldStartDeferredSnapshotStream(controller)) {
+          controller.sharedRuntime.setVisibleIds([]);
+          updateFragmentStatus(controller.lang, "idle");
+          return;
+        }
         controller.sharedRuntime.resumeAfterPageShow();
         controller.sharedRuntime.setVisibleIds(visibleIds);
         if (visibleIds.length) {
@@ -1203,7 +1318,9 @@ const scheduleProtectedAuthUpgrade = (controller: StaticFragmentController) => {
         await hydrateProtectedStaticFragments(controller);
         connectSharedFragmentRuntime(controller);
       }
-      scheduleDeferredStreamStart(controller, 0);
+      if (shouldStartDeferredSnapshotStream(controller)) {
+        scheduleDeferredStreamStart(controller, 0);
+      }
     } catch (error) {
       if (!controller.destroyed) {
         console.error("Protected static fragment auth upgrade failed:", error);
@@ -1334,6 +1451,7 @@ export const bootstrapStaticFragmentShell = async () => {
   controller.cleanupFns.push(() => controller.commitQueue?.destroy());
 
   await syncStaticFragmentDockIfNeeded(controller);
+  await restoreCachedStaticFragmentSnapshot(controller);
   controller.cleanupFns.push(
     scheduleStaticShellTask(
       () => {
@@ -1389,6 +1507,12 @@ export const bootstrapStaticFragmentShell = async () => {
 
   const handlePageShow = (event: PageTransitionEvent) => {
     if (!event.persisted || controller.destroyed) return;
+    if (
+      controller.sharedRuntime &&
+      hasCompleteStaticFragmentRouteSnapshot(controller.routeData)
+    ) {
+      controller.sharedRuntime.setVisibleIds([]);
+    }
     controller.sharedRuntime?.resumeAfterPageShow();
     updateFragmentStatus(controller.lang, "idle");
     if (controller.authPolicy === "protected") {
@@ -1399,7 +1523,9 @@ export const bootstrapStaticFragmentShell = async () => {
     void refreshStaticFragmentDockAuthIfNeeded(controller).catch((error) => {
       console.error("Static fragment auth dock refresh failed:", error);
     });
-    scheduleDeferredStreamStart(controller, 0);
+    if (!controller.sharedRuntime && shouldStartDeferredSnapshotStream(controller)) {
+      scheduleDeferredStreamStart(controller, 0);
+    }
   };
 
   window.addEventListener("pagehide", handlePageHide);
@@ -1416,7 +1542,9 @@ export const bootstrapStaticFragmentShell = async () => {
     return;
   }
 
-  scheduleDeferredStreamStart(controller);
+  if (shouldStartDeferredSnapshotStream(controller)) {
+    scheduleDeferredStreamStart(controller);
+  }
 };
 
 export const bootstrapStaticShell = bootstrapStaticFragmentShell;

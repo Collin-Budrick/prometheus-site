@@ -41,6 +41,10 @@ type StreamStaticFragmentsOptions = {
   onError?: (error: unknown) => void
 }
 
+type PatchStaticFragmentCardOptions = {
+  immediateReady?: boolean
+}
+
 const collectKnownVersions = () => {
   const versions: Record<string, number> = {}
   document.querySelectorAll<HTMLElement>(`[${STATIC_FRAGMENT_CARD_ATTR}]`).forEach((element) => {
@@ -207,13 +211,15 @@ const queuePatchedFragmentCardReveal = ({
 export const patchStaticFragmentCard = (
   payload: FragmentPayload,
   routeData: StaticFragmentRouteData,
-  root: ParentNode | null = typeof document !== 'undefined' ? document : null
+  root: ParentNode | null = typeof document !== 'undefined' ? document : null,
+  options: PatchStaticFragmentCardOptions = {}
 ) => {
   const card = document.querySelector<HTMLElement>(`[${STATIC_FRAGMENT_CARD_ATTR}][data-fragment-id="${payload.id}"]`)
   if (!card) return
 
   const currentVersion = parseFragmentVersion(card)
-  const preserveRevealState = shouldPreserveStaticFragmentRevealState(card)
+  const preserveRevealState =
+    options.immediateReady === true || shouldPreserveStaticFragmentRevealState(card)
   if (
     typeof payload.cacheUpdatedAt === 'number' &&
     Number.isFinite(payload.cacheUpdatedAt) &&
