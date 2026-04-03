@@ -54,8 +54,17 @@ const STATIC_SHELL_RUNTIME_ASSET_PATHS_FALLBACK = [
   ...Object.values(HOME_DEMO_RUNTIME_ASSET_PATHS)
 ] as const
 
+const resolveStaticShellAssetFilePath = (assetPath: string) => {
+  const fileCandidates = [
+    path.resolve(process.cwd(), 'dist', assetPath),
+    fileURLToPath(new URL(`../dist/${assetPath}`, import.meta.url)),
+    fileURLToPath(new URL(`../../dist/${assetPath}`, import.meta.url))
+  ]
+  return fileCandidates.find((candidate) => existsSync(candidate)) ?? null
+}
+
 const STATIC_SHELL_RUNTIME_ASSET_PATHS = (() => {
-  const manifestAssets = getStaticShellBuildAssetPaths()
+  const manifestAssets = getStaticShellBuildAssetPaths().filter((assetPath) => resolveStaticShellAssetFilePath(assetPath))
   return manifestAssets.length > 0 ? manifestAssets : [...STATIC_SHELL_RUNTIME_ASSET_PATHS_FALLBACK]
 })()
 
@@ -64,12 +73,7 @@ const STATIC_SHELL_BUILD_VERSION = (() => {
   let sawAsset = false
 
   for (const assetPath of STATIC_SHELL_RUNTIME_ASSET_PATHS) {
-    const fileCandidates = [
-      path.resolve(process.cwd(), 'dist', assetPath),
-      fileURLToPath(new URL(`../dist/${assetPath}`, import.meta.url)),
-      fileURLToPath(new URL(`../../dist/${assetPath}`, import.meta.url))
-    ]
-    const filePath = fileCandidates.find((candidate) => existsSync(candidate))
+    const filePath = resolveStaticShellAssetFilePath(assetPath)
     hash.update(assetPath)
     if (!filePath) {
       hash.update('missing')

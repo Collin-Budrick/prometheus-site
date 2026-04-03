@@ -16,6 +16,7 @@ const repoRoot = path.resolve(siteRoot, '..', '..')
 const outDir = path.resolve(siteRoot, 'dist', 'build', 'static-shell')
 const metaDir = path.resolve(siteRoot, 'dist', '.static-shell-meta')
 const publicPath = '/build/static-shell/'
+const normalizedOutDirPrefix = path.relative(repoRoot, outDir).replace(/\\/g, '/')
 
 const buildGroups = [
   {
@@ -177,7 +178,22 @@ for (const buildGroup of buildGroups) {
   await runBuildGroup(buildGroup)
 }
 
-const normalizeOutputKey = (value) => value.replace(/\\/g, '/').replace(/^\.\//, '')
+const normalizeOutputKey = (value) => {
+  const normalizedValue = value.replace(/\\/g, '/').replace(/^\.\//, '')
+  if (normalizedValue === normalizedOutDirPrefix) {
+    return ''
+  }
+  if (normalizedValue.startsWith(`${normalizedOutDirPrefix}/`)) {
+    return normalizedValue.slice(normalizedOutDirPrefix.length + 1)
+  }
+  if (path.isAbsolute(value)) {
+    const relativeToOutDir = path.relative(outDir, value).replace(/\\/g, '/').replace(/^\.\//, '')
+    if (relativeToOutDir && !relativeToOutDir.startsWith('../') && relativeToOutDir !== '..') {
+      return relativeToOutDir
+    }
+  }
+  return normalizedValue
+}
 const toAssetPath = (outputKey) => `${publicPath}${normalizeOutputKey(outputKey)}`.replace(/^\//, '')
 
 const CURATED_PRELOAD_IMPORT_LIMITS = {

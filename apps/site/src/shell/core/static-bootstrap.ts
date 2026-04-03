@@ -29,6 +29,7 @@ import type { StaticShellSeed } from "./seed";
 import type { StaticFragmentRouteModel } from "../fragments/static-fragment-model";
 import { persistInitialFragmentCardHeights } from "../fragments/fragment-height";
 import type { FragmentPayload } from "../../fragment/types";
+import { resolveCurrentFragmentCacheScope } from "../../fragment/cache-scope";
 import {
   STATIC_FRAGMENT_BODY_ATTR,
   STATIC_FRAGMENT_CARD_ATTR,
@@ -588,6 +589,7 @@ const connectSharedFragmentRuntime = (
         ? `static-fragment-runtime:${crypto.randomUUID()}`
         : `static-fragment-runtime:${Date.now().toString(36)}`,
     apiBase: getPublicFragmentApiBase(),
+    scopeKey: resolveCurrentFragmentCacheScope(controller.routeData.path),
     path: controller.routeData.path,
     lang: controller.lang,
     planEntries: runtimePlanEntries,

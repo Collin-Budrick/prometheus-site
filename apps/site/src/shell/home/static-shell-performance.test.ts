@@ -638,6 +638,9 @@ describe("static shell performance invariants", () => {
     expect(buildScriptSource).toContain("cssChunking: true");
     expect(buildScriptSource).toContain("metafile: true");
     expect(buildScriptSource).toContain("chunk-manifest.json");
+    expect(buildScriptSource).toContain("normalizedOutDirPrefix");
+    expect(buildScriptSource).toContain("path.relative(repoRoot, outDir)");
+    expect(buildScriptSource).toContain("path.relative(outDir, value)");
     expect(buildScriptSource).not.toContain("home-bootstrap-core-runtime.ts");
     expect(rootSource).toContain("global-critical.css?inline");
     expect(rootSource).not.toContain("global-critical-home.css?inline");
@@ -782,6 +785,8 @@ describe("static shell performance invariants", () => {
     expect(assetVersionSource).toContain(
       "STATIC_SHELL_ASSET_VERSION_QUERY_PARAM = 'v'",
     );
+    expect(buildVersionSource).toContain("resolveStaticShellAssetFilePath");
+    expect(buildVersionSource).toContain("getStaticShellBuildAssetPaths().filter");
     expect(shellLayoutSource).toContain("buildVersion?: string | null");
     expect(shellLayoutSource).toContain("buildVersion");
     expect(seedSource).toContain("buildVersion?: string | null");

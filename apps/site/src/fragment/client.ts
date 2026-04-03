@@ -1,6 +1,7 @@
 import { createFragmentClient } from '@core/fragment/client'
 import type { FragmentPayload } from './types'
 import { fragmentPlanCache } from './plan-cache'
+import { resolveCurrentFragmentCacheScope } from './cache-scope'
 import { getFragmentCssHref } from './fragment-css'
 import { getCspNonce } from '../security/client'
 import {
@@ -10,6 +11,13 @@ import {
   isPublicWebTransportDatagramsPreferred,
   isPublicWebTransportPreferred
 } from '../shared/public-fragment-config'
+
+const scopedFragmentPlanCache = {
+  get: (path: string, lang?: string) =>
+    fragmentPlanCache.get(path, lang, { scopeKey: resolveCurrentFragmentCacheScope(path) }),
+  set: (path: string, lang: string | undefined, entry: Parameters<typeof fragmentPlanCache.set>[2]) =>
+    fragmentPlanCache.set(path, lang, entry, { scopeKey: resolveCurrentFragmentCacheScope(path) })
+}
 
 const client = createFragmentClient(
   {
@@ -21,7 +29,7 @@ const client = createFragmentClient(
     isWebTransportDatagramsPreferred: isPublicWebTransportDatagramsPreferred,
     isWebTransportPreferred: isPublicWebTransportPreferred
   },
-  fragmentPlanCache
+  scopedFragmentPlanCache
 )
 
 const ensureFragmentStylesheet = (id: string) => {

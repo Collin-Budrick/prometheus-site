@@ -22,6 +22,7 @@ import { appConfig } from '../site-config'
 import { buildFragmentCssLinks } from '../fragment/fragment-css'
 import { FRAGMENT_WIDGET_RUNTIME_ASSET_PATH } from '../fragment/ui/fragment-widget-runtime-loader'
 import { fragmentPlanCache } from '../fragment/plan-cache'
+import { PUBLIC_FRAGMENT_CACHE_SCOPE } from '../fragment/cache-scope'
 import type { FragmentPlan } from '../fragment/types'
 import { resolveStaticAssetPublicHref, shouldUseStaticShellSourceModules } from '../shell/core/static-asset-url'
 import { setPreference } from '../native/preferences'
@@ -62,6 +63,7 @@ import {
   createDockRouteDescriptors,
   createRouteWarmupDescriptors,
   resolveDockOwner,
+  resolveRouteWarmupAudience,
 } from '../shared/route-navigation'
 import {
   buildRouteShellBootstrapScript,
@@ -518,8 +520,11 @@ const buildPlanEarlyHints = (plan: FragmentPlan | null | undefined) => {
 
 const getPlanEarlyHints = (pathName: string, request: Request | null) => {
   if (!request) return []
+  if (resolveRouteWarmupAudience(pathName) === 'auth') {
+    return []
+  }
   const lang = resolveRequestLang(request)
-  const cached = fragmentPlanCache.get(pathName, lang)
+  const cached = fragmentPlanCache.get(pathName, lang, { scopeKey: PUBLIC_FRAGMENT_CACHE_SCOPE })
   const planHints =
     cached?.earlyHints?.length ? cached.earlyHints : cached ? buildPlanEarlyHints(cached.plan) : []
   return sanitizeHints(planHints)

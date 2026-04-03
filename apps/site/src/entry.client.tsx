@@ -14,6 +14,17 @@ import {
 import { runAfterClientIntent, runAfterClientIntentIdle } from './shared/client-boot'
 import { initConnectivityStore, isOnline } from './native/connectivity'
 import { isNativeShellRuntime } from './native/runtime'
+import { createRouteFragmentWarmupManager } from './fragment/route-warmup'
+import { fragmentPlanCache } from './fragment/plan-cache'
+import {
+  ROUTE_WARMUP_STATE_KEY,
+  buildUserFragmentCacheScope,
+  resolveFragmentCacheScope,
+  resolveCurrentFragmentCacheScope
+} from './fragment/cache-scope'
+import { getPersistentRuntimeCache } from './fragment/runtime/persistent-cache-instance'
+import { parseFragmentPayloadResourceKey } from './fragment/runtime/resource-keys'
+import type { FragmentPayload } from './fragment/types'
 import {
   STATIC_FRAGMENT_DATA_SCRIPT_ID,
   STATIC_HOME_DATA_SCRIPT_ID,
@@ -32,7 +43,6 @@ declare global {
 const OUTBOX_SYNC_TAG = 'p2p-outbox'
 const pwaEnabled = appConfig.template.features.pwa
 const serviceWorkerSeed = readServiceWorkerSeedFromDocument()
-const ROUTE_WARMUP_STATE_KEY = '__PROMETHEUS_ROUTE_WARMUP__'
 type BackgroundSyncRegistration = ServiceWorkerRegistration & {
   sync?: {
     register: (tag: string) => Promise<void>
@@ -106,6 +116,78 @@ const initNativeFeelTelemetryDeferred = async () => {
 const dispatchSwEvent = (name: string, detail?: Record<string, unknown>) => {
   if (typeof window === 'undefined') return
   window.dispatchEvent(new CustomEvent(name, { detail }))
+}
+
+const persistentFragmentRuntimeCache = getPersistentRuntimeCache()
+let fragmentWarmupManager: ReturnType<typeof createRouteFragmentWarmupManager> | null = null
+
+const getFragmentWarmupManager = () => {
+  fragmentWarmupManager ??= createRouteFragmentWarmupManager({
+    payloadCache: persistentFragmentRuntimeCache
+  })
+  return fragmentWarmupManager
+}
+
+const buildServiceWorkerResourceUrl = (resourceKey: string) =>
+  new URL(`./__sw/resource/${encodeURIComponent(resourceKey)}`, resolveServiceWorkerLocation().scopeUrl).toString()
+
+const resolveFragmentScopeFromPayload = (payload: Record<string, unknown>, path: string) =>
+  typeof payload.userCacheKey === 'string'
+    ? resolveFragmentCacheScope(path, payload.userCacheKey)
+    : resolveCurrentFragmentCacheScope(path)
+
+const readFragmentPayloadFromServiceWorkerMessage = async (payload: Record<string, unknown>) => {
+  const parsedKey = parseFragmentPayloadResourceKey(typeof payload.resourceKey === 'string' ? payload.resourceKey : null)
+  if (!parsedKey) return null
+
+  const readResponse = async () => {
+    if (typeof payload.body !== 'undefined') {
+      return new Response(
+        typeof payload.body === 'string' ? payload.body : JSON.stringify(payload.body),
+        {
+          headers: {
+            'content-type':
+              typeof payload.contentType === 'string' ? payload.contentType : 'application/json; charset=utf-8'
+          }
+        }
+      )
+    }
+    const resourceUrl = buildServiceWorkerResourceUrl(typeof payload.resourceKey === 'string' ? payload.resourceKey : '')
+    return (await caches.match(resourceUrl)) ?? (typeof payload.url === 'string' ? await caches.match(payload.url) : null)
+  }
+
+  const response = await readResponse()
+  if (!response) return null
+
+  try {
+    const nextPayload = (await response.json()) as FragmentPayload
+    return {
+      ...parsedKey,
+      payload: nextPayload,
+      scopeKey: resolveFragmentScopeFromPayload(payload, parsedKey.path)
+    }
+  } catch {
+    return null
+  }
+}
+
+const clearScopedFragmentCaches = async (scopeKey?: string | null) => {
+  if (!scopeKey) {
+    fragmentPlanCache.clear?.()
+    await persistentFragmentRuntimeCache.clearAllPayloads()
+    return
+  }
+  fragmentPlanCache.clearScope?.(scopeKey)
+  await persistentFragmentRuntimeCache.clearPayloadScope(scopeKey)
+}
+
+const warmFragmentRoutes = (audience: 'public' | 'auth', force = false) => {
+  const warmup = resolveRouteWarmupState()
+  if (!warmup) return
+  const hrefs = audience === 'public' ? warmup.publicHrefs ?? [] : warmup.authHrefs ?? []
+  if (!hrefs.length) return
+  if (audience === 'auth' && !warmup.userCacheKey) return
+  getFragmentWarmupManager().warmIdleRoutes(hrefs, force ? { force: true } : undefined)
 }
 
 if (import.meta.hot) {
@@ -347,15 +429,41 @@ function setupServiceWorkerBridge() {
       dispatchSwEvent('prom:sw-cache-refreshed', { source: 'sw' })
     }
     if (payload.type === 'sw:cache-cleared') {
+      void clearScopedFragmentCaches(
+        payload.scope === 'user' && typeof payload.userCacheKey === 'string'
+          ? buildUserFragmentCacheScope(payload.userCacheKey)
+          : null
+      )
       dispatchSwEvent('prom:sw-cache-cleared', { source: 'sw' })
     }
     if (payload.type === 'sw:warm-complete') {
       dispatchSwEvent('prom:sw-warm-complete', payload)
     }
     if (payload.type === 'sw:resource-updated') {
+      void (async () => {
+        const nextPayload = await readFragmentPayloadFromServiceWorkerMessage(payload)
+        if (!nextPayload) return
+        await persistentFragmentRuntimeCache.seedPayload(
+          nextPayload.scopeKey,
+          nextPayload.path,
+          nextPayload.lang,
+          nextPayload.payload
+        )
+      })()
       dispatchSwEvent('prom:sw-resource-updated', payload)
     }
     if (payload.type === 'sw:resource-invalidated') {
+      const parsedKey = parseFragmentPayloadResourceKey(
+        typeof payload.resourceKey === 'string' ? payload.resourceKey : null
+      )
+      if (parsedKey) {
+        void persistentFragmentRuntimeCache.invalidatePayload(
+          resolveFragmentScopeFromPayload(payload, parsedKey.path),
+          parsedKey.path,
+          parsedKey.lang,
+          parsedKey.fragmentId
+        )
+      }
       dispatchSwEvent('prom:sw-resource-invalidated', payload)
     }
     if (payload.type === 'sw:status') {
@@ -379,9 +487,12 @@ function setupServiceWorkerBridge() {
     void triggerManualSync()
   })
   window.addEventListener('prom:sw-manual-refresh', () => {
+    warmFragmentRoutes('public', true)
+    warmFragmentRoutes('auth', true)
     void manualRefreshServiceWorkerResources()
   })
   window.addEventListener('prom:sw-warm-public', () => {
+    warmFragmentRoutes('public')
     const warmup = resolveRouteWarmupState()
     if (!warmup?.publicHrefs?.length) return
     void postServiceWorkerMessage({
@@ -390,6 +501,7 @@ function setupServiceWorkerBridge() {
     })
   })
   window.addEventListener('prom:sw-warm-user', () => {
+    warmFragmentRoutes('auth')
     const warmup = resolveRouteWarmupState()
     if (!warmup?.authHrefs?.length || !warmup.userCacheKey) return
     void postServiceWorkerMessage({
@@ -415,6 +527,8 @@ function setupServiceWorkerBridge() {
     })
   })
   window.addEventListener('prom:sw-refresh-cache', () => {
+    warmFragmentRoutes('public', true)
+    warmFragmentRoutes('auth', true)
     void manualRefreshServiceWorkerResources()
   })
   window.addEventListener('prom:sw-clear-cache', () => {
@@ -425,6 +539,17 @@ function setupServiceWorkerBridge() {
     const optOut = payload?.optOut === true
     void setServiceWorkerOptOut(optOut)
   })
+
+  const warmInitialFragments = () => {
+    warmFragmentRoutes('public')
+    warmFragmentRoutes('auth')
+  }
+
+  if (document.readyState === 'complete') {
+    warmInitialFragments()
+  } else {
+    window.addEventListener('load', warmInitialFragments, { once: true })
+  }
 }
 
 function resolveServerKey() {
@@ -488,6 +613,7 @@ async function clearServiceWorkerCacheAndUnregister() {
   await unregisterLegacyServiceWorker()
   await unregisterActiveServiceWorker()
   await clearServiceWorkerCaches()
+  await clearScopedFragmentCaches(null)
   dispatchSwEvent('prom:sw-cache-cleared', { source: 'window' })
 }
 

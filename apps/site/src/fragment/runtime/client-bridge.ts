@@ -23,6 +23,7 @@ export type FragmentRuntimeBridgeHandlers = {
 type FragmentRuntimeBridgeConfig = FragmentRuntimeBridgeHandlers & {
   clientId: string
   apiBase: string
+  scopeKey: string
   path: string
   lang: string
   planEntries: FragmentRuntimePlanEntry[]
@@ -53,6 +54,7 @@ export type PrewarmedFragmentRuntimeState = {
   worker: Worker
   clientId: string
   apiBase: string
+  scopeKey: string
   path: string
   lang: string
   claimed?: boolean
@@ -108,7 +110,7 @@ export const ensureFragmentRuntimeAssetPreloads = ({
 
 const normalizeRuntimeApiBase = (value: string) => value.replace(/\/+$/, '')
 
-const claimPrewarmedFragmentRuntime = (config: Pick<FragmentRuntimeBridgeConfig, 'apiBase' | 'path' | 'lang'>) => {
+const claimPrewarmedFragmentRuntime = (config: Pick<FragmentRuntimeBridgeConfig, 'apiBase' | 'scopeKey' | 'path' | 'lang'>) => {
   if (typeof window === 'undefined') {
     return null
   }
@@ -121,6 +123,7 @@ const claimPrewarmedFragmentRuntime = (config: Pick<FragmentRuntimeBridgeConfig,
 
   if (
     normalizeRuntimeApiBase(state.apiBase) !== normalizeRuntimeApiBase(config.apiBase) ||
+    state.scopeKey !== config.scopeKey ||
     state.path !== config.path ||
     state.lang !== config.lang
   ) {
@@ -289,6 +292,7 @@ export class FragmentRuntimeBridge {
       type: 'init',
       clientId: this.clientId ?? this.config.clientId,
       apiBase: this.config.apiBase,
+      scopeKey: this.config.scopeKey,
       path: this.config.path,
       lang: this.config.lang,
       planEntries: this.config.planEntries,
@@ -387,6 +391,7 @@ export class FragmentRuntimeBridge {
     this.post({
       type: 'update-lang',
       clientId: this.clientId,
+      scopeKey: this.config?.scopeKey ?? 'public',
       lang,
       initialFragments,
       initialSizing,

@@ -145,11 +145,13 @@ export const decodeFragmentBootstrapPayloads = (bytes: Uint8Array) =>
 export const primeFragmentBootstrapBytes = ({
   href,
   win = typeof window !== 'undefined' ? (window as FragmentBootstrapWindow) : null,
-  fetcher = fetch as FetchLike
+  fetcher = fetch as FetchLike,
+  cache = 'default'
 }: {
   href: string
   win?: FragmentBootstrapWindow | null
   fetcher?: FetchLike
+  cache?: RequestCache
 }) => {
   const state = getBootstrapState(win)
   const resolvedHref = resolveFragmentBootstrapUrl(href, win)
@@ -161,7 +163,7 @@ export const primeFragmentBootstrapBytes = ({
   const bytesPromise = fetchFragmentBootstrapBytes({
     href: resolvedHref,
     fetcher,
-    cache: 'default'
+    cache
   }).catch((error) => {
     if (state?.byHref[resolvedHref]) {
       delete state.byHref[resolvedHref]
@@ -195,6 +197,22 @@ export const consumePrimedFragmentBootstrapBytes = ({
   win?: FragmentBootstrapWindow | null
 }) => {
   return readPrimedFragmentBootstrapBytes({ href, win })
+}
+
+export const clearPrimedFragmentBootstrapBytes = ({
+  href,
+  win = typeof window !== 'undefined' ? (window as FragmentBootstrapWindow) : null
+}: {
+  href?: string
+  win?: FragmentBootstrapWindow | null
+} = {}) => {
+  const state = getBootstrapState(win)
+  if (!state) return
+  if (!href) {
+    state.byHref = {}
+    return
+  }
+  delete state.byHref[resolveFragmentBootstrapUrl(href, win)]
 }
 
 export const resetFragmentBootstrapStateForTests = (win?: FragmentBootstrapWindow | null) => {

@@ -14,6 +14,7 @@ import {
   PREWARMED_FRAGMENT_RUNTIME_STATE_KEY,
   FRAGMENT_RUNTIME_WORKER_ASSET_PATH,
 } from "./fragment/runtime/client-bridge";
+import { PUBLIC_FRAGMENT_CACHE_SCOPE } from "./fragment/cache-scope";
 import { readServiceWorkerSeedFromCookie } from "./shared/service-worker-seed";
 import {
   getStaticShellRouteConfig,
@@ -211,6 +212,7 @@ const prewarmedWorkerKey = ${JSON.stringify(PREWARMED_FRAGMENT_RUNTIME_STATE_KEY
 const anchorEntryHref = ${JSON.stringify(bundleHref)};
 const workerHref = ${JSON.stringify(workerHref)};
 const decodeWorkerHref = ${JSON.stringify(decodeWorkerHref)};
+const scopeKey = ${JSON.stringify(PUBLIC_FRAGMENT_CACHE_SCOPE)};
 const trustedTypesRuntimeScriptPolicyName = ${JSON.stringify(
   TRUSTED_TYPES_RUNTIME_SCRIPT_POLICY_NAME,
 )};
@@ -420,6 +422,7 @@ const prewarmWorker = () => {
     existing &&
     (existing.path !== (data?.path || "/") ||
       existing.lang !== (data?.lang || "en") ||
+      existing.scopeKey !== scopeKey ||
       !(existing.worker instanceof Worker))
   ) {
     try {
@@ -445,6 +448,7 @@ const prewarmWorker = () => {
       worker,
       clientId,
       apiBase,
+      scopeKey,
       path,
       lang,
       claimed: false,
@@ -453,6 +457,7 @@ const prewarmWorker = () => {
       type: "init",
       clientId,
       apiBase,
+      scopeKey,
       path,
       lang,
       planEntries: [],

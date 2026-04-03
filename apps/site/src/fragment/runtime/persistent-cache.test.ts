@@ -6,6 +6,7 @@ import {
   buildPayloadVersion,
   createPersistentRuntimeCache
 } from './persistent-cache'
+import { PUBLIC_FRAGMENT_CACHE_SCOPE, buildUserFragmentCacheScope } from '../cache-scope'
 
 type ChannelListener = (event: MessageEvent<unknown>) => void
 
@@ -66,10 +67,10 @@ describe('fragment runtime persistent cache', () => {
     })
 
     await cache.hydrate()
-    await cache.seedPayload('/store', 'en', payload)
+    await cache.seedPayload(PUBLIC_FRAGMENT_CACHE_SCOPE, '/store', 'en', payload)
     await cache.writeLearnedHeight(buildLearnedHeightKey('/store', 'en', 'store-stream', 'lg'), 288)
 
-    const payloadKey = buildPayloadCacheKey('/store', 'en', 'store-stream')
+    const payloadKey = buildPayloadCacheKey(PUBLIC_FRAGMENT_CACHE_SCOPE, '/store', 'en', 'store-stream')
     expect(cache.payloads.get(payloadKey)).toMatchObject({
       payload,
       version: buildPayloadVersion(payload)
@@ -91,7 +92,7 @@ describe('fragment runtime persistent cache', () => {
     const payload = createPayload({
       cacheUpdatedAt: 14
     })
-    const payloadKey = buildPayloadCacheKey('/store', 'en', 'store-stream')
+    const payloadKey = buildPayloadCacheKey(PUBLIC_FRAGMENT_CACHE_SCOPE, '/store', 'en', 'store-stream')
     const fetchKey = `${payloadKey}::cached`
 
     await firstCache.hydrate()
@@ -99,7 +100,7 @@ describe('fragment runtime persistent cache', () => {
     expect(await firstCache.claimFetch(fetchKey, 'tab-a')).toBe(true)
 
     const waiter = secondCache.waitForPayloadWrite(payloadKey, 120)
-    await firstCache.seedPayload('/store', 'en', payload)
+    await firstCache.seedPayload(PUBLIC_FRAGMENT_CACHE_SCOPE, '/store', 'en', payload)
 
     expect(await waiter).toBe(true)
     expect(secondCache.payloads.get(payloadKey)).toMatchObject({
@@ -122,17 +123,67 @@ describe('fragment runtime persistent cache', () => {
     const payload = createPayload({
       cacheUpdatedAt: 21
     })
-    const payloadKey = buildPayloadCacheKey('/store', 'en', 'store-stream')
+    const payloadKey = buildPayloadCacheKey(PUBLIC_FRAGMENT_CACHE_SCOPE, '/store', 'en', 'store-stream')
 
     await firstCache.hydrate()
     await secondCache.hydrate()
-    await firstCache.seedPayload('/store', 'en', payload)
-    await secondCache.seedPayload('/store', 'en', payload)
-    await firstCache.invalidatePayload('/store', 'en', 'store-stream', buildPayloadVersion(payload))
+    await firstCache.seedPayload(PUBLIC_FRAGMENT_CACHE_SCOPE, '/store', 'en', payload)
+    await secondCache.seedPayload(PUBLIC_FRAGMENT_CACHE_SCOPE, '/store', 'en', payload)
+    await firstCache.invalidatePayload(
+      PUBLIC_FRAGMENT_CACHE_SCOPE,
+      '/store',
+      'en',
+      'store-stream',
+      buildPayloadVersion(payload)
+    )
 
     expect(secondCache.payloads.has(payloadKey)).toBe(false)
 
     firstCache.close()
     secondCache.close()
+  })
+
+  it('keeps public and user payload scopes isolated', async () => {
+    const cache = createPersistentRuntimeCache({
+      broadcastFactory: (name) => new MockBroadcastChannel(name)
+    })
+    const userScope = buildUserFragmentCacheScope('user-123')
+    const publicPayload = createPayload({
+      cacheUpdatedAt: 21
+    })
+    const userPayload = createPayload({
+      cacheUpdatedAt: 22,
+      meta: {
+        cacheKey: 'cache-chat-stream'
+      }
+    })
+
+    await cache.hydrate()
+    await cache.seedPayload(PUBLIC_FRAGMENT_CACHE_SCOPE, '/store', 'en', publicPayload)
+    await cache.seedPayload(userScope, '/chat', 'en', userPayload)
+    await cache.clearPayloadScope(userScope)
+
+    expect(cache.payloads.has(buildPayloadCacheKey(PUBLIC_FRAGMENT_CACHE_SCOPE, '/store', 'en', 'store-stream'))).toBe(true)
+    expect(cache.payloads.has(buildPayloadCacheKey(userScope, '/chat', 'en', 'store-stream'))).toBe(false)
+
+    cache.close()
+  })
+
+  it('normalizes trailing-slash route keys for payload storage and lookup', async () => {
+    const cache = createPersistentRuntimeCache({
+      broadcastFactory: (name) => new MockBroadcastChannel(name)
+    })
+    const payload = createPayload({
+      cacheUpdatedAt: 33
+    })
+
+    await cache.hydrate()
+    await cache.seedPayload(PUBLIC_FRAGMENT_CACHE_SCOPE, '/store/', 'en', payload)
+
+    expect(cache.payloads.has(buildPayloadCacheKey(PUBLIC_FRAGMENT_CACHE_SCOPE, '/store', 'en', 'store-stream'))).toBe(true)
+    expect(await cache.listPayloadIds(PUBLIC_FRAGMENT_CACHE_SCOPE, '/store', 'en')).toEqual(['store-stream'])
+    expect(await cache.listPayloadIds(PUBLIC_FRAGMENT_CACHE_SCOPE, '/store/', 'en')).toEqual(['store-stream'])
+
+    cache.close()
   })
 })

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { PUBLIC_FRAGMENT_CACHE_SCOPE } from '../cache-scope'
 import {
   ensureFragmentRuntimeAssetPreloads,
   FragmentRuntimeBridge,
@@ -143,6 +144,7 @@ describe('fragment runtime client bridge', () => {
       bridge.connect({
         clientId: 'client-1',
         apiBase: 'https://prometheus.prod/api',
+        scopeKey: PUBLIC_FRAGMENT_CACHE_SCOPE,
         path: '/store',
         lang: 'en',
         planEntries: [

@@ -1,4 +1,5 @@
 import { loadHomePostAnchorCore } from './runtime-loaders'
+import '../../fragment/route-warmup-bridge-auto'
 
 type InstallHomeStaticEntryOptions = Parameters<
   typeof import('./home-post-anchor-core').installHomeStaticEntry

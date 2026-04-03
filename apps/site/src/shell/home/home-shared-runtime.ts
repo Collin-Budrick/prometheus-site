@@ -1,4 +1,5 @@
 import type { FragmentPayload } from '../../fragment/types'
+import { resolveCurrentFragmentCacheScope } from '../../fragment/cache-scope'
 import {
   FragmentRuntimeBridge,
   ensureFragmentRuntimeAssetPreloads,
@@ -134,6 +135,7 @@ export const ensureHomeSharedRuntime = ({
   const connected = bridge.connect({
     clientId: buildHomeRuntimeClientId(),
     apiBase: getPublicFragmentApiBase(),
+    scopeKey: resolveCurrentFragmentCacheScope(path),
     path,
     lang,
     planEntries,

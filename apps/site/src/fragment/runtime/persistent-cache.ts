@@ -1,4 +1,6 @@
 import type { FragmentPayload } from '../types'
+import { PUBLIC_FRAGMENT_CACHE_SCOPE } from '../cache-scope'
+import { normalizeRoutePath } from '../../shared/route-navigation'
 
 export type CachedFragmentPayload = {
   payload: FragmentPayload
@@ -13,6 +15,7 @@ export type HeightLearnedValue = {
 
 type PayloadRecord = {
   key: string
+  scopeKey: string
   path: string
   lang: string
   fragmentId: string
@@ -53,11 +56,9 @@ export type FragmentRuntimeBroadcastMessage =
   | { type: 'request-release'; key: string; owner: string }
 
 const DB_NAME = 'prometheus-fragment-runtime'
-const DB_VERSION = 1
+const DB_VERSION = 3
 const PAYLOAD_STORE = 'payloads'
 const LEARNED_SIZING_STORE = 'learnedSizing'
-const PAYLOAD_MAX_AGE_MS = 24 * 60 * 60 * 1000
-const PAYLOAD_MAX_ENTRIES = 200
 const CHANNEL_NAME = 'prometheus:fragment-runtime'
 
 const defaultNow = () => Date.now()
@@ -86,7 +87,7 @@ const awaitTransaction = (transaction: IDBTransaction) =>
 
 const openDatabase = async (indexedDb: IdxLike) => {
   const request = indexedDb.open(DB_NAME, DB_VERSION)
-  request.addEventListener('upgradeneeded', () => {
+  request.addEventListener('upgradeneeded', (event) => {
     const database = request.result
     if (!database.objectStoreNames.contains(PAYLOAD_STORE)) {
       database.createObjectStore(PAYLOAD_STORE, { keyPath: 'key' })
@@ -94,19 +95,33 @@ const openDatabase = async (indexedDb: IdxLike) => {
     if (!database.objectStoreNames.contains(LEARNED_SIZING_STORE)) {
       database.createObjectStore(LEARNED_SIZING_STORE, { keyPath: 'key' })
     }
+    if ((event.oldVersion ?? 0) < 3 && request.transaction && database.objectStoreNames.contains(PAYLOAD_STORE)) {
+      request.transaction.objectStore(PAYLOAD_STORE).clear()
+    }
   })
   return await toPromise(request)
 }
 
-export const buildPayloadCacheKey = (path: string, lang: string, fragmentId: string) =>
-  `${path}::${lang}::${fragmentId}`
+const normalizeScopeKey = (value?: string | null) => {
+  if (typeof value !== 'string') return PUBLIC_FRAGMENT_CACHE_SCOPE
+  const normalized = value.trim()
+  return normalized || PUBLIC_FRAGMENT_CACHE_SCOPE
+}
+
+const normalizePayloadPath = (path: string) => normalizeRoutePath(path)
+
+const buildPayloadRoutePrefix = (scopeKey: string, path: string, lang: string) =>
+  `${normalizeScopeKey(scopeKey)}::${normalizePayloadPath(path)}::${lang}::`
+
+export const buildPayloadCacheKey = (scopeKey: string, path: string, lang: string, fragmentId: string) =>
+  `${buildPayloadRoutePrefix(scopeKey, path, lang)}${fragmentId}`
 
 export const buildLearnedHeightKey = (
   path: string,
   lang: string,
   fragmentId: string,
   widthBucket: string | null
-) => `${path}::${lang}::${fragmentId}::${widthBucket ?? ''}`
+) => `${normalizePayloadPath(path)}::${lang}::${fragmentId}::${widthBucket ?? ''}`
 
 export const buildPayloadVersion = (payload: FragmentPayload) => {
   const { cacheKey } = payload.meta
@@ -142,7 +157,6 @@ export const createPersistentRuntimeCache = (options: PersistentRuntimeCacheOpti
   const channel = createChannel(options.broadcastFactory)
   let dbPromise: Promise<IDBDatabase | null> | null = null
   let hydratePromise: Promise<void> | null = null
-  let prunePromise: Promise<void> | null = null
   let hydrateComplete = false
 
   const getDb = async () => {
@@ -153,20 +167,6 @@ export const createPersistentRuntimeCache = (options: PersistentRuntimeCacheOpti
       dbPromise = openDatabase(indexedDb).catch(() => null)
     }
     return await dbPromise
-  }
-
-  const prunePayloadStore = async (database: IDBDatabase) => {
-    const transaction = database.transaction(PAYLOAD_STORE, 'readwrite')
-    const store = transaction.objectStore(PAYLOAD_STORE)
-    const records = (await toPromise(store.getAll())) as PayloadRecord[]
-    const cutoff = now() - PAYLOAD_MAX_AGE_MS
-    const stale = records.filter((record) => record.savedAt < cutoff)
-    stale.forEach((record) => store.delete(record.key))
-    const fresh = records
-      .filter((record) => record.savedAt >= cutoff)
-      .sort((left, right) => right.savedAt - left.savedAt)
-    fresh.slice(PAYLOAD_MAX_ENTRIES).forEach((record) => store.delete(record.key))
-    await awaitTransaction(transaction)
   }
 
   const shouldReplaceHydratedPayload = (
@@ -194,22 +194,6 @@ export const createPersistentRuntimeCache = (options: PersistentRuntimeCacheOpti
       return record.savedAt > currentSavedAt
     }
     return false
-  }
-
-  const prune = async () => {
-    if (prunePromise) {
-      return await prunePromise
-    }
-    prunePromise = (async () => {
-      const database = await getDb()
-      if (!database) {
-        return
-      }
-      await prunePayloadStore(database)
-    })().finally(() => {
-      prunePromise = null
-    })
-    return await prunePromise
   }
 
   const hydrate = async () => {
@@ -255,9 +239,7 @@ export const createPersistentRuntimeCache = (options: PersistentRuntimeCacheOpti
       })
       await awaitTransaction(learnedTransaction)
       hydrateComplete = true
-    })().finally(() => {
-      void prune()
-    })
+    })()
     return await hydratePromise
   }
 
@@ -307,7 +289,14 @@ export const createPersistentRuntimeCache = (options: PersistentRuntimeCacheOpti
 
   channel?.addEventListener('message', handleBroadcast)
 
-  const writePayloadRecord = async (key: string, path: string, lang: string, payload: FragmentPayload) => {
+  const writePayloadRecord = async (
+    key: string,
+    scopeKey: string,
+    path: string,
+    lang: string,
+    payload: FragmentPayload
+  ) => {
+    const normalizedPath = normalizePayloadPath(path)
     const savedAt = now()
     dirtyPayloadKeys.add(key)
     payloads.set(key, {
@@ -329,7 +318,8 @@ export const createPersistentRuntimeCache = (options: PersistentRuntimeCacheOpti
     const store = transaction.objectStore(PAYLOAD_STORE)
     store.put({
       key,
-      path,
+      scopeKey,
+      path: normalizedPath,
       lang,
       fragmentId: payload.id,
       version: buildPayloadVersion(payload),
@@ -342,6 +332,59 @@ export const createPersistentRuntimeCache = (options: PersistentRuntimeCacheOpti
       key,
       version: buildPayloadVersion(payload),
       payload
+    })
+  }
+
+  const collectPayloadKeys = async (predicate: (record: Pick<PayloadRecord, 'key' | 'scopeKey' | 'path' | 'lang' | 'fragmentId'>) => boolean) => {
+    const keys = new Set(
+      Array.from(payloads.keys()).filter((key) => {
+        const parts = key.split('::')
+        if (parts.length < 4) return false
+        const [scopeKey, path, lang, ...fragmentIdParts] = parts
+        return predicate({
+          key,
+          scopeKey,
+          path,
+          lang,
+          fragmentId: fragmentIdParts.join('::')
+        })
+      })
+    )
+    const database = await getDb()
+    if (!database) {
+      return Array.from(keys)
+    }
+    const transaction = database.transaction(PAYLOAD_STORE, 'readonly')
+    const records = (await toPromise(transaction.objectStore(PAYLOAD_STORE).getAll())) as PayloadRecord[]
+    records.forEach((record) => {
+      if (predicate(record)) {
+        keys.add(record.key)
+      }
+    })
+    await awaitTransaction(transaction)
+    return Array.from(keys)
+  }
+
+  const deletePayloadRecords = async (keys: string[]) => {
+    if (!keys.length) return
+    keys.forEach((key) => {
+      dirtyPayloadKeys.add(key)
+      payloads.delete(key)
+    })
+    const database = await getDb()
+    if (database) {
+      const transaction = database.transaction(PAYLOAD_STORE, 'readwrite')
+      const store = transaction.objectStore(PAYLOAD_STORE)
+      keys.forEach((key) => {
+        store.delete(key)
+      })
+      await awaitTransaction(transaction)
+    }
+    keys.forEach((key) => {
+      postBroadcast({
+        type: 'payload-invalidated',
+        key
+      })
     })
   }
 
@@ -383,19 +426,42 @@ export const createPersistentRuntimeCache = (options: PersistentRuntimeCacheOpti
     learnedHeights,
     claims,
     hydrate,
-    prune,
+    prune: async () => {},
     isHydrated() {
       return hydrateComplete
     },
-    async seedPayload(path: string, lang: string, payload: FragmentPayload) {
-      const key = buildPayloadCacheKey(path, lang, payload.id)
-      await writePayloadRecord(key, path, lang, payload)
+    async seedPayload(scopeKey: string, path: string, lang: string, payload: FragmentPayload) {
+      const normalizedScopeKey = normalizeScopeKey(scopeKey)
+      const key = buildPayloadCacheKey(normalizedScopeKey, path, lang, payload.id)
+      await writePayloadRecord(key, normalizedScopeKey, path, lang, payload)
     },
-    async seedPayloads(path: string, lang: string, nextPayloads: FragmentPayload[]) {
-      await Promise.all(nextPayloads.map((payload) => writePayloadRecord(buildPayloadCacheKey(path, lang, payload.id), path, lang, payload)))
+    async seedPayloads(scopeKey: string, path: string, lang: string, nextPayloads: FragmentPayload[]) {
+      const normalizedScopeKey = normalizeScopeKey(scopeKey)
+      await Promise.all(
+        nextPayloads.map((payload) =>
+          writePayloadRecord(buildPayloadCacheKey(normalizedScopeKey, path, lang, payload.id), normalizedScopeKey, path, lang, payload)
+        )
+      )
     },
-    async invalidatePayload(path: string, lang: string, fragmentId: string, version?: string) {
-      await deletePayloadRecord(buildPayloadCacheKey(path, lang, fragmentId), version)
+    async invalidatePayload(scopeKey: string, path: string, lang: string, fragmentId: string, version?: string) {
+      await deletePayloadRecord(buildPayloadCacheKey(normalizeScopeKey(scopeKey), path, lang, fragmentId), version)
+    },
+    async clearPayloadScope(scopeKey: string) {
+      await deletePayloadRecords(
+        await collectPayloadKeys((record) => record.scopeKey === normalizeScopeKey(scopeKey))
+      )
+    },
+    async clearPayloadsForRoute(scopeKey: string, path: string, lang: string) {
+      const prefix = buildPayloadRoutePrefix(normalizeScopeKey(scopeKey), path, lang)
+      await deletePayloadRecords(await collectPayloadKeys((record) => record.key.startsWith(prefix)))
+    },
+    async clearAllPayloads() {
+      await deletePayloadRecords(await collectPayloadKeys(() => true))
+    },
+    async listPayloadIds(scopeKey: string, path: string, lang: string) {
+      const prefix = buildPayloadRoutePrefix(normalizeScopeKey(scopeKey), path, lang)
+      const keys = await collectPayloadKeys((record) => record.key.startsWith(prefix))
+      return keys.map((key) => key.slice(prefix.length))
     },
     async writeLearnedHeight(key: string, height: number) {
       await writeLearnedHeightRecord(key, height)
@@ -452,6 +518,3 @@ export const createPersistentRuntimeCache = (options: PersistentRuntimeCacheOpti
     }
   }
 }
-
-export const FRAGMENT_RUNTIME_PAYLOAD_MAX_AGE_MS = PAYLOAD_MAX_AGE_MS
-export const FRAGMENT_RUNTIME_PAYLOAD_MAX_ENTRIES = PAYLOAD_MAX_ENTRIES

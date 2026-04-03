@@ -443,7 +443,7 @@ const updateResource = async ({
     if (url) {
       await cache.put(new Request(url), response.clone())
     }
-    await broadcastMessage({ type: 'sw:resource-updated', resourceKey, url, userCacheKey })
+    await broadcastMessage({ type: 'sw:resource-updated', resourceKey, url, userCacheKey, body, contentType })
     return
   }
 
@@ -456,7 +456,13 @@ const updateResource = async ({
   if (!isCacheableResponse(response)) return
   await cache.put(request, response.clone())
   await cache.put(resourceRequest, response.clone())
-  await broadcastMessage({ type: 'sw:resource-updated', resourceKey, url, userCacheKey })
+  await broadcastMessage({
+    type: 'sw:resource-updated',
+    resourceKey,
+    url,
+    userCacheKey,
+    contentType: response.headers.get('content-type') ?? null
+  })
 }
 
 const invalidateResource = async ({
@@ -604,7 +610,7 @@ self.addEventListener('message', (event) => {
         const activeUserCacheKey = await getActiveUserCacheKey()
         await deleteUserCaches(activeUserCacheKey)
         await setActiveUserCacheKey(null)
-        await broadcastMessage({ type: 'sw:cache-cleared', scope: 'user' })
+        await broadcastMessage({ type: 'sw:cache-cleared', scope: 'user', userCacheKey: activeUserCacheKey })
       })()
     )
     return
@@ -624,7 +630,7 @@ self.addEventListener('message', (event) => {
         await clearRuntimeCaches()
         await deleteUserCaches(activeUserCacheKey)
         await setActiveUserCacheKey(null)
-        await broadcastMessage({ type: 'sw:cache-cleared' })
+        await broadcastMessage({ type: 'sw:cache-cleared', userCacheKey: activeUserCacheKey })
       })()
     )
     return

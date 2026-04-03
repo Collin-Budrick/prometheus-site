@@ -154,6 +154,8 @@ const withBase = (value: string) => {
 const staticCacheControl = 'public, max-age=31536000, immutable'
 const revalidateCacheControl = 'public, max-age=0, must-revalidate'
 const brotliQuality = 6
+const isRevalidatedStaticShellPath = (pathname: string) =>
+  /^\/build\/static-shell\/(?:apps\/site\/src\/|chunk-manifest\.json$)/.test(pathname)
 const stripPublicBase = (pathname: string) => {
   if (publicBase === './' || publicBase === '/') return pathname
   const base = publicBase.endsWith('/') ? publicBase.slice(0, -1) : publicBase
@@ -171,7 +173,7 @@ const isRevalidatedControlPath = (pathname: string) =>
   pathname === '/q-manifest.json' ||
   pathname === '/manifest.webmanifest'
 const resolveCacheControl = (pathname: string) => {
-  if (isRevalidatedControlPath(pathname)) return revalidateCacheControl
+  if (isRevalidatedControlPath(pathname) || isRevalidatedStaticShellPath(pathname)) return revalidateCacheControl
   if (isStaticCachePath(pathname)) return staticCacheControl
   return null
 }

@@ -1,20 +1,23 @@
 import type { EarlyHint, FragmentPayload, FragmentPlan } from './types'
 import { buildFragmentCssLinks } from './fragment-css'
 import { fragmentPlanCache } from './plan-cache'
-import { fetchFragmentPlan } from './client'
+import { fetchFragmentBatch, fetchFragmentPlan } from './client'
 import {
   buildFragmentBootstrapHref,
+  clearPrimedFragmentBootstrapBytes,
   decodeFragmentBootstrapPayloads,
-  primeFragmentBootstrapBytes,
-  readPrimedFragmentBootstrapBytes
+  primeFragmentBootstrapBytes
 } from './bootstrap-cache'
 import { primeConnectedFragmentRuntimeBootstrap } from './runtime/client-bridge'
+import { getPersistentRuntimeCache } from './runtime/persistent-cache-instance'
+import { resolveCurrentFragmentUserCacheKey, resolveFragmentCacheScope } from './cache-scope'
+import { selectInitialFragmentIds } from './initial-selection'
+import { normalizeRoutePath } from '../shared/route-navigation'
 import { defaultLang, resolveLangParam } from '../shared/lang-store'
 
-const DEFAULT_IDLE_FRAGMENT_WARMUP_LIMIT = 2
 const INITIAL_FRAGMENT_WARMUP_HANDLED_KEY = '__PROM_INITIAL_SPECULATION_HANDLED'
 
-type FragmentWarmupWindow = Window & {
+type FragmentWarmupWindow = Window & typeof globalThis & {
   [INITIAL_FRAGMENT_WARMUP_HANDLED_KEY]?: boolean
 }
 
@@ -26,15 +29,7 @@ const buildPlanEarlyHints = (plan: FragmentPlan) => {
   return [...(plan.earlyHints ?? []), ...criticalCss]
 }
 
-const resolveWarmFragmentIds = (plan: FragmentPlan) => {
-  const entryIds = new Set(plan.fragments.map((entry) => entry.id))
-  const groupedIds =
-    plan.fetchGroups?.find((group) => group.some((id) => entryIds.has(id)))?.filter((id) => entryIds.has(id)) ?? []
-  if (groupedIds.length) {
-    return groupedIds
-  }
-  return plan.fragments.filter((entry) => entry.critical).map((entry) => entry.id)
-}
+const resolveWarmFragmentIds = (plan: FragmentPlan) => selectInitialFragmentIds(plan)
 
 const attachCacheUpdatedAt = (payloads: Record<string, FragmentPayload>, plan: FragmentPlan) => {
   const updatedAtById = new Map(plan.fragments.map((entry) => [entry.id, entry.cache?.updatedAt]))
@@ -49,46 +44,58 @@ const attachCacheUpdatedAt = (payloads: Record<string, FragmentPayload>, plan: F
 
 const hasCachedWarmFragments = (
   cache: Pick<typeof fragmentPlanCache, 'get'>,
+  scopeKey: string,
   path: string,
   lang: string,
   ids: string[]
 ) => {
-  const cached = cache.get(path, lang)
+  const cached = cache.get(path, lang, { scopeKey })
   if (!cached) return false
   if (!ids.length) return true
   const cachedFragments = cached.initialFragments ?? {}
   return ids.every((id) => Boolean(cachedFragments[id]))
 }
 
+const hasCachedWarmPayloadIds = (cachedPayloadIds: string[], ids: string[]) => {
+  if (!ids.length) return true
+  if (!cachedPayloadIds.length) return false
+  const cachedPayloadIdSet = new Set(cachedPayloadIds)
+  return ids.every((id) => cachedPayloadIdSet.has(id))
+}
+
 const resolveWarmRoutePath = (href: string, origin: string) => {
   const url = new URL(href, origin)
   return {
     lang: resolveLangParam(url.searchParams.get('lang')) ?? defaultLang,
-    path: url.pathname || '/'
+    path: normalizeRoutePath(url.pathname || '/')
   }
 }
 
 export const createRouteFragmentWarmupManager = ({
   origin = typeof window !== 'undefined' ? window.location.origin : 'https://prometheus.prod',
-  idleLimit = DEFAULT_IDLE_FRAGMENT_WARMUP_LIMIT,
   cache = fragmentPlanCache,
   loadPlan = fetchFragmentPlan,
+  loadFragments = fetchFragmentBatch,
   buildBootstrapHref = buildFragmentBootstrapHref,
+  clearPrimedBootstrap = clearPrimedFragmentBootstrapBytes,
   decodeBootstrap = decodeFragmentBootstrapPayloads,
   primeBootstrap = primeFragmentBootstrapBytes,
-  readPrimedBootstrap = readPrimedFragmentBootstrapBytes,
   primeRuntimeBootstrap = primeConnectedFragmentRuntimeBootstrap,
-  pageWindow = typeof window !== 'undefined' ? (window as FragmentWarmupWindow) : null
+  payloadCache = getPersistentRuntimeCache(),
+  pageWindow = typeof window !== 'undefined' ? (window as FragmentWarmupWindow) : null,
+  resolveUserCacheKey = () => resolveCurrentFragmentUserCacheKey(pageWindow)
 }: {
   origin?: string
-  idleLimit?: number
   cache?: typeof fragmentPlanCache
   loadPlan?: typeof fetchFragmentPlan
+  loadFragments?: typeof fetchFragmentBatch
   buildBootstrapHref?: typeof buildFragmentBootstrapHref
+  clearPrimedBootstrap?: typeof clearPrimedFragmentBootstrapBytes
   decodeBootstrap?: typeof decodeFragmentBootstrapPayloads
   primeBootstrap?: typeof primeFragmentBootstrapBytes
-  readPrimedBootstrap?: typeof readPrimedFragmentBootstrapBytes
   primeRuntimeBootstrap?: typeof primeConnectedFragmentRuntimeBootstrap
+  payloadCache?: Pick<ReturnType<typeof getPersistentRuntimeCache>, 'seedPayloads' | 'listPayloadIds'>
+  resolveUserCacheKey?: () => string | null
   pageWindow?: FragmentWarmupWindow | null
 } = {}) => {
   const pending = new Map<string, Promise<void>>()
@@ -97,20 +104,25 @@ export const createRouteFragmentWarmupManager = ({
     pageWindow[INITIAL_FRAGMENT_WARMUP_HANDLED_KEY] = true
   }
 
-  const warmRoute = (href: string) => {
+  const warmRoute = (href: string, options: { force?: boolean } = {}) => {
     markInitialWarmupAttempted()
     const { path, lang } = resolveWarmRoutePath(href, origin)
-    const key = `${lang}|${path}`
+    const scopeKey = resolveFragmentCacheScope(path, resolveUserCacheKey())
+    const key = `${scopeKey}|${lang}|${path}|${options.force === true ? 'force' : 'cache'}`
     const existing = pending.get(key)
     if (existing) {
       return existing
     }
 
     const task = (async () => {
-      const cached = cache.get(path, lang)
+      if (options.force) {
+        cache.delete?.(path, lang, { scopeKey })
+      }
+      const cached = cache.get(path, lang, { scopeKey })
       const plan = cached?.plan ?? (await loadPlan(path, lang))
-      const warmFragmentIds = resolveWarmFragmentIds(plan)
-      const currentEntry = cache.get(path, lang)
+      const cachedPayloadIds = await payloadCache.listPayloadIds(scopeKey, path, lang)
+      const warmFragmentIds = Array.from(new Set([...resolveWarmFragmentIds(plan), ...cachedPayloadIds]))
+      const currentEntry = cache.get(path, lang, { scopeKey })
 
       if (!warmFragmentIds.length) {
         cache.set(path, lang, {
@@ -119,19 +131,50 @@ export const createRouteFragmentWarmupManager = ({
           initialFragments: currentEntry?.initialFragments,
           initialHtml: currentEntry?.initialHtml,
           earlyHints: currentEntry?.earlyHints ?? buildPlanEarlyHints(plan)
-        })
+        }, { scopeKey })
         return
       }
 
       const bootstrapHref = buildBootstrapHref({ ids: warmFragmentIds, lang })
-      if (hasCachedWarmFragments(cache, path, lang, warmFragmentIds) && readPrimedBootstrap({ href: bootstrapHref })) {
+      if (!options.force && (
+        hasCachedWarmFragments(cache, scopeKey, path, lang, warmFragmentIds) ||
+        hasCachedWarmPayloadIds(cachedPayloadIds, warmFragmentIds)
+      )) {
+        cache.set(path, lang, {
+          etag: currentEntry?.etag ?? cache.get(path, lang, { scopeKey })?.etag ?? '',
+          plan,
+          initialFragments: currentEntry?.initialFragments,
+          initialHtml: currentEntry?.initialHtml,
+          earlyHints: currentEntry?.earlyHints ?? buildPlanEarlyHints(plan)
+        }, { scopeKey })
         return
       }
 
-      const bytes = await primeBootstrap({ href: bootstrapHref })
+      if (options.force) {
+        clearPrimedBootstrap({ href: bootstrapHref })
+      }
+      const bytes = await primeBootstrap({ href: bootstrapHref, cache: options.force ? 'reload' : 'default' })
       const payloads = attachCacheUpdatedAt(decodeBootstrap(bytes), plan)
+      const missingIds = warmFragmentIds.filter((id) => !payloads[id])
+      if (missingIds.length) {
+        const fetchedPayloads = attachCacheUpdatedAt(
+          await loadFragments(
+            missingIds.map((id) => ({
+              id,
+              refresh: options.force === true ? true : undefined
+            })),
+            {
+              lang,
+              refresh: options.force === true ? true : undefined
+            }
+          ),
+          plan
+        )
+        Object.assign(payloads, fetchedPayloads)
+      }
+      await payloadCache.seedPayloads(scopeKey, path, lang, Object.values(payloads))
       cache.set(path, lang, {
-        etag: currentEntry?.etag ?? cache.get(path, lang)?.etag ?? '',
+        etag: currentEntry?.etag ?? cache.get(path, lang, { scopeKey })?.etag ?? '',
         plan,
         initialFragments: {
           ...(currentEntry?.initialFragments ?? {}),
@@ -139,8 +182,10 @@ export const createRouteFragmentWarmupManager = ({
         },
         initialHtml: currentEntry?.initialHtml,
         earlyHints: currentEntry?.earlyHints ?? buildPlanEarlyHints(plan)
-      })
-      await primeRuntimeBootstrap(bytes, bootstrapHref)
+      }, { scopeKey })
+      if (bytes.byteLength > 0) {
+        await primeRuntimeBootstrap(bytes, bootstrapHref)
+      }
     })()
       .catch((error) => {
         console.warn('Fragment route warmup failed:', { href, error })
@@ -155,12 +200,12 @@ export const createRouteFragmentWarmupManager = ({
 
   return {
     warmRoute,
-    warmIdleRoutes(hrefs: string[]) {
+    warmIdleRoutes(hrefs: string[], options?: { force?: boolean }) {
       if (hrefs.length) {
         markInitialWarmupAttempted()
       }
-      hrefs.slice(0, idleLimit).forEach((href) => {
-        void warmRoute(href)
+      hrefs.forEach((href) => {
+        void warmRoute(href, options)
       })
     },
     dispose() {
@@ -174,6 +219,7 @@ export const __private__ = {
   attachCacheUpdatedAt,
   buildPlanEarlyHints,
   hasCachedWarmFragments,
+  hasCachedWarmPayloadIds,
   resolveWarmRoutePath,
   resolveWarmFragmentIds,
   resolveInitialWarmupAttempted(win: FragmentWarmupWindow | null | undefined) {

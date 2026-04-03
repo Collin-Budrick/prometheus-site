@@ -48,4 +48,26 @@ describe('fragment-bootstrap-runtime-loader', () => {
     expect(await secondLoad).toBe(runtimeModule)
     expect(calls).toEqual([assetUrl])
   })
+
+  it('retries a failed runtime import with a cache-busting query param', async () => {
+    const calls: string[] = []
+    const runtimeModule: FragmentBootstrapRuntimeModule = {
+      bootstrapStaticFragmentShell: async () => undefined
+    }
+    const assetUrl =
+      'https://prometheus.prod/build/static-shell/apps/site/src/shell/fragments/fragment-bootstrap-runtime.js?v=build123'
+    const importer = async (url: string) => {
+      calls.push(url)
+      if (calls.length === 1) {
+        throw new TypeError('Failed to fetch dynamically imported module')
+      }
+      return runtimeModule
+    }
+
+    expect(await loadFragmentBootstrapRuntime({ assetUrl, importer })).toBe(runtimeModule)
+    expect(calls).toEqual([
+      assetUrl,
+      `${assetUrl}&__static_runtime_retry=2`
+    ])
+  })
 })

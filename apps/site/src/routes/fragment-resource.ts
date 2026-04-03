@@ -4,6 +4,7 @@ import { createFragmentService } from '@core/fragment/service'
 import { createMemoryFragmentStore, type StoredFragment } from '@core/fragment/store'
 import type { FragmentPayloadMap, FragmentPlanValue } from '../fragment/types'
 import { fragmentPlanCache } from '../fragment/plan-cache'
+import { PUBLIC_FRAGMENT_CACHE_SCOPE, resolveFragmentCacheScope } from '../fragment/cache-scope'
 import { defaultLang, normalizeLang, readLangFromCookie, resolveLangParam, type Lang } from '../shared/lang-store'
 import { readFragmentCriticalFromCookie } from '../fragment/ui/shell-cache'
 import { selectInitialFragmentIds } from '../fragment/initial-selection'
@@ -11,6 +12,8 @@ import { isHomeStaticPath } from '../shell/core/constants'
 import { createFragmentTranslator } from '../fragment/definitions/i18n'
 import { registerSiteFragmentBundles } from '../fragment/definitions/register'
 import { appConfig } from '../site-config'
+import { loadAuthSession } from '../features/auth/auth-session'
+import { resolveRouteWarmupAudience } from '../shared/route-navigation'
 
 export type HybridFragmentResource = {
   plan: FragmentPlanValue
@@ -81,6 +84,18 @@ const decodeStoredFragment = (id: string, entry: StoredFragment) => ({
   cacheUpdatedAt: entry.updatedAt
 })
 
+const resolveFragmentResourceScope = async (path: string, request?: Request) => {
+  if (resolveRouteWarmupAudience(path) !== 'auth' || !request) {
+    return PUBLIC_FRAGMENT_CACHE_SCOPE
+  }
+  const session = await loadAuthSession(request)
+  if (session.status !== 'authenticated') {
+    return PUBLIC_FRAGMENT_CACHE_SCOPE
+  }
+  const userCacheKey = session.user.id ?? session.user.email ?? 'session'
+  return resolveFragmentCacheScope(path, userCacheKey)
+}
+
 export const loadHybridFragmentResource = async (
   path: string,
   config: { apiBase: string },
@@ -90,6 +105,7 @@ export const loadHybridFragmentResource = async (
 ): Promise<HybridFragmentResource> => {
   const { resolveServerApiBase } = await import('../shared/api-base.server')
   const resolvedApiBase = resolveServerApiBase(config.apiBase, request)
+  const scopeKey = await resolveFragmentResourceScope(path, request)
   const viewport = resolveViewportHint(request)
   const dynamicCriticalIds = request && !isHomeStaticPath(path)
     ? readFragmentCriticalFromCookie(request.headers.get('cookie'), path, viewport)
@@ -100,7 +116,7 @@ export const loadHybridFragmentResource = async (
       ? plan.fragments.map((entry) => entry.id)
       : selectInitialFragmentIds(plan, { dynamicCriticalIds })
   }
-  const cached = fragmentPlanCache.get(path, lang)
+  const cached = fragmentPlanCache.get(path, lang, { scopeKey })
   if (cached?.plan && (cached.initialFragments || cached.initialHtml)) {
     const cachedPlan = cached.plan
     const requestedIds = selectRequestedIds(cachedPlan as FragmentPlanValue)
@@ -147,21 +163,21 @@ export const loadHybridFragmentResource = async (
       fragments = { ...fragments, ...fetched }
     } catch (error) {
       console.error('Fragment load failed', error)
-      const cached = fragmentPlanCache.get(plan.path, lang)
+      const cached = fragmentPlanCache.get(plan.path, lang, { scopeKey })
       if (cached?.initialFragments) {
         fragments = { ...fragments, ...pickFragments(cached.initialFragments, missingIds) }
       }
     }
   }
 
-  const cachedEntry = fragmentPlanCache.get(path, lang)
+  const cachedEntry = fragmentPlanCache.get(path, lang, { scopeKey })
   const initialHtml = readPlanInitialHtml(plan)
   fragmentPlanCache.set(path, lang, {
     etag: cachedEntry?.etag ?? '',
     plan,
     initialFragments: fragments,
     initialHtml
-  })
+  }, { scopeKey })
 
   return {
     plan,
@@ -176,7 +192,8 @@ export const loadStaticFragmentResource = async (
   lang: string = defaultLang,
   _request?: Request
 ): Promise<HybridFragmentResource> => {
-  const cached = fragmentPlanCache.get(path, lang)
+  const scopeKey = PUBLIC_FRAGMENT_CACHE_SCOPE
+  const cached = fragmentPlanCache.get(path, lang, { scopeKey })
   if (cached?.plan && cached.initialFragments) {
     return {
       plan: cached.plan as FragmentPlanValue,
@@ -208,7 +225,7 @@ export const loadStaticFragmentResource = async (
     plan,
     initialFragments: fragments,
     initialHtml: Object.keys(initialHtml).length ? initialHtml : undefined
-  })
+  }, { scopeKey })
 
   return {
     plan,

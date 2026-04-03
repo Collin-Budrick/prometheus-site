@@ -32,6 +32,7 @@ export type FragmentRuntimeInitMessage = {
   type: 'init'
   clientId: string
   apiBase: string
+  scopeKey: string
   path: string
   lang: string
   planEntries: FragmentRuntimePlanEntry[]
@@ -64,6 +65,7 @@ export type FragmentRuntimeVisibleIdsMessage = {
 export type FragmentRuntimeUpdateLangMessage = {
   type: 'update-lang'
   clientId: string
+  scopeKey: string
   lang: string
   initialFragments: FragmentPayload[]
   initialSizing: FragmentRuntimeSizingMap

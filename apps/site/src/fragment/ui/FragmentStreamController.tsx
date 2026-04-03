@@ -21,6 +21,7 @@ import {
   PROM_PERF_DEBUG_MARK_NAMES,
   recordPromPerfTimestamp
 } from '../../shell/home/static-shell-performance'
+import { resolveCurrentFragmentCacheScope } from '../cache-scope'
 import { clearFragmentPlanCache } from '../plan-cache'
 import { clearFragmentShellCache } from './shell-cache'
 import { resolveFragments, resolvePlan } from './utils'
@@ -249,6 +250,7 @@ export const FragmentStreamController = component$(
         let startupPrime: Promise<void> | null = null
         const canObserve = 'IntersectionObserver' in window
         const planValue = resolvePlan(plan)
+        const fragmentScopeKey = resolveCurrentFragmentCacheScope(path)
         if (langChanged) {
           planValue.fragments.forEach((entry) => refreshIds.add(entry.id))
         }
@@ -489,6 +491,7 @@ export const FragmentStreamController = component$(
         const connected = bridge.connect({
           clientId: buildRuntimeClientId(),
           apiBase: getPublicFragmentApiBase(),
+          scopeKey: fragmentScopeKey,
           path,
           lang: activeLang,
           planEntries: normalizeRuntimePlanEntries(planValue),

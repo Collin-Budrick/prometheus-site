@@ -41,8 +41,9 @@ import {
   buildLearnedHeightKey,
   buildPayloadCacheKey,
   buildPayloadVersion,
-  createPersistentRuntimeCache
 } from './persistent-cache'
+import { getPersistentRuntimeCache } from './persistent-cache-instance'
+import { createPersistentCacheReadyGate } from './persistent-cache-gate'
 
 const GRIDSTACK_CELL_HEIGHT = 8
 const GRIDSTACK_MARGIN = 12
@@ -75,6 +76,7 @@ type DecodePoolResponse = DecodePoolSuccess | DecodePoolFailure
 type ClientState = {
   id: string
   apiBase: string
+  scopeKey: string
   path: string
   lang: string
   viewportWidth: number
@@ -104,6 +106,7 @@ type ScheduledFetchJobBase = {
   key: string
   owner: string
   apiBase: string
+  scopeKey: string
   path: string
   lang: string
   refresh: boolean
@@ -132,12 +135,13 @@ type ScheduledFetchJob = FragmentFetchJob | BootstrapGroupFetchJob
 const FETCH_CLAIM_WAIT_MS = 120
 const workerScope = globalThis as unknown as DedicatedWorkerGlobalScope
 const clients = new Map<string, ClientState>()
-const persistentCache = createPersistentRuntimeCache()
+const persistentCache = getPersistentRuntimeCache()
 const payloadCache = persistentCache.payloads
 const learnedHeights = persistentCache.learnedHeights
 const activeFetchJobs = new Map<string, ScheduledFetchJob>()
 const scheduledFetchJobs: ScheduledFetchJob[] = []
 const primedBootstrapPayloads = new Map<string, Promise<FragmentPayload[]>>()
+const ensurePersistentCacheReady = createPersistentCacheReadyGate(persistentCache)
 let jobOrder = 0
 let warnedAboutNestedDecodeWorkerFallback = false
 let configuredDecodeWorkerHref: string | null = null
@@ -355,14 +359,25 @@ const getDecodePool = () => {
   return decodePool
 }
 
-const buildFetchKey = (apiBase: string, path: string, lang: string, fragmentId: string, refresh: boolean) =>
-  `${apiBase}::${path}::${lang}::${fragmentId}::${refresh ? 'refresh' : 'cached'}`
+const buildFetchKey = (
+  apiBase: string,
+  scopeKey: string,
+  path: string,
+  lang: string,
+  fragmentId: string,
+  refresh: boolean
+) => `${apiBase}::${scopeKey}::${path}::${lang}::${fragmentId}::${refresh ? 'refresh' : 'cached'}`
 
-const buildBootstrapGroupJobKey = (apiBase: string, path: string, lang: string, fragmentIds: string[]) =>
-  `${apiBase}::${path}::${lang}::bootstrap::${[...fragmentIds].sort().join('|')}`
+const buildBootstrapGroupJobKey = (
+  apiBase: string,
+  scopeKey: string,
+  path: string,
+  lang: string,
+  fragmentIds: string[]
+) => `${apiBase}::${scopeKey}::${path}::${lang}::bootstrap::${[...fragmentIds].sort().join('|')}`
 
-const buildBootstrapPayloadKey = (path: string, lang: string, fragmentIds: string[]) =>
-  `${path}::${lang}::bootstrap::${[...fragmentIds].sort().join('|')}`
+const buildBootstrapPayloadKey = (scopeKey: string, path: string, lang: string, fragmentIds: string[]) =>
+  `${scopeKey}::${path}::${lang}::bootstrap::${[...fragmentIds].sort().join('|')}`
 
 const decodeBootstrapPayloads = async (bytes: Uint8Array) => {
   const frames = parseFragmentFrames(bytes).filter((frame) => !isFragmentHeartbeatFrame(frame))
@@ -528,12 +543,12 @@ const parseBootstrapHrefSelection = (href: string | null | undefined) => {
 }
 
 const buildBootstrapPromiseKeys = (
-  client: Pick<ClientState, 'path' | 'lang'>,
+  client: Pick<ClientState, 'scopeKey' | 'path' | 'lang'>,
   fragmentIds: string[],
   href?: string | null
 ) => {
   const normalizedIds = [...fragmentIds].sort()
-  const keys = [buildBootstrapPayloadKey(client.path, client.lang, normalizedIds)]
+  const keys = [buildBootstrapPayloadKey(client.scopeKey, client.path, client.lang, normalizedIds)]
   const parsedHref = parseBootstrapHrefSelection(href)
   if (parsedHref && normalizedIds.every((fragmentId) => parsedHref.ids.includes(fragmentId))) {
     keys.unshift(parsedHref.href)
@@ -542,7 +557,7 @@ const buildBootstrapPromiseKeys = (
 }
 
 const readPrimedBootstrapPayloads = (
-  client: Pick<ClientState, 'path' | 'lang' | 'bootstrapHref'>,
+  client: Pick<ClientState, 'scopeKey' | 'path' | 'lang' | 'bootstrapHref'>,
   fragmentIds: string[]
 ) => {
   const keys = buildBootstrapPromiseKeys(client, fragmentIds, client.bootstrapHref)
@@ -555,7 +570,7 @@ const readPrimedBootstrapPayloads = (
   return null
 }
 
-void persistentCache.hydrate().catch(() => undefined)
+void ensurePersistentCacheReady()
 
 const normalizeApiBase = (apiBase: string) => {
   if (!apiBase) return ''
@@ -655,15 +670,15 @@ const publishSizingSnapshot = (client: ClientState, fragmentIds = client.planOrd
   })
 }
 
-const seedPayloadCache = (payloads: FragmentPayload[], path: string, lang: string) => {
+const seedPayloadCache = (scopeKey: string, payloads: FragmentPayload[], path: string, lang: string) => {
   if (!payloads.length) return
   payloads.forEach((payload) => {
-    payloadCache.set(buildPayloadCacheKey(path, lang, payload.id), {
+    payloadCache.set(buildPayloadCacheKey(scopeKey, path, lang, payload.id), {
       payload,
       version: buildPayloadVersion(payload)
     })
   })
-  void persistentCache.seedPayloads(path, lang, payloads)
+  void persistentCache.seedPayloads(scopeKey, path, lang, payloads)
 }
 
 const seedKnownVersions = (client: ClientState, knownVersions?: FragmentRuntimeKnownVersions) => {
@@ -903,7 +918,7 @@ const commitBootstrapJobPayloadsToSubscribers = (
 }
 
 const readReusableCachedPayload = (client: ClientState, fragmentId: string) => {
-  const payloadKey = buildPayloadCacheKey(client.path, client.lang, fragmentId)
+  const payloadKey = buildPayloadCacheKey(client.scopeKey, client.path, client.lang, fragmentId)
   const cached = payloadCache.get(payloadKey)
   if (!cached) {
     return null
@@ -916,7 +931,7 @@ const readReusableCachedPayload = (client: ClientState, fragmentId: string) => {
     Number.isFinite(knownVersion) &&
     cached.payload.cacheUpdatedAt !== knownVersion
   ) {
-    void persistentCache.invalidatePayload(client.path, client.lang, fragmentId, cached.version)
+    void persistentCache.invalidatePayload(client.scopeKey, client.path, client.lang, fragmentId, cached.version)
     payloadCache.delete(payloadKey)
     return null
   }
@@ -924,13 +939,13 @@ const readReusableCachedPayload = (client: ClientState, fragmentId: string) => {
   return cached
 }
 
-const seedFetchedPayloads = (path: string, lang: string, payloads: FragmentPayload[]) => {
+const seedFetchedPayloads = (scopeKey: string, path: string, lang: string, payloads: FragmentPayload[]) => {
   if (!payloads.length) return
   payloads.forEach((payload) => {
-    const payloadKey = buildPayloadCacheKey(path, lang, payload.id)
+    const payloadKey = buildPayloadCacheKey(scopeKey, path, lang, payload.id)
     const previousVersion = payloadCache.get(payloadKey)?.version
     if (previousVersion && previousVersion !== buildPayloadVersion(payload)) {
-      void persistentCache.invalidatePayload(path, lang, payload.id, previousVersion)
+      void persistentCache.invalidatePayload(scopeKey, path, lang, payload.id, previousVersion)
     }
     payloadCache.set(payloadKey, {
       payload,
@@ -938,7 +953,7 @@ const seedFetchedPayloads = (path: string, lang: string, payloads: FragmentPaylo
       savedAt: Date.now()
     })
   })
-  void persistentCache.seedPayloads(path, lang, payloads)
+  void persistentCache.seedPayloads(scopeKey, path, lang, payloads)
 }
 
 const shouldUseStartupFastPath = (client: ClientState, priority: FragmentRuntimePriority) =>
@@ -948,7 +963,7 @@ const canUseClaimWaitBypass = (job: ScheduledFetchJob) => job.skipClaimWait && !
 
 const readBootstrapJobCachedPayloads = (job: BootstrapGroupFetchJob) => {
   const payloads = job.fragmentIds
-    .map((fragmentId) => payloadCache.get(buildPayloadCacheKey(job.path, job.lang, fragmentId))?.payload ?? null)
+    .map((fragmentId) => payloadCache.get(buildPayloadCacheKey(job.scopeKey, job.path, job.lang, fragmentId))?.payload ?? null)
     .filter((payload): payload is FragmentPayload => Boolean(payload))
   return payloads.length === job.fragmentIds.length ? payloads : null
 }
@@ -996,18 +1011,19 @@ const pumpFetchQueue = () => {
         } else if (job.refresh) {
           const cachedVersion = payloadCache.get(job.payloadKey)?.version
           if (cachedVersion) {
-            void persistentCache.invalidatePayload(job.path, job.lang, job.fragmentId, cachedVersion)
+            void persistentCache.invalidatePayload(job.scopeKey, job.path, job.lang, job.fragmentId, cachedVersion)
           }
         }
 
         const payload = await fetchFragmentPayload(job.apiBase, job.fragmentId, job.lang, job.refresh, controller.signal)
-        seedFetchedPayloads(job.path, job.lang, [payload])
+        seedFetchedPayloads(job.scopeKey, job.path, job.lang, [payload])
         commitFragmentJobPayloadToSubscribers(job, payload, 'network')
         return
       }
 
       const primedPayloads = readPrimedBootstrapPayloads(
         {
+          scopeKey: job.scopeKey,
           path: job.path,
           lang: job.lang,
           bootstrapHref: job.href
@@ -1016,7 +1032,7 @@ const pumpFetchQueue = () => {
       )
       if (primedPayloads) {
         const payloads = await primedPayloads
-        seedFetchedPayloads(job.path, job.lang, payloads)
+        seedFetchedPayloads(job.scopeKey, job.path, job.lang, payloads)
         commitBootstrapJobPayloadsToSubscribers(job, payloads, 'cache')
         return
       }
@@ -1037,7 +1053,7 @@ const pumpFetchQueue = () => {
       }
 
       const payloads = await fetchBootstrapPayloadGroup(job.apiBase, job.fragmentIds, job.lang, controller.signal)
-      seedFetchedPayloads(job.path, job.lang, payloads)
+      seedFetchedPayloads(job.scopeKey, job.path, job.lang, payloads)
       commitBootstrapJobPayloadsToSubscribers(job, payloads, 'network')
     })()
       .catch((error) => {
@@ -1077,7 +1093,7 @@ const scheduleFragmentFetch = (
     }
   }
 
-  const fetchKey = buildFetchKey(client.apiBase, client.path, client.lang, fragmentId, refresh)
+  const fetchKey = buildFetchKey(client.apiBase, client.scopeKey, client.path, client.lang, fragmentId, refresh)
   const nextPriority = priorityToValue(priority, client.entriesById.get(fragmentId)?.critical === true)
   const skipClaimWait = shouldUseStartupFastPath(client, priority)
   const existingActive = activeFetchJobs.get(fetchKey)
@@ -1101,9 +1117,10 @@ const scheduleFragmentFetch = (
   scheduledFetchJobs.push({
     kind: 'fragment',
     key: fetchKey,
-    payloadKey: buildPayloadCacheKey(client.path, client.lang, fragmentId),
+    payloadKey: buildPayloadCacheKey(client.scopeKey, client.path, client.lang, fragmentId),
     owner: `${client.id}:${fragmentId}:${jobOrder}`,
     apiBase: client.apiBase,
+    scopeKey: client.scopeKey,
     path: client.path,
     lang: client.lang,
     fragmentId,
@@ -1123,7 +1140,7 @@ const scheduleBootstrapGroupFetch = (
   requestedIds: string[],
   priority: FragmentRuntimePriority
 ) => {
-  const fetchKey = buildBootstrapGroupJobKey(client.apiBase, client.path, client.lang, fragmentIds)
+  const fetchKey = buildBootstrapGroupJobKey(client.apiBase, client.scopeKey, client.path, client.lang, fragmentIds)
   const skipClaimWait = shouldUseStartupFastPath(client, priority)
   const nextPriority = priorityToValue(
     priority,
@@ -1159,6 +1176,7 @@ const scheduleBootstrapGroupFetch = (
     key: fetchKey,
     owner: `${client.id}:bootstrap:${jobOrder}`,
     apiBase: client.apiBase,
+    scopeKey: client.scopeKey,
     path: client.path,
     lang: client.lang,
     fragmentIds: [...fragmentIds],
@@ -1174,12 +1192,17 @@ const scheduleBootstrapGroupFetch = (
   pumpFetchQueue()
 }
 
-const requestClientFragments = (
+const requestClientFragments = async (
   client: ClientState,
   ids: string[],
   priority: FragmentRuntimePriority,
   refreshIds: string[] = []
 ) => {
+  await ensurePersistentCacheReady()
+  if (clients.get(client.id) !== client) {
+    return
+  }
+
   const orderedIds = expandDependencies(client, ids)
   const refreshIdSet = new Set(refreshIds)
   const uncachedIds: string[] = []
@@ -1213,7 +1236,7 @@ const requestClientFragments = (
 
 const buildKnownVersions = (client: ClientState, ids: string[]) =>
   ids.reduce<Record<string, number>>((acc, fragmentId) => {
-    const payload = payloadCache.get(buildPayloadCacheKey(client.path, client.lang, fragmentId))?.payload
+    const payload = payloadCache.get(buildPayloadCacheKey(client.scopeKey, client.path, client.lang, fragmentId))?.payload
     if (typeof payload?.cacheUpdatedAt === 'number') {
       acc[fragmentId] = payload.cacheUpdatedAt
       return acc
@@ -1253,19 +1276,19 @@ const queueStreamFrameCommit = (client: ClientState, frame: { id: string; payloa
       const nextPayload = {
         ...payload,
         cacheUpdatedAt:
-          payloadCache.get(buildPayloadCacheKey(client.path, client.lang, payload.id))?.payload.cacheUpdatedAt ??
+          payloadCache.get(buildPayloadCacheKey(client.scopeKey, client.path, client.lang, payload.id))?.payload.cacheUpdatedAt ??
           payload.cacheUpdatedAt
       }
-      const payloadKey = buildPayloadCacheKey(client.path, client.lang, nextPayload.id)
+      const payloadKey = buildPayloadCacheKey(client.scopeKey, client.path, client.lang, nextPayload.id)
       const previousVersion = payloadCache.get(payloadKey)?.version
       if (previousVersion && previousVersion !== buildPayloadVersion(nextPayload)) {
-        void persistentCache.invalidatePayload(client.path, client.lang, nextPayload.id, previousVersion)
+        void persistentCache.invalidatePayload(client.scopeKey, client.path, client.lang, nextPayload.id, previousVersion)
       }
       payloadCache.set(payloadKey, {
         payload: nextPayload,
         version: buildPayloadVersion(nextPayload)
       })
-      void persistentCache.seedPayload(client.path, client.lang, nextPayload)
+      void persistentCache.seedPayload(client.scopeKey, client.path, client.lang, nextPayload)
       const currentClient = clients.get(client.id)
       if (!currentClient || currentClient.lang !== client.lang) return
       commitPayloadToClient(
@@ -1427,7 +1450,7 @@ const startClientEagerFetch = (client: ClientState) => {
   const criticalIds = client.planOrder.filter((fragmentId) => client.entriesById.get(fragmentId)?.critical)
 
   if (criticalIds.length) {
-    requestClientFragments(client, criticalIds, 'critical')
+    void requestClientFragments(client, criticalIds, 'critical')
   }
 }
 
@@ -1439,6 +1462,7 @@ const createClientState = (message: FragmentRuntimeInitMessage): ClientState => 
   const client: ClientState = {
     id: message.clientId,
     apiBase: message.apiBase,
+    scopeKey: message.scopeKey,
     path: message.path,
     lang: message.lang,
     viewportWidth: message.viewportWidth,
@@ -1460,7 +1484,7 @@ const createClientState = (message: FragmentRuntimeInitMessage): ClientState => 
     stream: null
   }
 
-  seedPayloadCache(message.initialFragments, message.path, message.lang)
+  seedPayloadCache(message.scopeKey, message.initialFragments, message.path, message.lang)
   seedKnownVersions(client, message.knownVersions)
   message.initialFragments.forEach((payload) => {
     client.committedVersions.set(payload.id, buildPayloadVersion(payload))
@@ -1497,13 +1521,14 @@ const handleInit = (message: FragmentRuntimeInitMessage) => {
 }
 
 const handleUpdateLang = (client: ClientState, message: Extract<FragmentRuntimePageMessage, { type: 'update-lang' }>) => {
+  client.scopeKey = message.scopeKey
   client.lang = message.lang
   client.sizingSeeds = { ...message.initialSizing }
   client.widthById.clear()
   client.lastSizingKeyById.clear()
   client.committedVersions.clear()
   seedKnownVersions(client, message.knownVersions)
-  seedPayloadCache(message.initialFragments, client.path, message.lang)
+  seedPayloadCache(client.scopeKey, message.initialFragments, client.path, message.lang)
   message.initialFragments.forEach((payload) => {
     client.committedVersions.set(payload.id, buildPayloadVersion(payload))
     if (typeof payload.cacheUpdatedAt === 'number' && Number.isFinite(payload.cacheUpdatedAt)) {
@@ -1579,7 +1604,7 @@ const handlePrimeBootstrap = async (
           ? { ...payload, cacheUpdatedAt: knownVersion }
           : payload
       })
-      seedFetchedPayloads(client.path, client.lang, hydratedPayloads)
+      seedFetchedPayloads(client.scopeKey, client.path, client.lang, hydratedPayloads)
       hydratedPayloads.forEach((payload) => {
         if (typeof payload.cacheUpdatedAt === 'number' && Number.isFinite(payload.cacheUpdatedAt)) {
           client.knownVersions.set(payload.id, payload.cacheUpdatedAt)
@@ -1622,7 +1647,7 @@ const handleMessage = (message: FragmentRuntimePageMessage) => {
 
   switch (message.type) {
     case 'request-fragments':
-      requestClientFragments(client, message.ids, message.priority, message.refreshIds)
+      void requestClientFragments(client, message.ids, message.priority, message.refreshIds)
       return
     case 'set-visible-ids':
       client.visibleIds = new Set(message.ids.filter((fragmentId) => client.entriesById.has(fragmentId)))
@@ -1642,7 +1667,7 @@ const handleMessage = (message: FragmentRuntimePageMessage) => {
       refreshClientStatus(client)
       return
     case 'refresh':
-      requestClientFragments(client, message.ids ?? client.planOrder, 'refresh', message.ids ?? client.planOrder)
+      void requestClientFragments(client, message.ids ?? client.planOrder, 'refresh', message.ids ?? client.planOrder)
       restartClientStream(client)
       return
     case 'dispose':
