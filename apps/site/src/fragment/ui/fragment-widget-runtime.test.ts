@@ -25,9 +25,11 @@ class MockTemplateElement {
   tagName = 'TEMPLATE'
   innerHTML: string
   textContent = ''
+  content: { textContent: string | null }
 
-  constructor(innerHTML: string) {
+  constructor(innerHTML: string, contentText: string | null = innerHTML) {
     this.innerHTML = innerHTML
+    this.content = { textContent: contentText }
   }
 }
 
@@ -225,6 +227,32 @@ describe('createFragmentWidgetRuntime', () => {
     const widget = new MockWidgetElement(
       'critical',
       new MockTemplateElement('{"props":{"inviteId":"abc"}}')
+    )
+    const root = new MockRootElement([widget])
+    const runtime = createFragmentWidgetRuntime({ root: root as unknown as ParentNode })
+
+    scheduledPaintCallback?.(16.7)
+    await flushMicrotasks()
+
+    expect(widget.dataset.fragmentWidgetHydrated).toBe('true')
+
+    runtime.destroy()
+  })
+
+  it('parses widget props from decoded template content when template markup is HTML-encoded', async () => {
+    let scheduledPaintCallback: FrameRequestCallback | null = null
+    globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      scheduledPaintCallback = callback
+      return 1
+    }) as typeof requestAnimationFrame
+    globalThis.cancelAnimationFrame = (() => undefined) as typeof cancelAnimationFrame
+
+    const widget = new MockWidgetElement(
+      'critical',
+      new MockTemplateElement(
+        '{&quot;props&quot;:{&quot;inviteId&quot;:&quot;abc&quot;}}',
+        '{"props":{"inviteId":"abc"}}'
+      )
     )
     const root = new MockRootElement([widget])
     const runtime = createFragmentWidgetRuntime({ root: root as unknown as ParentNode })

@@ -76,39 +76,105 @@ const readWidgetPriority = (element: HTMLElement): WidgetPriority => {
   return 'normal'
 }
 
-const readWidgetPropsSource = (node: Element | null) => {
-  if (!node) {
-    return ''
+const decodeHtmlEntities = (value: string) => {
+  if (
+    !value ||
+    typeof document === 'undefined' ||
+    !/[&](?:#\d+|#x[0-9a-f]+|\w+);/i.test(value)
+  ) {
+    return value
   }
+
+  const textarea = document.createElement('textarea')
+  textarea.innerHTML = value
+  return textarea.value.trim()
+}
+
+const isLocalDevWidgetRuntimeHost = () => {
+  if (typeof location === 'undefined') {
+    return false
+  }
+  return (
+    location.hostname === 'localhost' ||
+    location.hostname === '127.0.0.1' ||
+    location.hostname === 'prometheus.dev'
+  )
+}
+
+const readWidgetPropsSources = (node: Element | null) => {
+  if (!node) {
+    return []
+  }
+
   const templateNode = node as Element & {
     innerHTML?: string
     tagName?: string
     textContent?: string | null
+    content?: { textContent?: string | null }
   }
+
+  const sources: string[] = []
+
+  if (
+    templateNode.tagName === 'TEMPLATE' &&
+    templateNode.content &&
+    typeof templateNode.content.textContent === 'string'
+  ) {
+    const contentText = templateNode.content.textContent.trim()
+    if (contentText) {
+      sources.push(contentText)
+    }
+  }
+
   if (
     templateNode.tagName === 'TEMPLATE' &&
     typeof templateNode.innerHTML === 'string'
   ) {
-    return templateNode.innerHTML.trim()
+    const innerHtml = templateNode.innerHTML.trim()
+    if (innerHtml) {
+      sources.push(innerHtml)
+      const decodedInnerHtml = decodeHtmlEntities(innerHtml)
+      if (decodedInnerHtml && decodedInnerHtml !== innerHtml) {
+        sources.push(decodedInnerHtml)
+      }
+    }
   }
-  return templateNode.textContent?.trim() ?? ''
+
+  const textContent = templateNode.textContent?.trim()
+  if (textContent) {
+    sources.push(textContent)
+    const decodedTextContent = decodeHtmlEntities(textContent)
+    if (decodedTextContent && decodedTextContent !== textContent) {
+      sources.push(decodedTextContent)
+    }
+  }
+
+  return Array.from(new Set(sources.filter(Boolean)))
 }
 
 const readWidgetProps = (element: HTMLElement): FragmentWidgetPayload => {
   const propsNode = element.querySelector<Element>(
     FRAGMENT_WIDGET_PROPS_SELECTOR
   )
-  const source = readWidgetPropsSource(propsNode)
-  if (!source) {
+  const sources = readWidgetPropsSources(propsNode)
+  if (!sources.length) {
     return {}
   }
-  try {
-    const parsed = JSON.parse(source) as FragmentWidgetPayload
-    return typeof parsed === 'object' && parsed !== null ? parsed : {}
-  } catch (error) {
-    console.error('Failed to parse fragment widget props:', error)
-    return {}
+
+  let lastError: unknown = null
+  for (const source of sources) {
+    try {
+      const parsed = JSON.parse(source) as FragmentWidgetPayload
+      return typeof parsed === 'object' && parsed !== null ? parsed : {}
+    } catch (error) {
+      lastError = error
+    }
   }
+
+  if (lastError && isLocalDevWidgetRuntimeHost()) {
+    console.warn('Failed to parse fragment widget props:', lastError)
+  }
+  return {}
 }
 
 const normalizeWidgetCleanup = async (cleanup: WidgetCleanup) => {
