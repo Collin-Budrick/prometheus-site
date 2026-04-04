@@ -76,6 +76,11 @@ import {
   routeDirectionRestoreScript,
   routeShellTransitionStyle
 } from '../shared/route-shell-bootstrap'
+import {
+  STATIC_SHELL_ROUTE_HEAD_BOUNDARY_ATTR,
+  STATIC_SHELL_ROUTE_HEAD_BOUNDARY_END,
+  STATIC_SHELL_ROUTE_HEAD_BOUNDARY_START,
+} from '../shell/core/seed'
 
 const initialFadeDurationMs = 920
 const initialFadeClearDelayMs = initialFadeDurationMs + 200
@@ -1104,6 +1109,49 @@ export const RouterHead = component$(() => {
     lib: withBase('~partytown/'),
     nonce: nonce || undefined
   })
+  const routeHeadLinks = head.links.flatMap((link) => {
+    if (link.rel === 'stylesheet' && typeof link.href === 'string') {
+      const fragmentId = (link as Record<string, string>)['data-fragment-css']
+      const stylesheetLink = <link key={`${link.rel}-${link.href}`} {...link} />
+      if (!shouldPreloadHeadStylesheet(link.href)) {
+        return [stylesheetLink]
+      }
+      return [
+        <link
+          key={`preload-style-${link.href}`}
+          rel="preload"
+          as="style"
+          href={link.href}
+          crossOrigin={resolveLinkCrossOrigin(link.crossorigin)}
+          {...(fragmentId ? { 'data-fragment-css': fragmentId } : {})}
+        />,
+        stylesheetLink
+      ]
+    }
+
+    return (
+      <link
+        key={`${link.rel}-${link.href}`}
+        crossOrigin={resolveLinkCrossOrigin(link.crossorigin)}
+        {...link}
+      />
+    )
+  })
+  const routeHeadStyles = (head.styles ?? []).map((style, index) => {
+    const styleProps = {
+      ...(style.props ?? {})
+    } as Record<string, unknown>
+    if (nonce && typeof styleProps.nonce !== 'string') {
+      styleProps.nonce = nonce
+    }
+    return (
+      <style
+        key={style.key ?? `route-style-${index}`}
+        {...styleProps}
+        dangerouslySetInnerHTML={style.style}
+      />
+    )
+  })
 
   return (
     <>
@@ -1112,31 +1160,21 @@ export const RouterHead = component$(() => {
         <meta key={`${meta.name || meta.property}-${meta.content}`} {...meta} />
       ))}
       {partytownScript ? <script nonce={nonce || undefined} dangerouslySetInnerHTML={partytownScript} /> : null}
-      {head.links.flatMap((link) => {
-        if (link.rel === 'stylesheet' && typeof link.href === 'string') {
-          const fragmentId = (link as Record<string, string>)['data-fragment-css']
-          const stylesheetLink = <link key={`${link.rel}-${link.href}`} {...link} />
-          if (!shouldPreloadHeadStylesheet(link.href)) {
-            return [stylesheetLink]
-          }
-          return [
-            <link
-              key={`preload-style-${link.href}`}
-              rel="preload"
-              as="style"
-              href={link.href}
-              crossOrigin={resolveLinkCrossOrigin(link.crossorigin)}
-              {...(fragmentId ? { 'data-fragment-css': fragmentId } : {})}
-            />,
-            stylesheetLink
-          ]
-        }
-
-        return <link key={`${link.rel}-${link.href}`} crossOrigin={resolveLinkCrossOrigin(link.crossorigin)} {...link} />
-      })}
-        {preconnectOrigins.map((origin) => (
-          <link
-            key={`preconnect-${origin}`}
+      <meta
+        {...{
+          [STATIC_SHELL_ROUTE_HEAD_BOUNDARY_ATTR]: STATIC_SHELL_ROUTE_HEAD_BOUNDARY_START
+        }}
+      />
+      {routeHeadLinks}
+      {routeHeadStyles}
+      <meta
+        {...{
+          [STATIC_SHELL_ROUTE_HEAD_BOUNDARY_ATTR]: STATIC_SHELL_ROUTE_HEAD_BOUNDARY_END
+        }}
+      />
+      {preconnectOrigins.map((origin) => (
+        <link
+          key={`preconnect-${origin}`}
           rel="preconnect"
           href={origin}
           crossOrigin={origin !== currentOrigin ? 'anonymous' : undefined}

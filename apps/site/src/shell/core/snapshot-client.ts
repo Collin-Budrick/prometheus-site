@@ -6,7 +6,13 @@ import {
   resolveFragmentCacheScope,
 } from '../../fragment/cache-scope'
 import { resolveStaticShellLangParam } from './lang-param'
-import type { StaticShellSnapshot, StaticShellSnapshotManifest } from './seed'
+import {
+  STATIC_SHELL_ROUTE_HEAD_BOUNDARY_ATTR,
+  STATIC_SHELL_ROUTE_HEAD_BOUNDARY_END,
+  STATIC_SHELL_ROUTE_HEAD_BOUNDARY_START,
+  type StaticShellSnapshot,
+  type StaticShellSnapshotManifest,
+} from './seed'
 import { renderDockRegionHtml, syncStaticDockMarkup } from '../home/home-dock-dom'
 import {
   getStaticShellRouteConfig,
@@ -35,13 +41,29 @@ const SESSION_SNAPSHOT_STORAGE_PREFIX = 'prometheus:static-shell:session-snapsho
 const HYDRATED_WIDGET_ATTR_RE = /\sdata-fragment-widget-hydrated=(["'])true\1/gi
 const RESIDENT_STATE_ATTR_RE = /\sdata-fragment-resident-state=(["'])[^"']*\1/gi
 const LAYOUT_SHELL_SELECTOR = '.layout-shell'
-const MANAGED_HEAD_SELECTOR = [
+const LEGACY_MANAGED_HEAD_SELECTOR = [
   'meta[name="prom-home-deferred-global-style"]',
   'link[rel="stylesheet"][href*="global-deferred.css"]',
   'link[rel="stylesheet"][data-home-deferred-global-style-href]',
   'link[rel="stylesheet"][data-fragment-css]',
   'style[data-src]'
 ].join(',')
+const HTML_VOID_TAGS = new Set([
+  'area',
+  'base',
+  'br',
+  'col',
+  'embed',
+  'hr',
+  'img',
+  'input',
+  'link',
+  'meta',
+  'param',
+  'source',
+  'track',
+  'wbr'
+])
 
 let snapshotManifestPromise: Promise<StaticShellSnapshotManifest> | null = null
 const snapshotCache = new Map<string, Promise<StaticShellSnapshot>>()
@@ -142,6 +164,25 @@ const buildSessionSnapshotStorageKey = (snapshotKey: string, lang: Lang) =>
 const buildRouteResourceKey = (snapshotKey: string) =>
   `route:${toStaticSnapshotKey(snapshotKey)}`
 
+const normalizeRouteHead = (head: StaticShellSnapshot['head'] | null | undefined) => {
+  const routeHead = Array.isArray(head?.route)
+    ? head.route
+    : Array.isArray((head as unknown as { managed?: unknown } | null | undefined)?.managed)
+      ? ((head as unknown as { managed?: string[] }).managed ?? [])
+      : []
+
+  return routeHead
+    .map((entry) => sanitizeStaticShellSnapshotHtml(String(entry ?? '')))
+    .filter((entry) => entry.length > 0)
+}
+
+const normalizeStaticShellSnapshot = (snapshot: StaticShellSnapshot): StaticShellSnapshot => ({
+  ...snapshot,
+  head: {
+    route: normalizeRouteHead(snapshot.head)
+  }
+})
+
 const readStoredSessionSnapshot = (
   snapshotKey: string,
   lang: Lang
@@ -157,7 +198,7 @@ const readStoredSessionSnapshot = (
     if (!raw) {
       return null
     }
-    return JSON.parse(raw) as StaticShellSnapshot
+    return normalizeStaticShellSnapshot(JSON.parse(raw) as StaticShellSnapshot)
   } catch {
     return null
   }
@@ -265,6 +306,34 @@ const extractHeadHtml = (html: string) => {
   return match?.[1] ?? ''
 }
 
+const extractRouteHeadHtml = (html: string) => {
+  const headHtml = extractHeadHtml(html)
+  if (!headHtml) {
+    return null
+  }
+
+  const startPattern = new RegExp(
+    `<meta\\b[^>]*${escapeRegex(STATIC_SHELL_ROUTE_HEAD_BOUNDARY_ATTR)}=(["'])${escapeRegex(STATIC_SHELL_ROUTE_HEAD_BOUNDARY_START)}\\1[^>]*>`,
+    'i'
+  )
+  const startMatch = startPattern.exec(headHtml)
+  if (!startMatch) {
+    return null
+  }
+
+  const afterStartIndex = startMatch.index + startMatch[0].length
+  const endPattern = new RegExp(
+    `<meta\\b[^>]*${escapeRegex(STATIC_SHELL_ROUTE_HEAD_BOUNDARY_ATTR)}=(["'])${escapeRegex(STATIC_SHELL_ROUTE_HEAD_BOUNDARY_END)}\\1[^>]*>`,
+    'i'
+  )
+  const endMatch = endPattern.exec(headHtml.slice(afterStartIndex))
+  if (!endMatch) {
+    return null
+  }
+
+  return headHtml.slice(afterStartIndex, afterStartIndex + endMatch.index)
+}
+
 const parseElementAttributes = (html: string) => {
   const openTagMatch = html.match(/^<([a-zA-Z][\w:-]*)([\s\S]*?)>/i)
   if (!openTagMatch?.[2]) {
@@ -291,7 +360,7 @@ const parseElementAttributes = (html: string) => {
   return attributes
 }
 
-const collectManagedHeadElementStrings = (headHtml: string) => {
+const collectLegacyManagedHeadElementStrings = (headHtml: string) => {
   const patterns = [
     /<meta\b[^>]*name=(["'])prom-home-deferred-global-style\1[^>]*>/gi,
     /<link\b(?=[^>]*rel=(["'])stylesheet\1)(?=[^>]*href=(["'])[^"']*global-deferred\.css[^"']*\2)[^>]*>/gi,
@@ -311,17 +380,125 @@ const collectManagedHeadElementStrings = (headHtml: string) => {
     .map((entry) => entry.html)
 }
 
-const readManagedHeadElementsFromHtml = (html: string) =>
-  collectManagedHeadElementStrings(extractHeadHtml(html)).map((entry) =>
+const collectTopLevelElementStrings = (html: string) => {
+  const collected: string[] = []
+  let index = 0
+
+  while (index < html.length) {
+    const whitespaceMatch = /^\s+/.exec(html.slice(index))
+    if (whitespaceMatch) {
+      index += whitespaceMatch[0].length
+      continue
+    }
+
+    if (html.startsWith('<!--', index)) {
+      const endCommentIndex = html.indexOf('-->', index + 4)
+      if (endCommentIndex === -1) {
+        break
+      }
+      index = endCommentIndex + 3
+      continue
+    }
+
+    if (html[index] !== '<') {
+      index += 1
+      continue
+    }
+
+    const openTagMatch = /^<([a-zA-Z][\w:-]*)([\s\S]*?)>/.exec(html.slice(index))
+    if (!openTagMatch?.[1]) {
+      break
+    }
+
+    const tagName = openTagMatch[1].toLowerCase()
+    const startIndex = index
+    const openTagSource = openTagMatch[0]
+    index += openTagSource.length
+
+    if (openTagSource.endsWith('/>') || HTML_VOID_TAGS.has(tagName)) {
+      collected.push(html.slice(startIndex, index))
+      continue
+    }
+
+    const closeTagPattern = new RegExp(`<(/?)${escapeRegex(tagName)}\\b[^>]*>`, 'gi')
+    closeTagPattern.lastIndex = index
+    let depth = 1
+
+    for (;;) {
+      const closeTagMatch = closeTagPattern.exec(html)
+      if (!closeTagMatch) {
+        index = startIndex + openTagSource.length
+        break
+      }
+
+      const source = closeTagMatch[0]
+      const closing = closeTagMatch[1] === '/'
+      const selfClosing = source.endsWith('/>')
+
+      if (!closing && !selfClosing) {
+        depth += 1
+      } else if (closing) {
+        depth -= 1
+      }
+
+      if (depth === 0) {
+        index = closeTagPattern.lastIndex
+        collected.push(html.slice(startIndex, index))
+        break
+      }
+    }
+  }
+
+  return collected
+}
+
+const readRouteHeadElementsFromHtml = (html: string) => {
+  const routeHeadHtml = extractRouteHeadHtml(html)
+  if (!routeHeadHtml) {
+    return collectLegacyManagedHeadElementStrings(extractHeadHtml(html)).map((entry) =>
+      sanitizeStaticShellSnapshotHtml(entry)
+    )
+  }
+
+  return collectTopLevelElementStrings(routeHeadHtml).map((entry) =>
     sanitizeStaticShellSnapshotHtml(entry)
   )
+}
 
-const readManagedHeadElementsFromDocument = (doc: Document | null) => {
-  if (!doc?.head || typeof doc.head.querySelectorAll !== 'function') {
+const isRouteHeadBoundaryElement = (element: Element, value: string) =>
+  element.getAttribute(STATIC_SHELL_ROUTE_HEAD_BOUNDARY_ATTR) === value
+
+const readRouteHeadElementsFromDocument = (doc: Document | null) => {
+  if (!doc?.head) {
     return []
   }
 
-  return Array.from(doc.head.querySelectorAll(MANAGED_HEAD_SELECTOR))
+  const headChildren = Array.from(doc.head.children)
+  const startIndex = headChildren.findIndex((element) =>
+    isRouteHeadBoundaryElement(element, STATIC_SHELL_ROUTE_HEAD_BOUNDARY_START)
+  )
+  const endIndex = headChildren.findIndex(
+    (element, index) =>
+      index > startIndex &&
+      isRouteHeadBoundaryElement(element, STATIC_SHELL_ROUTE_HEAD_BOUNDARY_END)
+  )
+
+  if (startIndex >= 0 && endIndex > startIndex) {
+    return headChildren
+      .slice(startIndex + 1, endIndex)
+      .map((element) =>
+        typeof (element as HTMLElement).outerHTML === 'string'
+          ? sanitizeStaticShellSnapshotHtml((element as HTMLElement).outerHTML)
+          : null
+      )
+      .filter((value): value is string => typeof value === 'string' && value.length > 0)
+  }
+
+  if (typeof doc.head.querySelectorAll !== 'function') {
+    return []
+  }
+
+  return Array.from(doc.head.querySelectorAll(LEGACY_MANAGED_HEAD_SELECTOR))
     .map((element) =>
       typeof (element as HTMLElement).outerHTML === 'string'
         ? sanitizeStaticShellSnapshotHtml((element as HTMLElement).outerHTML)
@@ -463,7 +640,7 @@ const loadStaticShellSnapshotFromRoute = async (snapshotKey: string, lang: Lang)
     lang,
     title: extractHtmlTitle(html),
     head: {
-      managed: readManagedHeadElementsFromHtml(html)
+      route: readRouteHeadElementsFromHtml(html)
     },
     shell: {
       layoutAttributes: readLayoutShellAttributesFromHtml(html, normalizedSnapshotKey)
@@ -483,21 +660,58 @@ const parseHtmlFragment = (html: string) => {
   return next instanceof HTMLElement ? next : null
 }
 
-const replaceManagedHeadElements = (managedHead: string[]) => {
+const replaceLegacyManagedHeadElements = (routeHead: string[]) => {
   if (typeof document === 'undefined' || !document.head) {
     return
   }
 
-  Array.from(document.head.querySelectorAll(MANAGED_HEAD_SELECTOR)).forEach((element) => {
+  Array.from(document.head.querySelectorAll(LEGACY_MANAGED_HEAD_SELECTOR)).forEach((element) => {
     element.parentNode?.removeChild(element)
   })
 
-  managedHead.forEach((html) => {
+  routeHead.forEach((html) => {
     const element = parseHtmlFragment(html)
     if (!element) {
       return
     }
     document.head.appendChild(element)
+  })
+}
+
+const replaceRouteHeadElements = (routeHead: string[]) => {
+  if (typeof document === 'undefined' || !document.head) {
+    return
+  }
+
+  const headChildren = Array.from(document.head.children)
+  const startBoundary = headChildren.find((element) =>
+    isRouteHeadBoundaryElement(element, STATIC_SHELL_ROUTE_HEAD_BOUNDARY_START)
+  )
+  const endBoundary = headChildren.find(
+    (element, index) =>
+      index > headChildren.indexOf(startBoundary as Element) &&
+      isRouteHeadBoundaryElement(element, STATIC_SHELL_ROUTE_HEAD_BOUNDARY_END)
+  )
+
+  if (!startBoundary || !endBoundary) {
+    replaceLegacyManagedHeadElements(routeHead)
+    return
+  }
+
+  const startIndex = headChildren.indexOf(startBoundary)
+  const endIndex = headChildren.indexOf(endBoundary)
+  headChildren
+    .slice(startIndex + 1, endIndex)
+    .forEach((element) => {
+      element.parentNode?.removeChild(element)
+    })
+
+  routeHead.forEach((html) => {
+    const element = parseHtmlFragment(html)
+    if (!element) {
+      return
+    }
+    document.head.insertBefore(element, endBoundary)
   })
 }
 
@@ -621,7 +835,9 @@ export const loadStaticShellSnapshot = async (snapshotKey: string, lang: Lang) =
       return await loadStaticShellSnapshotFromRoute(normalizedSnapshotKey, lang)
     } catch {
       const assetPath = await resolveSnapshotAssetPath(normalizedSnapshotKey, lang)
-      return await readJson<StaticShellSnapshot>(toSnapshotUrl(assetPath))
+      return normalizeStaticShellSnapshot(
+        await readJson<StaticShellSnapshot>(toSnapshotUrl(assetPath))
+      )
     }
   })()
   snapshotCache.set(cacheKey, nextPromise)
@@ -635,7 +851,7 @@ export const applyStaticShellSnapshot = (
   } = {}
 ) => {
   parkResidentSubtreesWithin(typeof document !== 'undefined' ? document : null)
-  replaceManagedHeadElements(snapshot.head?.managed ?? [])
+  replaceRouteHeadElements(normalizeRouteHead(snapshot.head))
   syncLayoutShellAttributes(snapshot.shell?.layoutAttributes)
   replaceStaticShellRegionHtml(STATIC_SHELL_HEADER_REGION, snapshot.regions.header)
   replaceStaticShellRegionHtml(STATIC_SHELL_MAIN_REGION, snapshot.regions.main)
@@ -666,7 +882,7 @@ export const captureCurrentStaticShellSnapshot = (
     lang,
     title: doc.title,
     head: {
-      managed: readManagedHeadElementsFromDocument(doc)
+      route: readRouteHeadElementsFromDocument(doc)
     },
     shell: {
       layoutAttributes: readLayoutShellAttributesFromDocument(doc)

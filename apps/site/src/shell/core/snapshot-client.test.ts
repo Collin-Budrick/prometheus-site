@@ -14,6 +14,11 @@ import {
   loadStaticShellSnapshot,
   resetStaticShellSnapshotClientForTests
 } from './snapshot-client'
+import {
+  STATIC_SHELL_ROUTE_HEAD_BOUNDARY_ATTR,
+  STATIC_SHELL_ROUTE_HEAD_BOUNDARY_END,
+  STATIC_SHELL_ROUTE_HEAD_BOUNDARY_START,
+} from './seed'
 import { STATIC_SHELL_SNAPSHOT_MANIFEST_PATH, toStaticSnapshotAssetPath } from './snapshot'
 import { ROUTE_WARMUP_STATE_KEY } from '../../fragment/cache-scope'
 
@@ -88,6 +93,10 @@ class MockElement {
     this.attributes.push({ name, value })
   }
 
+  getAttribute(name: string) {
+    return this.attributes.find((attribute) => attribute.name === name)?.value ?? null
+  }
+
   removeAttribute(name: string) {
     this.attributes = this.attributes.filter((attribute) => attribute.name !== name)
   }
@@ -143,6 +152,13 @@ class MockStorage {
   }
 }
 
+type MockHeadRoot = {
+  readonly children: MockElement[]
+  appendChild: (element: MockElement) => MockElement
+  insertBefore: (element: MockElement, reference: MockElement | null) => MockElement
+  removeChild: (element: MockElement) => void
+}
+
 const originalDocument = globalThis.document
 const originalWindow = globalThis.window
 const originalHTMLElement = globalThis.HTMLElement
@@ -155,7 +171,7 @@ const originalNavigator = globalThis.navigator
 describe('snapshot-client', () => {
   const regions = new Map<string, MockElement>()
   const layoutShell = new MockElement(regions)
-  let managedHeadElements: MockElement[] = []
+  let headElements: MockElement[] = []
 
   beforeEach(() => {
     seedStaticHomeCopy(
@@ -177,25 +193,50 @@ describe('snapshot-client', () => {
     )
 
     regions.clear()
-    managedHeadElements = []
+    headElements = []
     layoutShell.innerHTML =
       '<div class="layout-shell" data-static-route="fragment" data-static-lang="ja" data-static-template-preset="full"></div>'
     regions.set(STATIC_SHELL_HEADER_REGION, new MockElement(regions, STATIC_SHELL_HEADER_REGION))
     regions.set(STATIC_SHELL_MAIN_REGION, new MockElement(regions, STATIC_SHELL_MAIN_REGION))
     regions.set(STATIC_SHELL_DOCK_REGION, new MockElement(regions, STATIC_SHELL_DOCK_REGION))
 
-    const head = {
-      querySelectorAll: () => managedHeadElements,
+    const head: MockHeadRoot = {
+      get children() {
+        return headElements
+      },
       appendChild: (element: MockElement) => {
         element.parentNode = head
-        managedHeadElements.push(element)
+        headElements.push(element)
+        return element
+      },
+      insertBefore: (element: MockElement, reference: MockElement | null) => {
+        element.parentNode = head
+        if (!reference) {
+          headElements.push(element)
+          return element
+        }
+        const index = headElements.indexOf(reference)
+        if (index === -1) {
+          headElements.push(element)
+          return element
+        }
+        headElements.splice(index, 0, element)
         return element
       },
       removeChild: (element: MockElement) => {
-        managedHeadElements = managedHeadElements.filter((entry) => entry !== element)
+        headElements = headElements.filter((entry) => entry !== element)
         element.parentNode = null
       }
     }
+    const routeHeadStart = new MockElement(regions)
+    routeHeadStart.innerHTML =
+      `<meta ${STATIC_SHELL_ROUTE_HEAD_BOUNDARY_ATTR}="${STATIC_SHELL_ROUTE_HEAD_BOUNDARY_START}">`
+    routeHeadStart.parentNode = head
+    const routeHeadEnd = new MockElement(regions)
+    routeHeadEnd.innerHTML =
+      `<meta ${STATIC_SHELL_ROUTE_HEAD_BOUNDARY_ATTR}="${STATIC_SHELL_ROUTE_HEAD_BOUNDARY_END}">`
+    routeHeadEnd.parentNode = head
+    headElements.push(routeHeadStart, routeHeadEnd)
 
     globalThis.HTMLElement = MockElement as never
     globalThis.HTMLScriptElement = class MockScriptElement {} as never
@@ -415,7 +456,7 @@ describe('snapshot-client', () => {
       lang: 'ja',
       title: 'Prometheus | Chat',
       head: {
-        managed: []
+        route: []
       },
       shell: {
         layoutAttributes: {
@@ -456,7 +497,7 @@ describe('snapshot-client', () => {
       lang: 'ja',
       title: 'Prometheus | Live',
       head: {
-        managed: []
+        route: []
       },
       shell: {
         layoutAttributes: {
@@ -499,7 +540,7 @@ describe('snapshot-client', () => {
       lang: 'ja',
       title: 'Prometheus | Session',
       head: {
-        managed: []
+        route: []
       },
       shell: {
         layoutAttributes: {
@@ -561,21 +602,31 @@ describe('snapshot-client', () => {
     expect(snapshot?.regions.main).not.toContain('data-fragment-resident-state=')
   })
 
-  it('captures and reapplies managed route head assets with the snapshot', () => {
+  it('captures and reapplies ordered route head assets in place', () => {
+    const head = (globalThis.document as Document).head as unknown as MockHeadRoot
+    const stableBefore = new MockElement(regions)
+    stableBefore.innerHTML = '<meta name="stable-before" content="keep-before">'
+    stableBefore.parentNode = head
     const staleLink = new MockElement(regions)
     staleLink.innerHTML =
       '<link rel="stylesheet" href="/fragments/stale.css" data-fragment-css="fragment://page/store/stream@v5">'
-    staleLink.parentNode = (globalThis.document as Document).head as never
-    managedHeadElements.push(staleLink)
+    staleLink.parentNode = head
+    const stableAfter = new MockElement(regions)
+    stableAfter.innerHTML = '<meta name="stable-after" content="keep-after">'
+    stableAfter.parentNode = head
+    head.insertBefore(stableBefore, headElements[0] ?? null)
+    head.insertBefore(staleLink, headElements[2] ?? null)
+    head.appendChild(stableAfter)
 
     const snapshot = {
       path: '/',
       lang: 'ja' as const,
       title: 'Prometheus | Home',
       head: {
-        managed: [
-          '<meta name="prom-home-deferred-global-style" content="/assets/style.css">',
-          '<link rel="stylesheet" href="/assets/style.css" data-home-deferred-global-style-href="https://prometheus.test/assets/style.css">'
+        route: [
+          '<link rel="preload" as="style" href="/assets/BzhVnu6I-global-deferred.css">',
+          '<link rel="stylesheet" href="/assets/BzhVnu6I-global-deferred.css">',
+          '<link rel="stylesheet" href="/assets/RIQCl4mY-style.css">'
         ]
       },
       shell: {
@@ -595,7 +646,15 @@ describe('snapshot-client', () => {
 
     applyStaticShellSnapshot(snapshot)
 
-    expect(managedHeadElements.map((element) => element.outerHTML)).toEqual(snapshot.head.managed)
+    expect(headElements.map((element) => element.outerHTML)).toEqual([
+      '<meta name="stable-before" content="keep-before">',
+      `<meta ${STATIC_SHELL_ROUTE_HEAD_BOUNDARY_ATTR}="${STATIC_SHELL_ROUTE_HEAD_BOUNDARY_START}">`,
+      '<link rel="preload" as="style" href="/assets/BzhVnu6I-global-deferred.css">',
+      '<link rel="stylesheet" href="/assets/BzhVnu6I-global-deferred.css">',
+      '<link rel="stylesheet" href="/assets/RIQCl4mY-style.css">',
+      `<meta ${STATIC_SHELL_ROUTE_HEAD_BOUNDARY_ATTR}="${STATIC_SHELL_ROUTE_HEAD_BOUNDARY_END}">`,
+      '<meta name="stable-after" content="keep-after">'
+    ])
     expect(layoutShell.attributes).toEqual([
       { name: 'class', value: 'layout-shell' },
       { name: 'data-static-route', value: 'home' },
@@ -604,7 +663,7 @@ describe('snapshot-client', () => {
     ])
   })
 
-  it('extracts managed route head assets from localized route html', async () => {
+  it('extracts ordered route head assets from localized route html', async () => {
     const routeUrl = 'https://prometheus.test/chat?lang=ja'
 
     globalThis.fetch = (async (input: RequestInfo | URL) => {
@@ -622,8 +681,12 @@ describe('snapshot-client', () => {
             '<html lang="ja">',
             '<head>',
             '<title>Prometheus | Chat</title>',
+            `<meta ${STATIC_SHELL_ROUTE_HEAD_BOUNDARY_ATTR}="${STATIC_SHELL_ROUTE_HEAD_BOUNDARY_START}">`,
+            '<link rel="preload" as="style" href="/assets/BzhVnu6I-global-deferred.css">',
             '<link rel="stylesheet" href="/assets/BzhVnu6I-global-deferred.css">',
+            '<link rel="stylesheet" href="/assets/RIQCl4mY-style.css">',
             '<style data-src="/assets/bJX5dTnw-home-static-eager.css">.demo{color:red;}</style>',
+            `<meta ${STATIC_SHELL_ROUTE_HEAD_BOUNDARY_ATTR}="${STATIC_SHELL_ROUTE_HEAD_BOUNDARY_END}">`,
             '</head>',
             '<body>',
             '<div class="layout-shell" data-static-route="fragment" data-static-lang="ja" data-static-template-preset="full">',
@@ -649,8 +712,10 @@ describe('snapshot-client', () => {
     const snapshot = await loadStaticShellSnapshot('/chat', 'ja')
 
     expect(snapshot.head).toEqual({
-      managed: [
+      route: [
+        '<link rel="preload" as="style" href="/assets/BzhVnu6I-global-deferred.css">',
         '<link rel="stylesheet" href="/assets/BzhVnu6I-global-deferred.css">',
+        '<link rel="stylesheet" href="/assets/RIQCl4mY-style.css">',
         '<style data-src="/assets/bJX5dTnw-home-static-eager.css">.demo{color:red;}</style>'
       ]
     })

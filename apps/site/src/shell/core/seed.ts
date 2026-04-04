@@ -3,6 +3,10 @@ import type { LanguageSeedPayload } from '../../lang/selection'
 import type { AuthSessionState } from '../../features/auth/auth-session'
 import type { StaticShellAuthPolicy, StaticShellBootstrapMode } from './constants'
 
+export const STATIC_SHELL_ROUTE_HEAD_BOUNDARY_ATTR = 'data-static-route-head-boundary'
+export const STATIC_SHELL_ROUTE_HEAD_BOUNDARY_START = 'start'
+export const STATIC_SHELL_ROUTE_HEAD_BOUNDARY_END = 'end'
+
 export type StaticShellSeed = {
   lang: Lang
   currentPath: string
@@ -20,7 +24,7 @@ export type StaticShellSnapshot = {
   lang: Lang
   title: string
   head?: {
-    managed: string[]
+    route: string[]
   }
   shell?: {
     layoutAttributes: Record<string, string>
