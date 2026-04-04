@@ -35,9 +35,9 @@ type NotificationOptionsWithTrigger = NotificationOptions & {
 }
 
 const CACHE_PREFIX = templateBranding.ids.cachePrefix
-const PUBLIC_SHELL_CACHE_NAME = `${CACHE_PREFIX}-public-shell-v2`
+const PUBLIC_SHELL_CACHE_NAME = `${CACHE_PREFIX}-public-shell-v4`
 const PUBLIC_DATA_CACHE_NAME = `${CACHE_PREFIX}-public-data-v1`
-const USER_SHELL_CACHE_PREFIX = `${CACHE_PREFIX}-user-shell-v2`
+const USER_SHELL_CACHE_PREFIX = `${CACHE_PREFIX}-user-shell-v4`
 const USER_DATA_CACHE_PREFIX = `${CACHE_PREFIX}-user-data-v1`
 const OUTBOX_CACHE_NAME = `${CACHE_PREFIX}-outbox-v1`
 const ACTIVE_USER_RESOURCE_KEY = 'meta:active-user'

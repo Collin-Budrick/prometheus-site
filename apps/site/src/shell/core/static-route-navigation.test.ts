@@ -112,6 +112,7 @@ describe('installStaticRouteNavigation', () => {
     const doc = new MockDocument()
     const anchor = new MockAnchor('https://prometheus.prod/store/?lang=en')
     const calls: string[] = []
+    const directions: string[] = []
 
     const cleanup = installStaticRouteNavigation({
       win: win as never,
@@ -158,6 +159,107 @@ describe('installStaticRouteNavigation', () => {
       },
       bootstrapFragment: async () => {
         calls.push('bootstrap:fragment')
+      },
+      routeTransition: async (update, options) => {
+        directions.push(options.direction)
+        await update()
+      }
+    })
+
+    let prevented = false
+    doc.emit(
+      'click',
+      {
+        defaultPrevented: false,
+        button: 0,
+        metaKey: false,
+        ctrlKey: false,
+        shiftKey: false,
+        altKey: false,
+        target: anchor,
+        preventDefault: () => {
+          prevented = true
+        }
+      } as unknown as Event
+    )
+
+    await flushMicrotasks()
+
+    expect(prevented).toBe(true)
+    expect(directions).toEqual(['forward'])
+    expect(calls).toEqual([
+      'load:/store',
+      'capture',
+      'dispose:home',
+      'apply:/store',
+      'sync-seed',
+      'entry:fragment',
+      'bootstrap:fragment'
+    ])
+
+    cleanup()
+  })
+
+  it('loads the full home static runtime stack when navigating into home', async () => {
+    const win = new MockWindow()
+    win.location.href = 'https://prometheus.prod/store/?lang=en'
+    win.location.pathname = '/store/'
+    win.location.search = '?lang=en'
+    const doc = new MockDocument()
+    const anchor = new MockAnchor('https://prometheus.prod/?lang=en')
+    const calls: string[] = []
+
+    const cleanup = installStaticRouteNavigation({
+      win: win as never,
+      doc: doc as never,
+      readSeed: () => ({
+        lang: 'en',
+        currentPath: '/store',
+        languageSeed: {},
+        bootstrapMode: 'fragment-static',
+        authPolicy: 'public',
+        isAuthenticated: false,
+        authSession: { status: 'anonymous' },
+        snapshotKey: '/store'
+      }),
+      captureSnapshot: () => {
+        calls.push('capture')
+        return null
+      },
+      disposeFragment: async () => {
+        calls.push('dispose:fragment')
+      },
+      loadSnapshot: async () => {
+        calls.push('load:/')
+        return {
+          path: '/',
+          lang: 'en',
+          title: 'Home',
+          regions: {
+            header: '<header></header>',
+            main: '<main></main>',
+            dock: '<div></div>'
+          }
+        }
+      },
+      applySnapshot: () => {
+        calls.push('apply:/')
+      },
+      syncSeed: () => {
+        calls.push('sync-seed')
+        return null
+      },
+      ensureHomeEntry: async () => {
+        calls.push('entry:home-anchor')
+      },
+      ensureHomeStaticEntry: async () => {
+        calls.push('entry:home-static')
+      },
+      bootstrapHome: async () => {
+        calls.push('bootstrap:home')
+      },
+      routeTransition: async (update) => {
+        await update()
       }
     })
 
@@ -182,13 +284,14 @@ describe('installStaticRouteNavigation', () => {
 
     expect(prevented).toBe(true)
     expect(calls).toEqual([
+      'load:/',
       'capture',
-      'dispose:home',
-      'load:/store',
-      'apply:/store',
+      'dispose:fragment',
+      'apply:/',
       'sync-seed',
-      'entry:fragment',
-      'bootstrap:fragment'
+      'entry:home-anchor',
+      'entry:home-static',
+      'bootstrap:home'
     ])
 
     cleanup()

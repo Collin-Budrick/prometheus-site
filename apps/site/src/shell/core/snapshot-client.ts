@@ -9,6 +9,8 @@ import { resolveStaticShellLangParam } from './lang-param'
 import type { StaticShellSnapshot, StaticShellSnapshotManifest } from './seed'
 import { renderDockRegionHtml, syncStaticDockMarkup } from '../home/home-dock-dom'
 import {
+  getStaticShellRouteConfig,
+  STATIC_ROUTE_ATTR,
   STATIC_SHELL_DOCK_REGION,
   STATIC_SHELL_HEADER_REGION,
   STATIC_SHELL_MAIN_REGION,
@@ -32,6 +34,14 @@ const STATIC_LANG_COOKIE_KEY = 'prometheus-lang'
 const SESSION_SNAPSHOT_STORAGE_PREFIX = 'prometheus:static-shell:session-snapshot:v1:'
 const HYDRATED_WIDGET_ATTR_RE = /\sdata-fragment-widget-hydrated=(["'])true\1/gi
 const RESIDENT_STATE_ATTR_RE = /\sdata-fragment-resident-state=(["'])[^"']*\1/gi
+const LAYOUT_SHELL_SELECTOR = '.layout-shell'
+const MANAGED_HEAD_SELECTOR = [
+  'meta[name="prom-home-deferred-global-style"]',
+  'link[rel="stylesheet"][href*="global-deferred.css"]',
+  'link[rel="stylesheet"][data-home-deferred-global-style-href]',
+  'link[rel="stylesheet"][data-fragment-css]',
+  'style[data-src]'
+].join(',')
 
 let snapshotManifestPromise: Promise<StaticShellSnapshotManifest> | null = null
 const snapshotCache = new Map<string, Promise<StaticShellSnapshot>>()
@@ -250,6 +260,109 @@ const sanitizeStaticShellSnapshotHtml = (html: string) =>
     .replace(HYDRATED_WIDGET_ATTR_RE, ' data-fragment-widget-hydrated="false"')
     .replace(RESIDENT_STATE_ATTR_RE, '')
 
+const extractHeadHtml = (html: string) => {
+  const match = html.match(/<head\b[^>]*>([\s\S]*?)<\/head>/i)
+  return match?.[1] ?? ''
+}
+
+const parseElementAttributes = (html: string) => {
+  const openTagMatch = html.match(/^<([a-zA-Z][\w:-]*)([\s\S]*?)>/i)
+  if (!openTagMatch?.[2]) {
+    return {}
+  }
+
+  const attributeSource = openTagMatch[2]
+  const attributePattern = /([^\s=/>]+)(?:=(["'])([\s\S]*?)\2)?/g
+  const attributes: Record<string, string> = {}
+  let attributeMatch: RegExpExecArray | null = null
+
+  for (;;) {
+    attributeMatch = attributePattern.exec(attributeSource)
+    if (!attributeMatch?.[1]) {
+      break
+    }
+    const attributeName = attributeMatch[1]
+    if (attributeName === '/' || attributeName === openTagMatch[1]) {
+      continue
+    }
+    attributes[attributeName] = attributeMatch[3] ?? ''
+  }
+
+  return attributes
+}
+
+const collectManagedHeadElementStrings = (headHtml: string) => {
+  const patterns = [
+    /<meta\b[^>]*name=(["'])prom-home-deferred-global-style\1[^>]*>/gi,
+    /<link\b(?=[^>]*rel=(["'])stylesheet\1)(?=[^>]*href=(["'])[^"']*global-deferred\.css[^"']*\2)[^>]*>/gi,
+    /<link\b(?=[^>]*rel=(["'])stylesheet\1)(?=[^>]*data-home-deferred-global-style-href=(["'])[\s\S]*?\2)[^>]*>/gi,
+    /<link\b(?=[^>]*rel=(["'])stylesheet\1)(?=[^>]*data-fragment-css=(["'])[\s\S]*?\2)[^>]*>/gi,
+    /<style\b[^>]*data-src=(["'])[\s\S]*?\1[^>]*>[\s\S]*?<\/style>/gi,
+  ]
+
+  return patterns
+    .flatMap((pattern) =>
+      Array.from(headHtml.matchAll(pattern)).map((match) => ({
+        index: match.index ?? 0,
+        html: match[0],
+      }))
+    )
+    .sort((left, right) => left.index - right.index)
+    .map((entry) => entry.html)
+}
+
+const readManagedHeadElementsFromHtml = (html: string) =>
+  collectManagedHeadElementStrings(extractHeadHtml(html)).map((entry) =>
+    sanitizeStaticShellSnapshotHtml(entry)
+  )
+
+const readManagedHeadElementsFromDocument = (doc: Document | null) => {
+  if (!doc?.head || typeof doc.head.querySelectorAll !== 'function') {
+    return []
+  }
+
+  return Array.from(doc.head.querySelectorAll(MANAGED_HEAD_SELECTOR))
+    .map((element) =>
+      typeof (element as HTMLElement).outerHTML === 'string'
+        ? sanitizeStaticShellSnapshotHtml((element as HTMLElement).outerHTML)
+        : null
+    )
+    .filter((value): value is string => typeof value === 'string' && value.length > 0)
+}
+
+const readLayoutShellAttributesFromHtml = (html: string, snapshotKey: string) => {
+  const routeConfig = getStaticShellRouteConfig(snapshotKey)
+  if (!routeConfig) {
+    return {}
+  }
+
+  const layoutShellHtml = extractElementByAttribute(
+    html,
+    STATIC_ROUTE_ATTR,
+    routeConfig.routeKind
+  )
+  if (!layoutShellHtml) {
+    return {}
+  }
+
+  return parseElementAttributes(layoutShellHtml)
+}
+
+const readLayoutShellAttributesFromDocument = (doc: Document | null) => {
+  const layoutShell = doc?.querySelector?.(LAYOUT_SHELL_SELECTOR)
+  if (!(layoutShell instanceof HTMLElement)) {
+    return {}
+  }
+
+  return Array.from(layoutShell.attributes).reduce<Record<string, string>>(
+    (attributes, attribute) => {
+      attributes[attribute.name] = attribute.value
+      return attributes
+    },
+    {}
+  )
+}
+
 const buildCurrentStaticShellDocumentHtml = (doc: Document | null) => {
   if (!doc) {
     return null
@@ -349,6 +462,12 @@ const loadStaticShellSnapshotFromRoute = async (snapshotKey: string, lang: Lang)
     path: normalizedSnapshotKey,
     lang,
     title: extractHtmlTitle(html),
+    head: {
+      managed: readManagedHeadElementsFromHtml(html)
+    },
+    shell: {
+      layoutAttributes: readLayoutShellAttributesFromHtml(html, normalizedSnapshotKey)
+    },
     regions: {
       header,
       main,
@@ -362,6 +481,47 @@ const parseHtmlFragment = (html: string) => {
   setTrustedTemplateHtml(template, html, 'server')
   const next = template.content.firstElementChild
   return next instanceof HTMLElement ? next : null
+}
+
+const replaceManagedHeadElements = (managedHead: string[]) => {
+  if (typeof document === 'undefined' || !document.head) {
+    return
+  }
+
+  Array.from(document.head.querySelectorAll(MANAGED_HEAD_SELECTOR)).forEach((element) => {
+    element.parentNode?.removeChild(element)
+  })
+
+  managedHead.forEach((html) => {
+    const element = parseHtmlFragment(html)
+    if (!element) {
+      return
+    }
+    document.head.appendChild(element)
+  })
+}
+
+const syncLayoutShellAttributes = (layoutAttributes: Record<string, string> | null | undefined) => {
+  if (typeof document === 'undefined' || typeof document.querySelector !== 'function') {
+    return
+  }
+
+  const layoutShell = document.querySelector<HTMLElement>(LAYOUT_SHELL_SELECTOR)
+  if (!layoutShell) {
+    return
+  }
+
+  const nextAttributes = layoutAttributes ?? {}
+  Array.from(layoutShell.attributes).forEach((attribute) => {
+    if (attribute.name in nextAttributes) {
+      return
+    }
+    layoutShell.removeAttribute(attribute.name)
+  })
+
+  Object.entries(nextAttributes).forEach(([name, value]) => {
+    layoutShell.setAttribute(name, value)
+  })
 }
 
 const replaceStaticShellRegionHtml = (region: string, html: string) => {
@@ -475,6 +635,8 @@ export const applyStaticShellSnapshot = (
   } = {}
 ) => {
   parkResidentSubtreesWithin(typeof document !== 'undefined' ? document : null)
+  replaceManagedHeadElements(snapshot.head?.managed ?? [])
+  syncLayoutShellAttributes(snapshot.shell?.layoutAttributes)
   replaceStaticShellRegionHtml(STATIC_SHELL_HEADER_REGION, snapshot.regions.header)
   replaceStaticShellRegionHtml(STATIC_SHELL_MAIN_REGION, snapshot.regions.main)
   replaceStaticShellDockRegion(snapshot.regions.dock, options.dockState)
@@ -503,6 +665,12 @@ export const captureCurrentStaticShellSnapshot = (
     path: toStaticSnapshotKey(snapshotKey),
     lang,
     title: doc.title,
+    head: {
+      managed: readManagedHeadElementsFromDocument(doc)
+    },
+    shell: {
+      layoutAttributes: readLayoutShellAttributesFromDocument(doc)
+    },
     regions: {
       header: sanitizeStaticShellSnapshotHtml(header.outerHTML),
       main: sanitizeStaticShellSnapshotHtml(main.outerHTML),

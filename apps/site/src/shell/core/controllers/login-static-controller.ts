@@ -1,6 +1,5 @@
 import type { Lang } from '../../../lang'
 import { getUiCopy } from '../../../lang/client'
-import { appConfig } from '../../../site-config'
 import { loadClientAuthSession } from '../../auth/auth-client'
 import {
   getHostedSocialProviderLabel,
@@ -14,9 +13,7 @@ import {
   registerHostedLocalAccount,
   registerDevLocalAccount,
   signInHostedPasskey,
-  startSpacetimeAuthLogin,
-  type HostedSocialProvider,
-  type SpacetimeAuthMethod
+  startSpacetimeAuthLogin
 } from '../../../features/auth/spacetime-auth'
 import {
   authEmailCookieKey,
@@ -25,6 +22,11 @@ import {
   authRememberCookieKey,
   readCookieValueRaw
 } from '../../../features/auth/auth-form-state'
+import {
+  resolveConfiguredHostedSocialProviders,
+  resolveStaticLoginRuntimeHint,
+  resolveStaticLoginRuntimeLabel
+} from '../../auth/static-login-runtime'
 
 type MountStaticLoginControllerOptions = {
   lang: Lang
@@ -63,31 +65,6 @@ const readRequestedNextPath = (root: HTMLElement) => {
   }
 }
 
-const resolveRuntimeModeLabel = (mode: StaticLoginRuntimeMode) => {
-  switch (mode) {
-    case 'dev-session':
-      return 'Dev session'
-    case 'disabled':
-      return 'Auth disabled'
-    default:
-      return 'Hosted auth'
-  }
-}
-
-const resolveRuntimeModeHint = (
-  mode: StaticLoginRuntimeMode,
-  copy: ReturnType<typeof getUiCopy>
-) => {
-  switch (mode) {
-    case 'dev-session':
-      return copy.signupDescription
-    case 'disabled':
-      return copy.authNotConfigured
-    default:
-      return copy.authHostedStatus
-  }
-}
-
 const syncRuntimeSummary = (
   root: HTMLElement,
   mode: StaticLoginRuntimeMode,
@@ -100,10 +77,10 @@ const syncRuntimeSummary = (
   const requestedNext = readRequestedNextPath(root)
 
   if (label) {
-    label.textContent = resolveRuntimeModeLabel(mode)
+    label.textContent = resolveStaticLoginRuntimeLabel(mode, copy)
   }
   if (hint) {
-    hint.textContent = resolveRuntimeModeHint(mode, copy)
+    hint.textContent = resolveStaticLoginRuntimeHint(mode, copy)
   }
   if (next && nextCode) {
     const displayNext = requestedNext ? resolveNextPath(root) : null
@@ -137,11 +114,7 @@ const setMode = (root: HTMLElement, mode: StaticLoginMode) => {
 }
 
 const normalizeHostedSocialProviders = () =>
-  new Set(
-    appConfig.authSocialProviders
-      .map((provider) => provider.trim().toLowerCase())
-      .filter((provider): provider is HostedSocialProvider => isHostedSocialProvider(provider))
-  )
+  new Set(resolveConfiguredHostedSocialProviders().map((provider) => provider.id))
 
 const syncHostedProviders = (root: HTMLElement, mode: StaticLoginRuntimeMode) => {
   const enabledProviders = normalizeHostedSocialProviders()
@@ -336,7 +309,7 @@ export const mountStaticLoginController = ({ lang }: MountStaticLoginControllerO
 
     root.querySelectorAll<HTMLButtonElement>('[data-static-login-method]').forEach((button) => {
       const rawMethod = button.dataset.staticLoginMethod
-      const method: SpacetimeAuthMethod | null = isHostedSocialProvider(rawMethod) ? rawMethod : null
+      const method = isHostedSocialProvider(rawMethod) ? rawMethod : null
       if (!method) return
 
       const handler = () => {

@@ -38,10 +38,26 @@ class MockWidgetElement {
   isConnected = true
   readonly dataset: Record<string, string>
   private readonly propsNode: MockScriptElement | MockTemplateElement
+  private readonly rect: {
+    top: number
+    right: number
+    bottom: number
+    left: number
+    width: number
+    height: number
+  }
 
   constructor(
     priority: 'critical' | 'visible' | 'deferred',
-    propsNode: MockScriptElement | MockTemplateElement = new MockScriptElement('{}')
+    propsNode: MockScriptElement | MockTemplateElement = new MockScriptElement('{}'),
+    rect: Partial<{
+      top: number
+      right: number
+      bottom: number
+      left: number
+      width: number
+      height: number
+    }> = {}
   ) {
     this.dataset = {
       fragmentWidget: 'contact-invites',
@@ -50,6 +66,14 @@ class MockWidgetElement {
       fragmentWidgetHydrated: 'false'
     }
     this.propsNode = propsNode
+    this.rect = {
+      top: rect.top ?? 0,
+      right: rect.right ?? 320,
+      bottom: rect.bottom ?? 180,
+      left: rect.left ?? 0,
+      width: rect.width ?? 320,
+      height: rect.height ?? 180
+    }
   }
 
   matches(selector: string) {
@@ -69,6 +93,10 @@ class MockWidgetElement {
 
   querySelectorAll(_selector: string) {
     return []
+  }
+
+  getBoundingClientRect() {
+    return this.rect
   }
 }
 
@@ -127,8 +155,11 @@ const flushMicrotasks = async () => {
   await Promise.resolve()
 }
 
-const createWidgetRoot = (priority: 'critical' | 'visible' | 'deferred' = 'visible') => {
-  const widget = new MockWidgetElement(priority)
+const createWidgetRoot = (
+  priority: 'critical' | 'visible' | 'deferred' = 'visible',
+  rect?: ConstructorParameters<typeof MockWidgetElement>[2]
+) => {
+  const widget = new MockWidgetElement(priority, new MockScriptElement('{}'), rect)
   const root = new MockRootElement([widget])
   return {
     root,
@@ -140,11 +171,15 @@ describe('createFragmentWidgetRuntime', () => {
   const originalIntersectionObserver = globalThis.IntersectionObserver
   const originalRequestAnimationFrame = globalThis.requestAnimationFrame
   const originalCancelAnimationFrame = globalThis.cancelAnimationFrame
+  const originalInnerWidth = globalThis.innerWidth
+  const originalInnerHeight = globalThis.innerHeight
   const originalConsoleWarn = console.warn
 
   beforeEach(() => {
     MockIntersectionObserver.instances = []
     console.warn = () => undefined
+    globalThis.innerWidth = 1280
+    globalThis.innerHeight = 900
   })
 
   afterEach(() => {
@@ -152,6 +187,8 @@ describe('createFragmentWidgetRuntime', () => {
     globalThis.IntersectionObserver = originalIntersectionObserver
     globalThis.requestAnimationFrame = originalRequestAnimationFrame
     globalThis.cancelAnimationFrame = originalCancelAnimationFrame
+    globalThis.innerWidth = originalInnerWidth
+    globalThis.innerHeight = originalInnerHeight
     console.warn = originalConsoleWarn
   })
 
@@ -164,7 +201,10 @@ describe('createFragmentWidgetRuntime', () => {
     }) as typeof requestAnimationFrame
     globalThis.cancelAnimationFrame = (() => undefined) as typeof cancelAnimationFrame
 
-    const { root, widget } = createWidgetRoot('visible')
+    const { root, widget } = createWidgetRoot('visible', {
+      top: 2000,
+      bottom: 2180
+    })
     const runtime = createFragmentWidgetRuntime({ root: root as unknown as ParentNode })
 
     expect(MockIntersectionObserver.instances).toHaveLength(1)
@@ -190,6 +230,31 @@ describe('createFragmentWidgetRuntime', () => {
       }
     ])
     await flushMicrotasks()
+    expect(widget.dataset.fragmentWidgetHydrated).toBe('true')
+
+    runtime.destroy()
+  })
+
+  it('attaches visible widgets immediately when they already intersect the viewport', async () => {
+    let scheduledPaintCallback: FrameRequestCallback | null = null
+    globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      scheduledPaintCallback = callback
+      return 1
+    }) as typeof requestAnimationFrame
+    globalThis.cancelAnimationFrame = (() => undefined) as typeof cancelAnimationFrame
+
+    const { root, widget } = createWidgetRoot('visible', {
+      top: 24,
+      bottom: 164
+    })
+    const runtime = createFragmentWidgetRuntime({ root: root as unknown as ParentNode })
+
+    expect(widget.dataset.fragmentWidgetHydrated).toBe('false')
+    expect(typeof scheduledPaintCallback).toBe('function')
+
+    scheduledPaintCallback?.(16.7)
+    await flushMicrotasks()
+
     expect(widget.dataset.fragmentWidgetHydrated).toBe('true')
 
     runtime.destroy()

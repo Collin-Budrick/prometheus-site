@@ -32,12 +32,14 @@ import { resolveCurrentFragmentCacheScope } from "../../fragment/cache-scope";
 import { getPersistentRuntimeCache } from "../../fragment/runtime/persistent-cache-instance";
 import type { FragmentPayload } from "../../fragment/types";
 import { captureCurrentStaticShellSnapshot } from "../core/snapshot-client";
+import { acquirePretextDomController } from "../pretext/pretext-dom";
 import {
   mergeFragmentPayloadSources,
   restoreRouteFragmentSnapshotFromCaches,
   restoreRouteFragmentSnapshotState,
 } from "../fragments/route-snapshot";
 import { promoteSatisfiedStaticHomeCards } from "./home-anchor-patch";
+import { dispatchHomeStaticEntryReactivateEvent } from "./home-static-entry-events";
 
 const yieldHomeBootstrapTask = () =>
   new Promise<void>((resolve) => {
@@ -213,6 +215,13 @@ export const bootstrapStaticHomeAnchor = async () => {
     destroyed: false,
   };
   setActiveHomeController(controller);
+  const pretextController = acquirePretextDomController({
+    initialLang: controller.lang,
+    root: document.body,
+  });
+  if (pretextController) {
+    controller.cleanupFns.push(() => pretextController.release());
+  }
   promoteSatisfiedStaticHomeCards({
     ids: data.fragmentOrder,
     knownVersions: data.fragmentVersions,
@@ -306,4 +315,5 @@ export const bootstrapStaticHomeAnchor = async () => {
     }),
   );
   updateFragmentStatus(controller.lang, "idle");
+  dispatchHomeStaticEntryReactivateEvent();
 };

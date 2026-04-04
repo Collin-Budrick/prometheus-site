@@ -1217,7 +1217,7 @@ export const storeFragments: FragmentPlanEntry[] = [
     id: storeCreate.id,
     critical: false,
     layout: {
-      column: 'span 6',
+      column: 'span 12',
       size: 'small',
       minHeight: 489,
       heightHint: { desktop: 489, mobile: 489 },

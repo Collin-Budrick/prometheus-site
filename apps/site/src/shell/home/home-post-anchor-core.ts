@@ -6,6 +6,7 @@ import { scheduleStaticShellTask } from '../core/scheduler'
 import { loadHomeSettingsInteractionRuntime } from './runtime-loaders'
 import { ensureHomePostAnchorPreconnects } from './home-post-anchor-preconnect'
 import { bindHomeServerReachabilityStatus } from './home-bootstrap-ui'
+import { HOME_STATIC_ENTRY_REACTIVATE_EVENT } from './home-static-entry-events'
 import {
   HOME_STATIC_ROUTE_KIND,
   STATIC_HOME_DATA_SCRIPT_ID,
@@ -253,6 +254,16 @@ export const installHomeStaticEntry = ({
     return resumeDeferredHydration({
       root: liveDoc
     })
+  }
+
+  const reactivateHomeRouteRuntime = () => {
+    if (!isHomeRouteActive()) {
+      return
+    }
+    resumeHomeHydration()
+    void startWidgetRuntime()
+    scheduleDeferredGlobalStylesheet()
+    scheduleDeferredRuntime()
   }
 
   const startDeferredRuntime = (options?: {
@@ -537,6 +548,10 @@ export const installHomeStaticEntry = ({
     cancelDeferredGlobalStylesheetStart = null
   }
 
+  function handleHomeStaticEntryReactivate() {
+    reactivateHomeRouteRuntime()
+  }
+
   HOME_BOOTSTRAP_INTENT_EVENTS.forEach((eventName) => {
     const handler = eventName === 'keydown' ? handleKeyDown : handlePointerDown
     if (eventName === 'touchstart') {
@@ -547,6 +562,7 @@ export const installHomeStaticEntry = ({
   })
   liveDoc.addEventListener?.('focusin', handleFocusIn, eventOptions)
   liveDoc.addEventListener?.('visibilitychange', handleVisibilityChange, eventOptions)
+  liveDoc.addEventListener?.(HOME_STATIC_ENTRY_REACTIVATE_EVENT, handleHomeStaticEntryReactivate, eventOptions)
   liveWin.addEventListener('pagehide', handlePageHide, eventOptions)
 
   preconnectPostAnchorOrigins({
@@ -578,6 +594,7 @@ export const installHomeStaticEntry = ({
     })
     liveDoc.removeEventListener?.('focusin', handleFocusIn, eventOptions)
     liveDoc.removeEventListener?.('visibilitychange', handleVisibilityChange, eventOptions)
+    liveDoc.removeEventListener?.(HOME_STATIC_ENTRY_REACTIVATE_EVENT, handleHomeStaticEntryReactivate, eventOptions)
     liveWin.removeEventListener('pagehide', handlePageHide, eventOptions)
     cleanupEarlySettingsBridge()
     primeHomeSettingsInteractionHandler = undefined

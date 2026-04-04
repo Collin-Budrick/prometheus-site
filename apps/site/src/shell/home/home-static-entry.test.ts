@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import { installHomeStaticEntry } from './home-post-anchor-core'
 import { STATIC_HOME_DATA_SCRIPT_ID, STATIC_SHELL_SEED_SCRIPT_ID } from '../core/constants'
+import { HOME_STATIC_ENTRY_REACTIVATE_EVENT } from './home-static-entry-events'
 
 type MockListener = (event?: { target?: unknown }) => void
 type ListenerMap = Map<string, Set<MockListener>>
@@ -38,8 +39,8 @@ class MockWindow {
 class MockDocument {
   readonly listeners: ListenerMap = new Map()
   activeElement: unknown = null
-  readonly mainRoot = { kind: 'main-root' }
-  readonly homeRoot = { kind: 'home-root' }
+  mainRoot: unknown = { kind: 'main-root' }
+  homeRoot: unknown = { kind: 'home-root' }
   visibilityState: 'visible' | 'hidden' = 'visible'
 
   addEventListener(type: string, listener: MockListener) {
@@ -337,6 +338,57 @@ describe('installHomeStaticEntry', () => {
 
     expect(loadWidgetRuntimeCalls).toBe(1)
     expect(createRuntimeCalls).toBe(1)
+
+    cleanup()
+  })
+
+  it('re-arms the widget runtime when home becomes active again in the same document', async () => {
+    const win = new MockWindow()
+    const doc = new MockDocument()
+    const taskQueue = createTaskQueue()
+    const createdRoots: unknown[] = []
+    let destroyCalls = 0
+
+    const cleanup = installHomeStaticEntry({
+      win: win as never,
+      doc: doc as never,
+      scheduleTask: taskQueue.schedule as never,
+      loadDeferredRuntime: async () => ({
+        installHomeBootstrapDeferredRuntime: async () => undefined
+      }) as never,
+      resumeDeferredHydration: () => true,
+      loadWidgetRuntime: async () => ({
+        createFragmentWidgetRuntime: ({
+          root,
+          observeMutations
+        }: {
+          root: unknown
+          observeMutations: boolean
+        }) => {
+          createdRoots.push(root)
+          expect(observeMutations).toBe(true)
+          return {
+            handleInteraction() {},
+            destroy() {
+              destroyCalls += 1
+            }
+          }
+        }
+      }) as never
+    })
+
+    taskQueue.flush()
+    await flushMicrotasks()
+
+    expect(createdRoots).toEqual([doc.mainRoot])
+
+    const nextMainRoot = { kind: 'main-root-2' }
+    doc.mainRoot = nextMainRoot
+    doc.emit(HOME_STATIC_ENTRY_REACTIVATE_EVENT)
+    await flushMicrotasks()
+
+    expect(createdRoots).toEqual([{ kind: 'main-root' }, nextMainRoot])
+    expect(destroyCalls).toBe(1)
 
     cleanup()
   })

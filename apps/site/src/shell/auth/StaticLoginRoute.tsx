@@ -14,6 +14,12 @@ import {
   PRETEXT_META_SPEC,
   PRETEXT_TITLE_SPEC
 } from '../pretext/pretext-static'
+import {
+  resolveStaticLoginRuntimeHint,
+  resolveStaticLoginRuntimeLabel,
+  type StaticLoginHostedProvider,
+  type StaticLoginRuntimeMode
+} from './static-login-runtime'
 
 type StaticLoginRouteProps = {
   copy: Pick<
@@ -41,15 +47,10 @@ type StaticLoginRouteProps = {
     | 'signupTitle'
   >
   lang: Lang
+  hostedProviders: ReadonlyArray<StaticLoginHostedProvider>
   nextPath?: string | null
+  runtimeMode: StaticLoginRuntimeMode
 }
-
-const hostedSocialProviders = [
-  { id: 'google', label: 'Google' },
-  { id: 'facebook', label: 'Facebook' },
-  { id: 'twitter', label: 'Twitter (X)' },
-  { id: 'github', label: 'GitHub' }
-] as const
 
 const authClass = {
   shell: authModuleStyles['auth-shell'],
@@ -83,11 +84,19 @@ const STATIC_LOGIN_CARD_HEIGHT_HINTS: Record<Lang, { default: number; withNext: 
   ko: { default: 452, withNext: 488 }
 }
 
-export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang, nextPath = null }) => {
+export const StaticLoginRoute = component$<StaticLoginRouteProps>(({
+  copy,
+  lang,
+  hostedProviders,
+  nextPath = null,
+  runtimeMode
+}) => {
   const cardAttrs = buildPretextCardAttrs({ mode: 'floor' })
   const cardHeightProfile =
     STATIC_LOGIN_CARD_HEIGHT_HINTS[lang] ?? STATIC_LOGIN_CARD_HEIGHT_HINTS.en
   const cardHeightHint = nextPath ? cardHeightProfile.withNext : cardHeightProfile.default
+  const formsEnabled = runtimeMode !== 'disabled'
+  const showHostedProviders = runtimeMode === 'hosted' && hostedProviders.length > 0
   const headerMetaAttrs = buildPretextTextAttrs({
     ...PRETEXT_META_SPEC,
     lang,
@@ -115,7 +124,7 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang,
     ...PRETEXT_META_SPEC,
     lang,
     role: 'meta',
-    text: copy.loginRuntimePendingLabel,
+    text: resolveStaticLoginRuntimeLabel(runtimeMode, copy),
     widthKind: 'static-login-status'
   })
   const runtimeHintAttrs = buildPretextTextAttrs({
@@ -123,7 +132,7 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang,
     lang,
     maxWidthCh: 64,
     role: 'body',
-    text: copy.loginDescription,
+    text: resolveStaticLoginRuntimeHint(runtimeMode, copy),
     widthKind: 'static-login-status'
   })
   const nextLabelAttrs = buildPretextTextAttrs({
@@ -172,7 +181,7 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang,
               data-static-login-root
               data-static-login-next-path={nextPath ?? ''}
               data-mode="login"
-              data-runtime-mode="pending"
+              data-runtime-mode={runtimeMode}
               data-state="idle"
             >
               <div class={authClass.header}>
@@ -196,10 +205,10 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang,
                   data-pretext-role="meta"
                   {...runtimeLabelAttrs}
                 >
-                  {copy.loginRuntimePendingLabel}
+                  {resolveStaticLoginRuntimeLabel(runtimeMode, copy)}
                 </div>
                 <p data-static-login-runtime-hint data-pretext-role="body" {...runtimeHintAttrs}>
-                  {copy.loginDescription}
+                  {resolveStaticLoginRuntimeHint(runtimeMode, copy)}
                 </p>
                 <p hidden={!nextPath} data-static-login-next>
                   <strong
@@ -230,13 +239,19 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang,
                   aria-selected="false"
                   data-static-login-tab="signup"
                   data-static-login-signup-tab
+                  hidden={!formsEnabled}
                 >
                   {copy.signupTab}
                 </button>
               </div>
 
               <div class={authClass.panels}>
-                <form class={authClass.panel} data-panel="login" data-static-login-form="login" hidden>
+                <form
+                  class={authClass.panel}
+                  data-panel="login"
+                  data-static-login-form="login"
+                  hidden={!formsEnabled}
+                >
                   <label class={authClass.field}>
                     <span>{copy.authEmailLabel}</span>
                     <input
@@ -297,7 +312,12 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang,
                   </div>
                 </form>
 
-                <form class={authClass.panel} data-panel="signup" data-static-login-form="signup" hidden>
+                <form
+                  class={authClass.panel}
+                  data-panel="signup"
+                  data-static-login-form="signup"
+                  hidden={!formsEnabled}
+                >
                   <label class={authClass.field}>
                     <span>{copy.authNameLabel}</span>
                     <input
@@ -360,10 +380,10 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang,
                 </form>
               </div>
 
-              <div class={authClass.social} data-static-login-social hidden>
+              <div class={authClass.social} data-static-login-social hidden={!showHostedProviders}>
                 <p class={authClass.socialLabel}>{copy.authSocialSectionLabel}</p>
                 <div class={authClass.socialActions}>
-                  {hostedSocialProviders.map(({ id, label }) => (
+                  {hostedProviders.map(({ id, label }) => (
                     <button
                       key={id}
                       type="button"

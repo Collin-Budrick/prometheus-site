@@ -2014,7 +2014,7 @@ fn store_plan_entries() -> Vec<FragmentPlanEntry> {
             .with_render_html(false),
         home_entry(STORE_CART_ID, true, "span 6", Some("small"), 440, None)
             .with_render_html(false),
-        home_entry(STORE_CREATE_ID, false, "span 6", Some("small"), 489, None)
+        home_entry(STORE_CREATE_ID, false, "span 12", Some("small"), 489, None)
             .with_render_html(false),
     ]
 }
@@ -2194,14 +2194,14 @@ mod tests {
     }
 
     #[test]
-    fn store_plan_uses_half_width_secondary_cards() {
+    fn store_plan_uses_full_width_create_card() {
         let plan = store_plan_entries();
         let columns = plan
             .iter()
             .map(|entry| entry.layout.column.as_str())
             .collect::<Vec<_>>();
 
-        assert_eq!(columns, vec!["span 12", "span 6", "span 6"]);
+        assert_eq!(columns, vec!["span 12", "span 6", "span 12"]);
     }
 
     #[test]

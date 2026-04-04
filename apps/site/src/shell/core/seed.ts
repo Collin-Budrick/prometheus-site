@@ -19,6 +19,12 @@ export type StaticShellSnapshot = {
   path: string
   lang: Lang
   title: string
+  head?: {
+    managed: string[]
+  }
+  shell?: {
+    layoutAttributes: Record<string, string>
+  }
   regions: {
     header: string
     main: string

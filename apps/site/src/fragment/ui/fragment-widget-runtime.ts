@@ -324,6 +324,44 @@ const scheduleIdle = (callback: () => void, timeout = 220) => {
   return () => globalThis.clearTimeout(timer)
 }
 
+const readViewportSize = () => {
+  const width =
+    typeof window !== 'undefined' && typeof window.innerWidth === 'number'
+      ? window.innerWidth
+      : typeof globalThis.innerWidth === 'number'
+        ? globalThis.innerWidth
+        : 0
+  const height =
+    typeof window !== 'undefined' && typeof window.innerHeight === 'number'
+      ? window.innerHeight
+      : typeof globalThis.innerHeight === 'number'
+        ? globalThis.innerHeight
+        : 0
+  return { width, height }
+}
+
+const isWidgetWithinViewportMargin = (
+  element: HTMLElement,
+  marginPx = 0
+) => {
+  if (typeof element.getBoundingClientRect !== 'function') {
+    return false
+  }
+
+  const { width, height } = readViewportSize()
+  if (width <= 0 || height <= 0) {
+    return false
+  }
+
+  const rect = element.getBoundingClientRect()
+  return (
+    rect.bottom >= -marginPx &&
+    rect.right >= -marginPx &&
+    rect.top <= height + marginPx &&
+    rect.left <= width + marginPx
+  )
+}
+
 export const createFragmentWidgetRuntime = ({
   root = null,
   observeMutations = false,
@@ -499,6 +537,15 @@ export const createFragmentWidgetRuntime = ({
       return
     }
     if (priority === 'visible') {
+      if (isWidgetWithinViewportMargin(element, 300)) {
+        scheduleAfterPaint(() => {
+          if (destroyed || !element.isConnected) {
+            return
+          }
+          void attachWidget(element, null)
+        })
+        return
+      }
       if (!ensureObserver()) {
         scheduleAfterPaint(() => {
           if (destroyed || !element.isConnected) {

@@ -1,10 +1,12 @@
 import { loadFragmentBootstrapRuntime } from '../fragments/runtime-loaders'
 import { loadHomeBootstrapRuntime } from '../home/runtime-loaders'
+import { enabledAuthNavItems, enabledNavItems } from '../../site-config'
 import { resolveStaticShellLangParam } from './lang-param'
 import { loadIslandBootstrapRuntime } from './runtime-loaders'
 import {
   getStaticShellRouteConfig,
   STATIC_ROUTE_ATTR,
+  STATIC_SHELL_REGION_ATTR,
   toCanonicalStaticShellHref
 } from './constants'
 import {
@@ -16,6 +18,11 @@ import {
   readStaticShellSeed,
   syncStaticShellSeedFromDocument
 } from './seed-client'
+import {
+  createDockRouteDescriptors,
+  resolveRouteMotionDirection
+} from '../../shared/route-navigation'
+import { runRouteViewTransition } from '../../shared/view-transitions'
 
 type StaticRouteNavigationWindow = Window & typeof globalThis & {
   __PROM_STATIC_ROUTE_NAVIGATION__?: boolean
@@ -30,6 +37,7 @@ type StaticRouteNavigationOptions = {
   readSeed?: typeof readStaticShellSeed
   syncSeed?: typeof syncStaticShellSeedFromDocument
   ensureHomeEntry?: () => Promise<void>
+  ensureHomeStaticEntry?: () => Promise<void>
   ensureFragmentEntry?: () => Promise<void>
   ensureIslandEntry?: () => Promise<void>
   bootstrapHome?: () => Promise<void>
@@ -38,6 +46,7 @@ type StaticRouteNavigationOptions = {
   disposeHome?: () => Promise<void>
   disposeFragment?: () => Promise<void>
   disposeIsland?: () => Promise<void>
+  routeTransition?: typeof runRouteViewTransition
 }
 
 type ClickLikeEvent = MouseEvent & {
@@ -45,6 +54,8 @@ type ClickLikeEvent = MouseEvent & {
 }
 
 const STATIC_ROUTE_LINK_SELECTOR = 'a[href]'
+const PUBLIC_DOCK_DESCRIPTORS = createDockRouteDescriptors(enabledNavItems)
+const AUTH_DOCK_DESCRIPTORS = createDockRouteDescriptors(enabledAuthNavItems)
 
 const isElementLike = (value: unknown): value is Element =>
   Boolean(
@@ -68,6 +79,11 @@ const toHistoryHref = (url: URL) => `${url.pathname}${url.search}${url.hash}`
 
 const importHomeStaticAnchorEntry = async () => {
   await import('../home/home-static-anchor-entry')
+}
+
+const importHomeStaticEntry = async () => {
+  const module = await import('../home/home-static-entry')
+  await module.waitForHomeStaticEntryInstallation?.()
 }
 
 const importFragmentStaticEntry = async () => {
@@ -125,6 +141,31 @@ const scrollToTop = (win: Window) => {
   }
 }
 
+const resolveRouteDescriptors = (isAuthenticated: boolean) =>
+  isAuthenticated ? AUTH_DOCK_DESCRIPTORS : PUBLIC_DOCK_DESCRIPTORS
+
+const resolveTransitionDirection = ({
+  currentPath,
+  targetPath,
+  isAuthenticated
+}: {
+  currentPath: string
+  targetPath: string
+  isAuthenticated: boolean
+}) => {
+  const direction = resolveRouteMotionDirection(
+    currentPath,
+    targetPath,
+    resolveRouteDescriptors(isAuthenticated)
+  )
+  return direction === 'none' ? 'neutral' : direction
+}
+
+const resolveTransitionRoots = (doc: Document) =>
+  ['header', 'main', 'dock']
+    .map((region) => doc.querySelector(`[${STATIC_SHELL_REGION_ATTR}="${region}"]`))
+    .filter((root): root is Element => Boolean(root))
+
 export const installStaticRouteNavigation = ({
   win = typeof window !== 'undefined' ? (window as StaticRouteNavigationWindow) : null,
   doc = typeof document !== 'undefined' ? document : null,
@@ -134,6 +175,7 @@ export const installStaticRouteNavigation = ({
   readSeed = readStaticShellSeed,
   syncSeed = syncStaticShellSeedFromDocument,
   ensureHomeEntry = importHomeStaticAnchorEntry,
+  ensureHomeStaticEntry = importHomeStaticEntry,
   ensureFragmentEntry = importFragmentStaticEntry,
   ensureIslandEntry = importIslandStaticEntry,
   bootstrapHome = bootstrapStaticHomeRoute,
@@ -141,7 +183,8 @@ export const installStaticRouteNavigation = ({
   bootstrapIsland = bootstrapStaticIslandRoute,
   disposeHome = destroyActiveHomeRoute,
   disposeFragment = destroyActiveFragmentRoute,
-  disposeIsland = destroyActiveIslandRoute
+  disposeIsland = destroyActiveIslandRoute,
+  routeTransition = runRouteViewTransition
 }: StaticRouteNavigationOptions = {}) => {
   if (!win || !doc || win.__PROM_STATIC_ROUTE_NAVIGATION__) {
     return () => undefined
@@ -178,6 +221,7 @@ export const installStaticRouteNavigation = ({
     switch (targetConfig?.bootstrapMode) {
       case 'home-static':
         await ensureHomeEntry()
+        await ensureHomeStaticEntry()
         await bootstrapHome()
         return
       case 'fragment-static':
@@ -219,32 +263,45 @@ export const installStaticRouteNavigation = ({
           return
         }
 
-        captureSnapshot(currentSeed.snapshotKey, currentSeed.lang, doc)
-        await disposeCurrentRoute()
-
         const targetLang =
           resolveStaticShellLangParam(targetUrl.searchParams.get('lang')) ??
           currentSeed.lang
         const snapshot = await loadSnapshot(targetConfig.snapshotKey, targetLang)
-
-        if (historyMode === 'push') {
-          win.history.pushState(win.history.state, '', toHistoryHref(targetUrl))
-        } else if (historyMode === 'replace') {
-          win.history.replaceState(win.history.state, '', toHistoryHref(targetUrl))
-        }
-
-        applySnapshot(snapshot, {
-          dockState: {
-            lang: targetLang,
-            currentPath: targetConfig.path,
-            isAuthenticated: currentSeed.isAuthenticated ?? false
-          }
+        const transitionDirection = resolveTransitionDirection({
+          currentPath: currentSeed.currentPath || win.location.pathname,
+          targetPath: targetConfig.path,
+          isAuthenticated: currentSeed.isAuthenticated ?? false
         })
-        syncSeed(doc)
-        if (historyMode !== 'pop') {
-          scrollToTop(win)
-        }
-        await bootstrapTargetRoute(targetUrl.pathname)
+
+        await routeTransition(
+          async () => {
+            captureSnapshot(currentSeed.snapshotKey, currentSeed.lang, doc)
+            await disposeCurrentRoute()
+
+            if (historyMode === 'push') {
+              win.history.pushState(win.history.state, '', toHistoryHref(targetUrl))
+            } else if (historyMode === 'replace') {
+              win.history.replaceState(win.history.state, '', toHistoryHref(targetUrl))
+            }
+
+            applySnapshot(snapshot, {
+              dockState: {
+                lang: targetLang,
+                currentPath: targetConfig.path,
+                isAuthenticated: currentSeed.isAuthenticated ?? false
+              }
+            })
+            syncSeed(doc)
+            if (historyMode !== 'pop') {
+              scrollToTop(win)
+            }
+            await bootstrapTargetRoute(targetUrl.pathname)
+          },
+          {
+            direction: transitionDirection,
+            mutationRoots: resolveTransitionRoots(doc)
+          }
+        )
       })
       .catch((error) => {
         console.error('Static route navigation failed:', error)

@@ -26,6 +26,12 @@ class MockElement {
   dataset: Record<string, string> = {}
   firstElementChild: MockElement | null = null
   className = ''
+  attributes: Array<{ name: string; value: string }> = []
+  parentNode:
+    | {
+        removeChild: (element: MockElement) => void
+      }
+    | null = null
   private markup = ''
   style = {
     width: '',
@@ -49,7 +55,41 @@ class MockElement {
   set innerHTML(value: unknown) {
     const normalized = unwrapTrustedHtml(value)
     this.markup = normalized
+    const openTagMatch = normalized.match(/^<([a-zA-Z][\w:-]*)([\s\S]*?)>/i)
+    const attributePattern = /([^\s=/>]+)(?:=(["'])([\s\S]*?)\2)?/g
+    const nextAttributes: Array<{ name: string; value: string }> = []
+    if (openTagMatch?.[2]) {
+      let attributeMatch: RegExpExecArray | null = null
+      for (;;) {
+        attributeMatch = attributePattern.exec(openTagMatch[2])
+        if (!attributeMatch?.[1]) {
+          break
+        }
+        const attributeName = attributeMatch[1]
+        if (attributeName === '/' || attributeName === openTagMatch[1]) {
+          continue
+        }
+        nextAttributes.push({
+          name: attributeName,
+          value: attributeMatch[3] ?? ''
+        })
+      }
+    }
+    this.attributes = nextAttributes
     this.firstElementChild = normalized ? new MockElement(this.regions) : null
+  }
+
+  setAttribute(name: string, value: string) {
+    const existing = this.attributes.find((attribute) => attribute.name === name)
+    if (existing) {
+      existing.value = value
+      return
+    }
+    this.attributes.push({ name, value })
+  }
+
+  removeAttribute(name: string) {
+    this.attributes = this.attributes.filter((attribute) => attribute.name !== name)
   }
 
   replaceWith(next: MockElement) {
@@ -114,6 +154,8 @@ const originalNavigator = globalThis.navigator
 
 describe('snapshot-client', () => {
   const regions = new Map<string, MockElement>()
+  const layoutShell = new MockElement(regions)
+  let managedHeadElements: MockElement[] = []
 
   beforeEach(() => {
     seedStaticHomeCopy(
@@ -135,9 +177,25 @@ describe('snapshot-client', () => {
     )
 
     regions.clear()
+    managedHeadElements = []
+    layoutShell.innerHTML =
+      '<div class="layout-shell" data-static-route="fragment" data-static-lang="ja" data-static-template-preset="full"></div>'
     regions.set(STATIC_SHELL_HEADER_REGION, new MockElement(regions, STATIC_SHELL_HEADER_REGION))
     regions.set(STATIC_SHELL_MAIN_REGION, new MockElement(regions, STATIC_SHELL_MAIN_REGION))
     regions.set(STATIC_SHELL_DOCK_REGION, new MockElement(regions, STATIC_SHELL_DOCK_REGION))
+
+    const head = {
+      querySelectorAll: () => managedHeadElements,
+      appendChild: (element: MockElement) => {
+        element.parentNode = head
+        managedHeadElements.push(element)
+        return element
+      },
+      removeChild: (element: MockElement) => {
+        managedHeadElements = managedHeadElements.filter((entry) => entry !== element)
+        element.parentNode = null
+      }
+    }
 
     globalThis.HTMLElement = MockElement as never
     globalThis.HTMLScriptElement = class MockScriptElement {} as never
@@ -150,12 +208,16 @@ describe('snapshot-client', () => {
       },
       getElementById: () => null,
       querySelector: (selector: string) => {
+        if (selector === '.layout-shell') {
+          return layoutShell
+        }
         if (selector === `[${STATIC_DOCK_ROOT_ATTR}]`) {
           return regions.get(STATIC_SHELL_DOCK_REGION) ?? null
         }
         const match = selector.match(/data-static-shell-region="([^"]+)"/)
         return match ? regions.get(match[1]) ?? null : null
       },
+      head,
       doctype: {
         name: 'html',
         publicId: '',
@@ -326,9 +388,11 @@ describe('snapshot-client', () => {
             '<html lang="ja">',
             '<head><title>Prometheus | Chat</title></head>',
             '<body>',
+            '<div class="layout-shell" data-static-route="fragment" data-static-lang="ja" data-static-template-preset="full">',
             `<header ${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_HEADER_REGION}">header ja</header>`,
             `<main ${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_MAIN_REGION}">main ja</main>`,
             `<div ${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_DOCK_REGION}" ${STATIC_DOCK_ROOT_ATTR}="true">dock ja</div>`,
+            '</div>',
             '</body>',
             '</html>'
           ].join(''),
@@ -350,6 +414,17 @@ describe('snapshot-client', () => {
       path: '/chat',
       lang: 'ja',
       title: 'Prometheus | Chat',
+      head: {
+        managed: []
+      },
+      shell: {
+        layoutAttributes: {
+          class: 'layout-shell',
+          'data-static-route': 'fragment',
+          'data-static-lang': 'ja',
+          'data-static-template-preset': 'full'
+        }
+      },
       regions: {
         header: `<header ${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_HEADER_REGION}">header ja</header>`,
         main: `<main ${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_MAIN_REGION}">main ja</main>`,
@@ -380,6 +455,17 @@ describe('snapshot-client', () => {
       path: '/chat',
       lang: 'ja',
       title: 'Prometheus | Live',
+      head: {
+        managed: []
+      },
+      shell: {
+        layoutAttributes: {
+          class: 'layout-shell',
+          'data-static-route': 'fragment',
+          'data-static-lang': 'ja',
+          'data-static-template-preset': 'full'
+        }
+      },
       regions: {
         header: `<header ${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_HEADER_REGION}">live header</header>`,
         main: `<main ${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_MAIN_REGION}">live main</main>`,
@@ -412,6 +498,17 @@ describe('snapshot-client', () => {
       path: '/chat',
       lang: 'ja',
       title: 'Prometheus | Session',
+      head: {
+        managed: []
+      },
+      shell: {
+        layoutAttributes: {
+          class: 'layout-shell',
+          'data-static-route': 'fragment',
+          'data-static-lang': 'ja',
+          'data-static-template-preset': 'full'
+        }
+      },
       regions: {
         header: `<header ${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_HEADER_REGION}">session header</header>`,
         main: `<main ${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_MAIN_REGION}">session main</main>`,
@@ -462,5 +559,108 @@ describe('snapshot-client', () => {
 
     expect(snapshot?.regions.main).toContain('data-fragment-widget-hydrated="false"')
     expect(snapshot?.regions.main).not.toContain('data-fragment-resident-state=')
+  })
+
+  it('captures and reapplies managed route head assets with the snapshot', () => {
+    const staleLink = new MockElement(regions)
+    staleLink.innerHTML =
+      '<link rel="stylesheet" href="/fragments/stale.css" data-fragment-css="fragment://page/store/stream@v5">'
+    staleLink.parentNode = (globalThis.document as Document).head as never
+    managedHeadElements.push(staleLink)
+
+    const snapshot = {
+      path: '/',
+      lang: 'ja' as const,
+      title: 'Prometheus | Home',
+      head: {
+        managed: [
+          '<meta name="prom-home-deferred-global-style" content="/assets/style.css">',
+          '<link rel="stylesheet" href="/assets/style.css" data-home-deferred-global-style-href="https://prometheus.test/assets/style.css">'
+        ]
+      },
+      shell: {
+        layoutAttributes: {
+          class: 'layout-shell',
+          'data-static-route': 'home',
+          'data-static-lang': 'ja',
+          'data-static-template-preset': 'full'
+        }
+      },
+      regions: {
+        header: `<header ${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_HEADER_REGION}">header</header>`,
+        main: `<main ${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_MAIN_REGION}">main</main>`,
+        dock: `<div ${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_DOCK_REGION}">dock</div>`
+      }
+    }
+
+    applyStaticShellSnapshot(snapshot)
+
+    expect(managedHeadElements.map((element) => element.outerHTML)).toEqual(snapshot.head.managed)
+    expect(layoutShell.attributes).toEqual([
+      { name: 'class', value: 'layout-shell' },
+      { name: 'data-static-route', value: 'home' },
+      { name: 'data-static-lang', value: 'ja' },
+      { name: 'data-static-template-preset', value: 'full' }
+    ])
+  })
+
+  it('extracts managed route head assets from localized route html', async () => {
+    const routeUrl = 'https://prometheus.test/chat?lang=ja'
+
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url
+
+      if (url === routeUrl) {
+        return new Response(
+          [
+            '<!doctype html>',
+            '<html lang="ja">',
+            '<head>',
+            '<title>Prometheus | Chat</title>',
+            '<link rel="stylesheet" href="/assets/BzhVnu6I-global-deferred.css">',
+            '<style data-src="/assets/bJX5dTnw-home-static-eager.css">.demo{color:red;}</style>',
+            '</head>',
+            '<body>',
+            '<div class="layout-shell" data-static-route="fragment" data-static-lang="ja" data-static-template-preset="full">',
+            `<header ${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_HEADER_REGION}">header ja</header>`,
+            `<main ${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_MAIN_REGION}">main ja</main>`,
+            `<div ${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_DOCK_REGION}" ${STATIC_DOCK_ROOT_ATTR}="true">dock ja</div>`,
+            '</div>',
+            '</body>',
+            '</html>'
+          ].join(''),
+          {
+            status: 200,
+            headers: {
+              'content-type': 'text/html'
+            }
+          }
+        )
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`)
+    }) as typeof fetch
+
+    const snapshot = await loadStaticShellSnapshot('/chat', 'ja')
+
+    expect(snapshot.head).toEqual({
+      managed: [
+        '<link rel="stylesheet" href="/assets/BzhVnu6I-global-deferred.css">',
+        '<style data-src="/assets/bJX5dTnw-home-static-eager.css">.demo{color:red;}</style>'
+      ]
+    })
+    expect(snapshot.shell).toEqual({
+      layoutAttributes: {
+        class: 'layout-shell',
+        'data-static-route': 'fragment',
+        'data-static-lang': 'ja',
+        'data-static-template-preset': 'full'
+      }
+    })
   })
 })

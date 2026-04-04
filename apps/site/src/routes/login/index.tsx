@@ -1,7 +1,7 @@
 import { component$ } from '@builder.io/qwik'
 import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteSkeleton, StaticRouteTemplate } from '@prometheus/ui'
-import { isSiteFeatureEnabled, siteBrand } from '../../site-config'
+import { appConfig, isSiteFeatureEnabled, siteBrand } from '../../site-config'
 import {
   buildLoginRedirectHref,
   createClientLoginRedirectResponse,
@@ -18,10 +18,19 @@ import type { UiCopy } from '../../lang/types'
 import { getOrCreateRequestCspNonce } from '../../security/server'
 import { StaticPageRoot } from '../../shell/core/StaticPageRoot'
 import { StaticLoginRoute } from '../../shell/auth/StaticLoginRoute'
+import {
+  resolveConfiguredHostedSocialProviders,
+  resolveStaticLoginRuntimeMode
+} from '../../shell/auth/static-login-runtime'
 import { buildGlobalStylesheetLinks } from '../../shell/core/global-style-assets'
 import { buildStaticRouteTemplatePretextProps } from '../../shell/pretext/pretext-template'
 
 const loginEnabled = isSiteFeatureEnabled('auth')
+const configuredHostedProviders = resolveConfiguredHostedSocialProviders(appConfig.authSocialProviders)
+const staticLoginRuntimeMode = resolveStaticLoginRuntimeMode({
+  dev: import.meta.env.DEV,
+  featureEnabled: loginEnabled
+})
 type LoginResource = {
   lang: Lang
   languageSeed: LanguageSeedPayload
@@ -152,8 +161,10 @@ export default component$(() => {
   return (
     <StaticLoginRoute
       copy={resolveLoginCopy(data.languageSeed.ui)}
+      hostedProviders={configuredHostedProviders}
       lang={data.lang}
       nextPath={data.nextPath}
+      runtimeMode={staticLoginRuntimeMode}
     />
   )
 })

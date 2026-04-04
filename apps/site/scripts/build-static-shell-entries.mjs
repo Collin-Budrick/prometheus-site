@@ -3,6 +3,9 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build as esbuild } from 'esbuild'
 import {
+  assertStaticShellAssetIntegrity,
+} from './static-shell-asset-integrity.mjs'
+import {
   normalizeBundledAssetPaths,
   sanitizeBundledWasmSourceMaps,
   stageBundledWasmAssets,
@@ -358,4 +361,5 @@ stageBundledWasmAssets({
 normalizeBundledAssetPaths(outDir)
 sanitizeBundledWasmSourceMaps(outDir)
 versionBundledWasmAssetPaths(outDir, { publicPath })
+assertStaticShellAssetIntegrity(outDir)
 buildChunkManifest()
