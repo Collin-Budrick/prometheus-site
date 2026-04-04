@@ -522,6 +522,9 @@ export type P2pIceServer = {
 
 export type AppConfig = {
   apiBase: string
+  authBasePath?: string
+  authPostLogoutRedirectUri?: string
+  authSocialProviders: string[]
   webTransportBase: string
   preferWebTransport: boolean
   preferWebTransportDatagrams: boolean
@@ -616,6 +619,12 @@ const runtimeEnvSchema = {
 
 const publicEnvSchema = {
   VITE_API_BASE: 'string?',
+  AUTH_BASE_PATH: 'string?',
+  VITE_AUTH_BASE_PATH: 'string?',
+  AUTH_SOCIAL_PROVIDERS: 'string?',
+  VITE_AUTH_SOCIAL_PROVIDERS: 'string?',
+  OIDC_POST_LOGOUT_REDIRECT_URI: 'string?',
+  VITE_OIDC_POST_LOGOUT_REDIRECT_URI: 'string?',
   VITE_WEBTRANSPORT_BASE: 'string?',
   VITE_ENABLE_WEBTRANSPORT_FRAGMENTS: 'string?',
   VITE_USE_WEBTRANSPORT_FRAGMENTS: 'string?',
@@ -654,6 +663,12 @@ const publicEnvSchema = {
   VITE_SPACETIMEAUTH_CLIENT_ID: 'string?',
   SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI: 'string?',
   VITE_SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI: 'string?',
+  OIDC_AUTHORITY: 'string?',
+  VITE_OIDC_AUTHORITY: 'string?',
+  OIDC_CLIENT_ID: 'string?',
+  VITE_OIDC_CLIENT_ID: 'string?',
+  OIDC_JWKS_URI: 'string?',
+  VITE_OIDC_JWKS_URI: 'string?',
   SPACETIMEDB_URI: 'string?',
   VITE_SPACETIMEDB_URI: 'string?',
   SPACETIMEDB_MODULE: 'string?',
@@ -755,6 +770,30 @@ const splitList = (raw: string) =>
     .split(/[,\n]/)
     .map((entry) => entry.trim())
     .filter(Boolean)
+
+const firstNonBlankString = (...values: Array<string | boolean | undefined>) => {
+  for (const value of values) {
+    const normalized = toStringValue(value)?.trim()
+    if (normalized) return normalized
+  }
+  return ''
+}
+
+const resolveAuthBasePath = (env: AppEnv) =>
+  firstNonBlankString(env.VITE_AUTH_BASE_PATH, env.AUTH_BASE_PATH)
+
+const resolveAuthSocialProviders = (env: AppEnv) => {
+  const raw = firstNonBlankString(env.VITE_AUTH_SOCIAL_PROVIDERS, env.AUTH_SOCIAL_PROVIDERS)
+  return raw === '' ? [] : Array.from(new Set(splitList(raw).map((entry) => entry.toLowerCase())))
+}
+
+const resolveAuthPostLogoutRedirectUri = (env: AppEnv) =>
+  firstNonBlankString(
+    env.VITE_OIDC_POST_LOGOUT_REDIRECT_URI,
+    env.OIDC_POST_LOGOUT_REDIRECT_URI,
+    env.VITE_SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI,
+    env.SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI
+  )
 
 const isLikelyHostname = (hostname: string) => {
   if (!hostname) return false
@@ -1093,6 +1132,10 @@ export const resolveAppConfig = (env?: AppEnv): AppConfig => {
 
   return {
     apiBase: resolveApiBase(resolvedEnv),
+    authBasePath: authEnabled ? resolveAuthBasePath(resolvedEnv) || undefined : undefined,
+    authPostLogoutRedirectUri:
+      authEnabled ? resolveAuthPostLogoutRedirectUri(resolvedEnv) || undefined : undefined,
+    authSocialProviders: authEnabled ? resolveAuthSocialProviders(resolvedEnv) : [],
     webTransportBase: realtimeEnabled ? resolveWebTransportBase(resolvedEnv) : '',
     preferWebTransport: realtimeEnabled && isWebTransportPreferred(resolvedEnv),
     preferWebTransportDatagrams:

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { loadPlatformConfig as loadConfig } from '@platform/config'
+import { loadPlatformConfig as loadConfig, resolveAppConfig } from '@platform/config'
 
 describe('configuration validation', () => {
   it('builds defaults when env vars are absent', () => {
@@ -101,5 +101,36 @@ describe('configuration validation', () => {
     expect(() => loadConfig({ SPACETIMEDB_URI: 'not-a-url' })).toThrow(/Invalid URL/)
     expect(() => loadConfig({ SPACETIMEAUTH_AUTHORITY: 'not-a-url' })).toThrow(/Invalid URL/)
     expect(() => loadConfig({ PUSH_APNS_USE_SANDBOX: 'maybe' })).toThrow(/PUSH_APNS_USE_SANDBOX/)
+  })
+
+  it('exposes public auth fields for the site bundle config', () => {
+    const cfg = resolveAppConfig({
+      VITE_TEMPLATE_PRESET: 'full',
+      AUTH_BASE_PATH: '/api/auth',
+      AUTH_SOCIAL_PROVIDERS: 'google, facebook, twitter, github',
+      VITE_OIDC_POST_LOGOUT_REDIRECT_URI: 'https://prometheus.prod/login',
+      VITE_SPACETIMEAUTH_AUTHORITY: 'urn:prometheus:better-auth',
+      VITE_SPACETIMEAUTH_CLIENT_ID: 'prometheus-site'
+    })
+
+    expect(cfg.authBasePath).toBe('/api/auth')
+    expect(cfg.authSocialProviders).toEqual(['google', 'facebook', 'twitter', 'github'])
+    expect(cfg.authPostLogoutRedirectUri).toBe('https://prometheus.prod/login')
+  })
+
+  it('ignores blank VITE auth values when AUTH values are present', () => {
+    const cfg = resolveAppConfig({
+      VITE_TEMPLATE_PRESET: 'full',
+      VITE_AUTH_BASE_PATH: '',
+      AUTH_BASE_PATH: '/api/auth',
+      VITE_AUTH_SOCIAL_PROVIDERS: '',
+      AUTH_SOCIAL_PROVIDERS: 'google, github',
+      VITE_OIDC_POST_LOGOUT_REDIRECT_URI: '',
+      OIDC_POST_LOGOUT_REDIRECT_URI: 'https://prometheus.prod/login'
+    })
+
+    expect(cfg.authBasePath).toBe('/api/auth')
+    expect(cfg.authSocialProviders).toEqual(['google', 'github'])
+    expect(cfg.authPostLogoutRedirectUri).toBe('https://prometheus.prod/login')
   })
 })

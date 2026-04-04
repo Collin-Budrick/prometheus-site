@@ -4,10 +4,12 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { patchQwikOptimizerFiles } from './vite-run.patches.ts'
 import { assertPublicAuthConfigForNonDevelopmentHosts } from '../../../scripts/spacetime-auth-config.ts'
+import { loadSiteEnvFiles } from './load-site-env.ts'
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const siteRoot = path.resolve(scriptDir, '..')
 const workspaceRoot = path.resolve(siteRoot, '..', '..')
+loadSiteEnvFiles({ siteRoot, workspaceRoot })
 const resolveFirstExisting = (candidates: string[]) => candidates.find((candidate) => existsSync(candidate)) || candidates[0]
 
 const viteBin = resolveFirstExisting([
